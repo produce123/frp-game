@@ -145,6 +145,8 @@ async function main() {
     const me = await p1.eval('return window.__FRP_ME__');
     assert.equal(me.id, idA, '游戏里的 ID 必须就是平台 ID');
     assert.equal(me.name, '浏览器甲');
+    // 上游 bundle 写 localStorage.user 比 __FRP_ME__ 注入晚一拍，等它写出来再断言
+    await p1.waitFor(`return !!localStorage.getItem("user")`, 10_000, '上游 localStorage.user 已写入');
     const stored = await p1.evalRaw('return JSON.parse(localStorage.getItem("user"))');
     assert.equal(stored.userId, idA, '上游 localStorage.user 也要是平台账号');
     assert.equal(stored.username, '浏览器甲');

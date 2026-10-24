@@ -72,7 +72,7 @@ window.GAMES = [
     slug: "ddz",
     title: "斗地主",
     letter: "D",
-    href: "/play/ddz",
+    href: "/ddz/",
     desc: "三人一桌：叫地主、抢地主、出牌，牌桌是上游界面。",
     icon: "🃏",
     tags: ["卡牌", "可联机", "三人"],
