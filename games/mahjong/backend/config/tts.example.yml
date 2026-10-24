@@ -1,0 +1,108 @@
+version: 1
+enabled: true
+
+route:
+  primary: volcengine
+  fallback: baidu
+
+runtime:
+  # 浏览器请求总超时为 8 秒；主用+降级必须在 7 秒内完成。
+  total_timeout_s: 7
+  concurrency: 2
+  negative_ttl_s: 30
+  provider_cooldown_s: 60
+
+cache:
+  room:
+    dir: data/tts-cache
+    max_mb: 256
+    ttl_days: 30
+  local:
+    dir: data/local-tts-cache
+    max_mb: 128
+    ttl_days: 30
+
+local_gateway:
+  enabled: true
+  rate_limit_per_minute: 60
+  allowed_voice_keys:
+    - default
+    - deepseek
+    - qwen
+    - kimi
+    - doubao
+    - minimax
+    - gpt
+    - relay_gpt
+    - glm
+    - claude
+
+providers:
+  volcengine:
+    enabled: true
+    # 支持 apikey/appid/AccessToken/SecretKey 标记式文本；优先使用新版 apikey。
+    credential_file: secrets/火山apikey.txt
+    endpoint: https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse
+    resource_id: seed-tts-2.0
+    uid: lianhua-mahjong-server
+    timeout_s: 4
+    audio:
+      format: mp3
+      sample_rate: 24000
+      bit_rate: 64000
+    voices:
+      # 官方 V3 示例中的 TTS 2.0 音色。可在控制台试听后分别替换 speaker。
+      default:
+        speaker: ICL_uranus_zh_female_chunzhenshaonv_tob
+      deepseek:
+        speaker: ICL_uranus_zh_female_tianmeijiaoqiao_tob
+      qwen:
+        speaker: ICL_uranus_zh_female_wenrouwenya_tob
+      kimi:
+        speaker: ICL_uranus_zh_female_aojiaonvyou_tob
+      gpt:
+        speaker: ICL_uranus_zh_female_tiexinnvyou_tob
+      relay_gpt:
+        speaker: ICL_uranus_zh_female_tiexinnvyou_tob
+      minimax:
+        speaker: ICL_uranus_zh_female_keainvsheng_tob
+      claude:
+        speaker: ICL_uranus_zh_female_chengshujiejie_tob
+      glm:
+        speaker: zh_female_vv_uranus_bigtts
+      doubao:
+        speaker: zh_female_tianmeitaozi_uranus_bigtts
+      grok:
+        speaker: ICL_uranus_zh_female_keainvsheng_tob
+      gemini:
+        speaker: ICL_uranus_zh_female_huoponvhai_tob
+    styles:
+      激进:
+        speech_rate: 15
+        pitch_rate: 1
+        loudness_rate: 10
+      稳健:
+        speech_rate: 0
+        pitch_rate: 0
+        loudness_rate: 0
+      话痨:
+        speech_rate: 10
+        pitch_rate: 1
+        loudness_rate: 5
+      高冷:
+        speech_rate: -10
+        pitch_rate: -1
+        loudness_rate: -5
+
+  baidu:
+    enabled: true
+    credential_file: secrets/百度api-key.txt
+    cuid: lianhua-mahjong-server
+    timeout_s: 3
+    # 百度只保留一个中性音色，所有模型/策略故障降级时共用。
+    voice:
+      voice_id: 0
+      speed: 5
+      pitch: 5
+      volume: 7
+      emotion: ""

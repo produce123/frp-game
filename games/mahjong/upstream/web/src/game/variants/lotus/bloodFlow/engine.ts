@@ -1,0 +1,517 @@
+import type { GamePlayer, TileType, TableActionEvent, TableActionType } from '../../../core/contracts/types'
+import { sortTilesWithJokers, TILE_TYPES } from '../../../core/rules/tiles'
+import { canChi, concealedKongs, windKong, waitingTiles } from '../lotusRules'
+import { postKongState } from './kongState'
+import { buildRingWall, resolveFlip, resolveOpeningStack, buildDrawOrderWall, wallBreakIndexForOpeningStack, takeLotusTailTile } from '../lotusWall'
+import { evaluateWin } from '../patterns/evaluate'
+import { BLOOD_FLOW_ACTION_PRIORITY, BLOOD_FLOW_CONFIG, BLOOD_FLOW_TIMING, bloodFlowWinTiming } from './config'
+import { winTier } from './presentation'
+import type { BloodFlowLedgerEntry, BloodFlowPublicState, BloodFlowRoundResult, Seat, SourceTileEvent, WinEvaluation, WinSource } from './types'
+import { SEATS, vector, nextSeat, newSeatStates } from './state'
+import type { BloodFlowAction, BloodFlowOpeningState, EngineCommand, EngineWindow } from './state'
+import { acceptWindowDecision, windowComplete } from './claimWindow'
+import { assertZeroSum } from './ledger'
+import { recordWinEvaluation } from './winDiagnostics'
+import { resolveWinBatch } from './winBatch'
+import { summarizeRound } from './roundLifecycle'
+import { chooseFallbackDiscardIndex } from '../lotusAi'
+import { PACE_MS } from '../../../core/local/localGameConfig'
+import { commandEntryFromAction, expireEntry, type AnalysisCommandEntry } from '../../../replay/analysis/commandEntry'
+
+export interface BloodFlowEngineOptions {
+  authorityEpoch: string
+  roundId: string
+  dealer?: Seat
+  scores?: readonly [number, number, number, number]
+  initialWall?: TileType[]
+  firstDice?: [number, number]
+  secondDice?: [number, number]
+  random?: () => number
+  now?: () => number
+  decisionMs?: number
+  winBeatMs?: number
+  opening?: BloodFlowOpeningState
+  /** Local worker exposes ordinary action boundaries; simulations/P2P stay synchronous. */
+  paced?: boolean
+  /**
+   * 分析记录（§6）：开启后引擎自己维护"权威动作序列"与开局快照，供**权威端**在局后产出复现数据。
+   *
+   * 为什么由引擎记而不是由调用方记：单机路径的调用方（`useBloodFlowGame`）看得到每次提交，
+   * 但联机权威端把整个引擎放在 worker 里，机器人/超时兜底都在引擎内部发生 —— 只有引擎自己
+   * 才知道"到底哪些命令真的被执行了"。未开启时零成本（不分配、不记录）。
+   */
+  recordCommands?: boolean
+}
+
+/** Deterministic authority, with no timers, audio, Vue, reveal-hand or old endGame side effects.
+ * Browser assembly runs this entire engine in a worker, including exhaustive scoring.
+ */
+export class BloodFlowEngine {
+  readonly players: GamePlayer[]
+  readonly wall: TileType[]
+  readonly flipTiles: [TileType, TileType]
+  readonly jokers: TileType[]
+  readonly flipStack: number
+  readonly flipSeat: number
+  readonly wallBreakIndex: number
+  readonly dealer: Seat
+  readonly openingScores: [number, number, number, number]
+  readonly seats = newSeatStates()
+  /**
+   * 分析记录（§6）：引擎**构造时**的开局快照（发牌结果与开局参数，未被对局修改过）。
+   * 权威端在局后据此产出复现数据 —— 局末再读 `this.players/this.wall` 拿到的是终局状态，
+   * 重跑会从另一个局面开始，那不是复现。
+   */
+  readonly initialOpening: BloodFlowOpeningState
+  /**
+   * 分析记录（§6）：引擎实际执行的权威动作序列（含**真正推进了窗口**的 expire）。
+   * 仅当 `options.recordCommands` 开启时才有内容。被拒的提交不入列 —— 请求发出 ≠ 动作执行（§3.4）。
+   */
+  readonly recordedCommands: AnalysisCommandEntry[] = []
+  /**
+   * 分析记录（§6）：开局骰子。§6 明列要存骰子 —— 联机权威端的骰子来自承诺洗牌，一定给得出来；
+   * 引擎自己掷骰的内部路径（模拟/无参开局）拿不到，就**不给值**，绝不事后编一个。
+   */
+  readonly initialDice: { first?: [number, number]; second?: [number, number] }
+  readonly archives: SourceTileEvent[] = []
+  readonly ledger: BloodFlowLedgerEntry[] = []
+  readonly actions: TableActionEvent[] = []
+  readonly discardActions: SourceTileEvent[] = []
+  readonly privateEvidence = new Map<string, WinEvaluation>()
+  window: EngineWindow | null = null
+  result: BloodFlowRoundResult | null = null
+  currentPlayer: Seat
+  headDrawn: number
+  version = 0
+  sequence = 0
+  interrupted = false
+  paused = false
+  private remainingDeadline = 0
+  private remainingOpenDelay = 0
+  private remainingTransitionDelay = 0
+  private winBeatUntil = 0
+  private sourceSerial = 0
+  private actionSerial = 0
+  private evaluation = new Map<Seat, WinEvaluation>()
+  private pendingKong: { seat: Seat; meldIndex: number; source: SourceTileEvent } | null = null
+  private drawSource: SourceTileEvent | null = null
+  private openingBonus = true
+  private firstDiscard = true
+  private selfPassed = false
+  private kongBloom = false
+  transition: { id: string; kind: 'discard' | 'meld' | 'kong' | 'draw' | 'win'; readyAt: number } | null = null
+  private continuation: (() => void) | null = null
+
+  private after(kind: NonNullable<BloodFlowEngine['transition']>['kind'], delay: number, next: () => void) {
+    if (!this.options.paced) return next()
+    this.window = null
+    this.transition = { id: `${this.options.roundId}/stage/${++this.version}`, kind, readyAt: this.now() + delay }
+    this.continuation = next
+  }
+  advance(id: string) {
+    if (this.paused || this.interrupted || this.result || this.transition?.id !== id || this.now() < this.transition.readyAt) return false
+    const next = this.continuation
+    // Consume before advancing: duplicate/stale timers cannot draw or pay twice.
+    this.transition = null; this.continuation = null
+    next?.()
+    this.assertConservation()
+    return true
+  }
+
+  constructor(readonly options: BloodFlowEngineOptions) {
+    this.dealer = options.dealer ?? 0
+    this.currentPlayer = this.dealer
+    const opening = options.opening ?? this.deal()
+    // 开局快照必须在**任何对局修改之前**留下：下面的庄家第 14 张规整会改动手牌，
+    // 对局过程还会继续改手牌/牌墙，局末再读就不是"初始"了（§6 要的是初始物理牌墙与四家初始手牌）。
+    this.initialOpening = structuredClone(opening)
+    this.initialDice = { ...(options.firstDice ? { first: [...options.firstDice] as [number, number] } : {}),
+      ...(options.secondDice ? { second: [...options.secondDice] as [number, number] } : {}) }
+    this.players = structuredClone(opening.players)
+    this.wall = [...opening.wall]; this.flipTiles = [...opening.flipTiles]; this.jokers = [...opening.jokers]
+    this.flipStack = opening.flipStack; this.flipSeat = opening.flipSeat; this.wallBreakIndex = opening.wallBreakIndex
+    this.headDrawn = opening.headDrawn
+    // The shared opening animation sorts the complete hand. Keep the actual
+    // extra tile at the right edge, just like the ordinary drawFor path, rather
+    // than telling the shared renderer to put its draw gap inside the hand.
+    const dealer = this.players[this.dealer]
+    const tile = dealer.hand[opening.dealerDrawnIndex]
+    if (!tile) throw new Error('Opening must identify dealer fourteenth tile')
+    dealer.hand.splice(opening.dealerDrawnIndex, 1)
+    dealer.hand.push(tile)
+    dealer.drawnTileIndex = dealer.hand.length - 1
+    this.openingScores = vector(s => this.players[s].score)
+    this.assertConservation()
+    this.drawSource = this.source('draw', this.dealer, tile)
+    this.openTurn()
+  }
+
+  private deal(): BloodFlowOpeningState {
+    const random = this.options.random ?? Math.random
+    const ring = this.options.initialWall ? [...this.options.initialWall] : buildRingWall(random)
+    if (ring.length !== 136 || TILE_TYPES.some(t => ring.filter(p => p === t).length !== 4)) throw new Error('Invalid physical wall')
+    const roll = () => Math.floor(random() * 6) + 1
+    const firstDice = this.options.firstDice ?? [roll(), roll()]
+    const secondDice = this.options.secondDice ?? [roll(), roll()]
+    for (const n of [...firstDice, ...secondDice]) if (!Number.isInteger(n) || n < 1 || n > 6) throw new Error('Invalid dice')
+    const flip = resolveFlip(ring, this.dealer, firstDice)
+    const openingStack = resolveOpeningStack(flip.flipStack, secondDice)
+    const wall = buildDrawOrderWall(ring, openingStack, flip.flipStack)
+    const players = SEATS.map((seat): GamePlayer => ({ name: `玩家${seat + 1}`, avatar: '', seat,
+      score: this.options.scores?.[seat] ?? BLOOD_FLOW_CONFIG.initialScore, hand: [], melds: [], discards: [], redCount: 0, drawnTileIndex: -1 }))
+    const order = SEATS.map(s => ((this.dealer + s) % 4) as Seat)
+    for (let batch = 0; batch < 3; batch++) for (const seat of order) players[seat].hand.push(...wall.splice(0, 4))
+    for (const seat of [...order, this.dealer]) players[seat].hand.push(wall.shift()!)
+    const last = players[this.dealer].hand.pop()!
+    for (const player of players) player.hand = sortTilesWithJokers(player.hand, flip.jokers)
+    players[this.dealer].hand.push(last)
+    return { players, wall, flipTiles: [flip.flipTile, ring[flip.flipStack * 2 + 1]], jokers: flip.jokers, headDrawn: 53,
+      dealerDrawnIndex: 13, flipStack: flip.flipStack, flipSeat: flip.flipSeat, wallBreakIndex: wallBreakIndexForOpeningStack(openingStack, flip.flipStack) }
+  }
+
+  private source(kind: SourceTileEvent['kind'], seat: Seat, tile: TileType): SourceTileEvent {
+    return { kind, seat, tile, id: `${this.options.authorityEpoch}/${this.options.roundId}/tile/${++this.sourceSerial}` }
+  }
+  private now() { return this.options.now?.() ?? Date.now() }
+  private event(type: TableActionType, actor: Seat, tile: TileType, from: Seat | null = null, meldIndex = -1) {
+    this.actions.push({ id: ++this.actionSerial, type, actorIndex: actor, sourceIndex: from, tile, meldIndex })
+  }
+  private open(kind: EngineWindow['kind'], source: SourceTileEvent, options: EngineWindow['options']) {
+    this.version++
+    const opensAt = Math.max(this.now(), this.winBeatUntil)
+    this.window = { id: `${this.options.roundId}/window/${this.version}`, version: this.version, kind, source,
+      opensAt, deadlineAt: opensAt + (this.options.decisionMs ?? BLOOD_FLOW_TIMING.normalDecisionMs), options, decisions: vector(() => null) }
+  }
+  private evaluate(seat: Seat, tile: TileType, source: WinSource, opening: 'heaven' | 'earth' | null = null) {
+    const player = this.players[seat]
+    const concealed = [...player.hand]
+    if (source === 'self-draw' || source === 'kong-bloom') concealed.splice(player.drawnTileIndex, 1)
+    const input = { concealed, melds: player.melds, winningTile: tile, source, jokers: this.jokers, opening }
+    const win = evaluateWin(input)
+    // 仅 DEV 生效：留档本次胡牌，供 __bfExplainWin() 摊开全部拆解（见 winDiagnostics.ts）。
+    if (win) recordWinEvaluation({ at: Date.now(), seat, input, reported: win.score })
+    return win
+  }
+  private openTurn() {
+    const seat = this.currentPlayer, player = this.players[seat]
+    const moves: BloodFlowAction[] = []
+    this.evaluation.clear()
+    if (this.drawSource && !this.selfPassed) {
+      const win = this.evaluate(seat, this.drawSource.tile, this.kongBloom ? 'kong-bloom' : 'self-draw',
+        this.openingBonus && this.firstDiscard && seat === this.dealer ? 'heaven' : null)
+      if (win) {
+        this.evaluation.set(seat, win)
+        moves.push({ kind: 'win' })
+        // 锁手后不得过胡（用户确认）：自摸窗口也不给「过」，只能胡或打掉摸牌。
+        if (!this.seats[seat].locked) moves.push({ kind: 'pass' })
+      }
+    }
+    // 开杠（暗杠/风杠/补杠）只在「本手来自摸牌」时提供：碰/吃之后的这一手必须先出牌，
+    // 与经典玩法的 userDrewThisTurn 门控同口径（此前碰完就能立刻开杠，用户报为错误）。
+    if (this.drawSource && (BLOOD_FLOW_ACTION_PRIORITY === 'kong-priority' || !this.seats[seat].locked) && this.wall.length) {
+      for (const tile of concealedKongs(player.hand, this.jokers)) moves.push({ kind: 'concealed-kong', tile })
+      if (windKong(player.hand, this.jokers)) moves.push({ kind: 'wind-kong' })
+      player.melds.forEach((m, meldIndex) => { if (m.type === 'peng' && player.hand.includes(m.tile)) moves.push({ kind: 'added-kong', meldIndex }) })
+    }
+    player.hand.forEach((_, index) => { if (!this.seats[seat].locked || index === player.drawnTileIndex) moves.push({ kind: 'discard', index }) })
+    const legal = moves.filter(action => this.kongKeepsReady(seat, action))
+    this.open('turn', this.drawSource ?? this.source('draw', seat, player.hand.at(-1)!), vector(s => s === seat ? legal : []))
+  }
+
+  /** 胡后只能开杠仍听牌的组合；补牌未知，不允许靠补牌修复已经失听的暗手。 */
+  private kongKeepsReady(seat: Seat, action: BloodFlowAction, claimedTile?: TileType) {
+    if (!this.seats[seat].locked) return true
+    if (action.kind !== 'gang' && action.kind !== 'added-kong' && action.kind !== 'concealed-kong' && action.kind !== 'wind-kong') return true
+    const player = this.players[seat]
+    const post = postKongState({ hand: player.hand, melds: player.melds,
+      kind: action.kind === 'gang' ? 'discard-gang' : action.kind,
+      tile: action.kind === 'gang' ? claimedTile : action.kind === 'concealed-kong' ? action.tile : undefined,
+      meldIndex: action.kind === 'added-kong' ? action.meldIndex : undefined })
+    if (!post) return false
+    const owned = [...post.hand, ...post.melds.flatMap(m => m.tiles)]
+    return waitingTiles(post.hand, post.melds.length, this.jokers).some(tile => owned.filter(t => t === tile).length < 4)
+  }
+
+  command(seat: Seat, action: BloodFlowAction): EngineCommand {
+    if (!this.window) throw new Error('No active action window')
+    return { authorityEpoch: this.options.authorityEpoch, roundId: this.options.roundId, windowId: this.window.id,
+      stateVersion: this.window.version, seat, action }
+  }
+  submit(command: EngineCommand): boolean {
+    if (this.paused || this.interrupted || this.result || !this.window || command.authorityEpoch !== this.options.authorityEpoch
+      || command.roundId !== this.options.roundId || !acceptWindowDecision(this.window, command, this.now())) return false
+    // 分析记录（§6）：**先记后解算** —— resolveWindow 会把窗口置空，之后就没法标注它属于哪个窗口了。
+    // 这一条正是"权威真正执行了什么"的唯一口径：被上面挡掉的提交不会走到这里。
+    if (this.options.recordCommands) {
+      this.recordedCommands.push(commandEntryFromAction(command.seat, command.action, {
+        at: this.now(), windowId: this.window.id, windowKind: this.window.kind,
+      }))
+    }
+    if (windowComplete(this.window)) this.resolveWindow()
+    this.assertConservation()
+    return true
+  }
+  expire(now = this.now(), expectedWindowId = this.window?.id): void {
+    const window = this.window
+    if (this.paused || this.interrupted || !window || window.id !== expectedWindowId || now < window.deadlineAt) return
+    // 分析记录（§6/§11）：窗口**真的**靠超时推进了才记（无操作的 expire 记进去，重放会替引擎多做一次决定）。
+    // 记下当时的 kind 与等待座位：这两项是赛后区分"记录侧多压 expire"与"权威端推进方式不同"的唯一依据。
+    if (this.options.recordCommands) {
+      this.recordedCommands.push(expireEntry(window.id, window.kind,
+        SEATS.filter(seat => window.options[seat].length && !window.decisions[seat]), this.now()))
+    }
+    for (const seat of SEATS) if (window.options[seat].length && !window.decisions[seat]) {
+      // 锁手座位的胡是唯一选项（不得过胡）：超时兜底也必须走胡，否则等于「过」。
+      // kong-priority 实验下改为：杠 > 胡（锁手后仍可先开杠，符合动作优先级）。
+      const forcedWin = this.seats[seat].locked
+        ? (BLOOD_FLOW_ACTION_PRIORITY === 'kong-priority'
+          ? window.options[seat].find(a => a.kind === 'gang' || a.kind === 'concealed-kong' || a.kind === 'added-kong' || a.kind === 'wind-kong')
+            ?? window.options[seat].find(a => a.kind === 'win')
+          : window.options[seat].find(a => a.kind === 'win'))
+        : undefined
+      window.decisions[seat] = forcedWin ?? (window.kind === 'turn'
+        ? { kind: 'discard', index: this.seats[seat].locked ? this.players[seat].drawnTileIndex
+          : chooseFallbackDiscardIndex(this.players[seat].hand, this.jokers, window.options[seat].filter(a => a.kind === 'discard').map(a => a.index)) }
+        : { kind: 'pass' })
+    }
+    this.resolveWindow()
+    this.assertConservation()
+  }
+
+  private resolveWindow() {
+    const window = this.window!
+    const winners = SEATS.filter(s => window.decisions[s]?.kind === 'win')
+    // kong-priority 实验：动作优先级 杠 > 碰 > 吃 > 胡（胡最低）。竞争窗口里先结算吃碰杠，赢家被压到最后。
+    if (BLOOD_FLOW_ACTION_PRIORITY === 'kong-priority' && window.kind !== 'turn') {
+      const meldClaimants = SEATS.filter(s => {
+        const kind = window.decisions[s]?.kind
+        return kind === 'gang' || kind === 'peng' || kind === 'chi'
+      }).sort((a, b) => {
+        const rank = (s: Seat) => window.decisions[s]!.kind === 'gang' ? 0 : window.decisions[s]!.kind === 'peng' ? 1 : 2
+        return rank(a) - rank(b) || ((a - window.source.seat + 4) % 4) - ((b - window.source.seat + 4) % 4)
+      })
+      if (meldClaimants.length) return this.claimMeld(meldClaimants[0], window.decisions[meldClaimants[0]]!, window.source)
+    }
+    if (winners.length) return this.applyWinBatch(window, winners)
+    if (window.kind === 'turn') {
+      const action = window.decisions[this.currentPlayer]!
+      if (action.kind === 'pass') {
+        if (this.seats[this.currentPlayer].locked) return this.discard(this.players[this.currentPlayer].drawnTileIndex)
+        this.selfPassed = true; return this.openTurn()
+      }
+      if (action.kind === 'discard') return this.discard(action.index)
+      return this.performKong(action)
+    }
+    if (this.pendingKong) return this.completeAddedKong()
+    const claimants = SEATS.filter(s => window.decisions[s] && window.decisions[s]!.kind !== 'pass')
+      .sort((a, b) => {
+        const rank = (s: Seat) => window.decisions[s]!.kind === 'gang' ? 0 : window.decisions[s]!.kind === 'peng' ? 1 : 2
+        return rank(a) - rank(b) || ((a - window.source.seat + 4) % 4) - ((b - window.source.seat + 4) % 4)
+      })
+    if (!claimants.length) return this.draw(nextSeat(window.source.seat))
+    this.claimMeld(claimants[0], window.decisions[claimants[0]]!, window.source)
+  }
+
+  private discard(index: number) {
+    const seat = this.currentPlayer, player = this.players[seat]
+    const tile = player.hand.splice(index, 1)[0]
+    player.drawnTileIndex = -1
+    player.discards.push(tile)
+    if (!this.seats[seat].locked) player.hand = sortTilesWithJokers(player.hand, this.jokers)
+    this.drawSource = null
+    const source = this.source('discard', seat, tile)
+    this.discardActions.push(source)
+    const opening = this.firstDiscard && seat === this.dealer && this.openingBonus ? 'earth' : null
+    this.firstDiscard = false
+    this.after('discard', PACE_MS.afterDiscardToNextTurn, () => this.openWinClaims(source, 'discard', opening))
+  }
+  private openWinClaims(source: SourceTileEvent, winSource: WinSource, opening: 'earth' | null = null) {
+    this.evaluation.clear()
+    const options = vector<readonly BloodFlowAction[]>(seat => {
+      if (seat === source.seat) return []
+      const actions: BloodFlowAction[] = []
+      const win = this.evaluate(seat, source.tile, winSource, opening)
+      if (win) {
+        this.evaluation.set(seat, win)
+        actions.push({ kind: 'win' })
+      }
+      // One discard, one choice per seat. Hu priority is resolved after decisions;
+      // it must not hide peng/gang/chi behind a separate pass-only round.
+      // kong-priority 实验：锁手座位也可大明杠（仍不可碰/吃）。
+      if (source.kind === 'discard' && this.wall.length && (!this.seats[seat].locked || BLOOD_FLOW_ACTION_PRIORITY === 'kong-priority')) {
+        const hand = this.players[seat].hand, count = hand.filter(t => t === source.tile).length
+        if (count >= 3 && this.kongKeepsReady(seat, { kind: 'gang' }, source.tile)) actions.push({ kind: 'gang' })
+        if (count >= 2 && !this.seats[seat].locked) actions.push({ kind: 'peng' })
+        if (seat === nextSeat(source.seat) && !this.seats[seat].locked) for (const chi of canChi(hand, source.tile, this.jokers)) actions.push({ kind: 'chi', tiles: chi.tiles })
+      }
+      // 锁手后不得过胡：已胡过的座位仍可点炮/抢杠继续胡，但「过」不再是选项（用户确认）。
+      if (actions.length && !(this.seats[seat].locked && win)) actions.push({ kind: 'pass' })
+      return actions
+    })
+    if (options.some(o => o.length)) this.open(this.evaluation.size ? 'win' : 'meld', source, options)
+    else if (this.pendingKong) this.completeAddedKong()
+    else this.draw(nextSeat(source.seat))
+  }
+  private take(hand: TileType[], tile: TileType) {
+    const index = hand.indexOf(tile)
+    if (index < 0) throw new Error('Missing physical tile')
+    hand.splice(index, 1)
+  }
+  private claimMeld(seat: Seat, action: BloodFlowAction, source: SourceTileEvent) {
+    const player = this.players[seat]
+    this.players[source.seat].discards.pop()
+    const tiles = action.kind === 'chi' ? [...action.tiles] : Array(action.kind === 'gang' ? 4 : 3).fill(source.tile) as TileType[]
+    const take = [...tiles]; take.splice(take.indexOf(source.tile), 1)
+    for (const tile of take) this.take(player.hand, tile)
+    const type = action.kind === 'chi' ? 'chi' : action.kind === 'gang' ? 'gang' : 'peng'
+    player.melds.push({ type, tile: source.tile, tiles, from: source.seat })
+    this.event(type === 'gang' ? 'discard-gang' : type, seat, source.tile, source.seat, player.melds.length - 1)
+    this.openingBonus = false
+    this.currentPlayer = seat; this.drawSource = null; this.selfPassed = false; player.drawnTileIndex = -1
+    if (type === 'gang') {
+      this.payKong(seat, 'discard', source.seat)
+      this.after('kong', PACE_MS.afterClaimGang, () => this.draw(seat, true))
+    } else this.after('meld', PACE_MS.afterClaimPeng, () => {
+      player.hand = sortTilesWithJokers(player.hand, this.jokers); this.openTurn()
+    })
+  }
+
+  private performKong(action: BloodFlowAction) {
+    const seat = this.currentPlayer, player = this.players[seat]
+    if (action.kind === 'added-kong') {
+      const tile = player.melds[action.meldIndex].tile
+      this.take(player.hand, tile)
+      player.drawnTileIndex = -1
+      const source = this.source('added-kong', seat, tile)
+      this.pendingKong = { seat, meldIndex: action.meldIndex, source }
+      this.drawSource = null
+      return this.after('kong', PACE_MS.beforeRobKong, () => this.openWinClaims(source, 'robbed-kong'))
+    }
+    const wind = action.kind === 'wind-kong'
+    if (!wind && action.kind !== 'concealed-kong') throw new Error('Invalid kong action')
+    const tiles: TileType[] = wind ? ['east', 'south', 'west', 'north'] : Array(4).fill((action as { tile: TileType }).tile)
+    for (const tile of tiles) this.take(player.hand, tile)
+    player.melds.push({ type: 'angang', tile: tiles[0], tiles, ...(wind ? { windKong: true } : {}) })
+    this.event(wind ? 'wind-kong' : 'concealed-gang', seat, tiles[0], null, player.melds.length - 1)
+    this.openingBonus = false
+    this.payKong(seat, wind ? 'wind' : 'concealed')
+    player.drawnTileIndex = -1
+    this.after('kong', PACE_MS.afterKongSettle, () => this.draw(seat, true))
+  }
+  private completeAddedKong() {
+    const pending = this.pendingKong!
+    const m = this.players[pending.seat].melds[pending.meldIndex]
+    this.players[pending.seat].melds[pending.meldIndex] = { ...m, type: 'gang', added: true, tiles: [...m.tiles, pending.source.tile] }
+    this.pendingKong = null
+    this.event('added-gang', pending.seat, pending.source.tile, null, pending.meldIndex)
+    this.openingBonus = false
+    this.payKong(pending.seat, 'added')
+    this.after('kong', PACE_MS.afterKongSettle, () => this.draw(pending.seat, true))
+  }
+  private payKong(actor: Seat, kongKind: 'discard' | 'added' | 'concealed' | 'wind', sourceSeat: Seat | null = null) {
+    const deltas = vector(() => 0)
+    for (const payer of kongKind === 'discard' ? [sourceSeat!] : SEATS.filter(s => s !== actor)) {
+      const amount = BLOOD_FLOW_CONFIG.basePoints * BLOOD_FLOW_CONFIG.kongPayments[kongKind]
+      deltas[payer] -= amount; deltas[actor] += amount
+    }
+    assertZeroSum(deltas)
+    this.players.forEach((p, i) => { p.score += deltas[i] })
+    this.ledger.push({ kind: 'kong', authorityEpoch: this.options.authorityEpoch, roundId: this.options.roundId, sequence: ++this.sequence,
+      id: `${this.options.roundId}/kong/${this.sequence}`, actor, kongKind, sourceSeat, deltas, scoresAfter: vector(s => this.players[s].score) })
+  }
+  private applyWinBatch(window: EngineWindow, winners: Seat[]) {
+    if (this.archives.some(a => a.id === window.source.id)) throw new Error('Source already archived')
+    const batch = resolveWinBatch({ authorityEpoch: this.options.authorityEpoch, roundId: this.options.roundId, sequence: ++this.sequence,
+      ruleVersion: BLOOD_FLOW_CONFIG.version, windowId: window.id, source: window.source,
+      winners: winners.map(seat => ({ seat, evaluation: this.evaluation.get(seat)!, ordinal: this.seats[seat].winCount + 1 })),
+      scores: vector(s => this.players[s].score), wallEmpty: !this.wall.length })
+    if (window.source.kind === 'draw') this.players[window.source.seat].hand.splice(this.players[window.source.seat].drawnTileIndex, 1)
+    else if (window.source.kind === 'discard') this.players[window.source.seat].discards.pop()
+    else this.pendingKong = null // original peng was never replaced before success
+    this.players[window.source.seat].drawnTileIndex = -1
+    this.archives.push({ ...window.source })
+    for (const record of batch.winners) {
+      const previous = this.seats[record.winner]
+      this.seats[record.winner] = { winCount: record.ordinal, locked: true,
+        firstWinSequence: previous.firstWinSequence ?? batch.sequence, recordIds: [...previous.recordIds, record.id] }
+      this.privateEvidence.set(record.id, this.evaluation.get(record.winner)!)
+      this.event(record.score.source === 'self-draw' || record.score.source === 'kong-bloom' ? 'self-draw'
+        : record.score.source === 'robbed-kong' ? 'robbed-kong-win' : 'discard-win', record.winner, window.source.tile,
+      window.source.kind === 'draw' ? null : window.source.seat)
+    }
+    this.players.forEach((p, s) => { p.score = batch.scoresAfter[s] })
+    this.ledger.push({ kind: 'win', batch })
+    this.openingBonus = false; this.drawSource = null
+    const nextAction = batch.nextAction
+    if (this.options.paced) {
+      const tier = Math.max(...batch.winners.map(winTier))
+      // 一炮多响在常规演出前还有 1.5s 的“一炮多响”字动画，衔接节奏一并计入。
+      const multiIntroMs = batch.source.kind === 'discard' && batch.winners.length > 1
+        ? BLOOD_FLOW_TIMING.multiWinIntroMs : 0
+      // The authority owns continuation. No render/audio completion mutates rules.
+      // A short handoff margin lets the displayed batch finish before the next draw.
+      this.after('win', bloodFlowWinTiming(tier).duration + multiIntroMs + 100, () => {
+        if (nextAction.kind === 'finish-round') this.finishRound()
+        else this.draw(nextAction.seat)
+      })
+    } else {
+      this.winBeatUntil = this.now() + (this.options.winBeatMs ?? BLOOD_FLOW_TIMING.winBeatMs)
+      if (nextAction.kind === 'finish-round') this.finishRound()
+      else this.draw(nextAction.seat)
+    }
+  }
+  private draw(seat: Seat, tail = false) {
+    if (!this.wall.length) return this.finishRound()
+    const tile = tail ? takeLotusTailTile(this.wall, this.headDrawn)! : this.wall.shift()!
+    if (!tail) this.headDrawn++
+    const player = this.players[seat]
+    if (!this.seats[seat].locked) player.hand = sortTilesWithJokers(player.hand, this.jokers)
+    player.hand.push(tile); player.drawnTileIndex = player.hand.length - 1
+    this.currentPlayer = seat; this.kongBloom = tail; this.selfPassed = false
+    this.drawSource = this.source('draw', seat, tile)
+    this.after('draw', PACE_MS.afterDraw, () => this.openTurn())
+  }
+  private finishRound() {
+    if (this.result) return
+    this.window = null; this.version++
+    this.result = summarizeRound(BLOOD_FLOW_CONFIG.version, this.options.roundId, this.openingScores,
+      vector(s => this.players[s].score), vector(s => this.seats[s].winCount), this.ledger)
+  }
+  publicState(): BloodFlowPublicState {
+    return { ruleVersion: BLOOD_FLOW_CONFIG.version, roundId: this.options.roundId,
+      status: this.result ? 'settled' : this.interrupted ? 'interrupted' : this.paused ? 'paused' : 'playing',
+      seats: structuredClone(this.seats), batches: this.ledger.flatMap(e => e.kind === 'win' ? [structuredClone(e.batch)] : []),
+      roundResult: this.result ? structuredClone(this.result) : null }
+  }
+  currentScore(seat: Seat) { return this.evaluation.has(seat) ? structuredClone(this.evaluation.get(seat)!.score) : null }
+  /** 当前窗口某席的完整评估（权威私有；仅供测试/对拍观察，不进入公共快照）。 */
+  windowEvaluation(seat: Seat) { return this.evaluation.has(seat) ? structuredClone(this.evaluation.get(seat)!) : null }
+  windowIsOpen() { return !!this.window && !this.paused && !this.interrupted && this.now() >= this.window.opensAt }
+  pause() {
+    if (this.paused || this.result) return
+    this.remainingDeadline = Math.max(0, (this.window?.deadlineAt ?? this.now()) - this.now())
+    this.remainingOpenDelay = Math.max(0, (this.window?.opensAt ?? this.now()) - this.now())
+    this.remainingTransitionDelay = Math.max(0, (this.transition?.readyAt ?? this.now()) - this.now())
+    this.paused = true
+  }
+  resume() {
+    if (!this.paused || this.interrupted) return
+    if (this.window) this.window.deadlineAt = this.now() + this.remainingDeadline
+    if (this.window) this.window.opensAt = this.now() + this.remainingOpenDelay
+    if (this.transition) this.transition.readyAt = this.now() + this.remainingTransitionDelay
+    this.paused = false
+  }
+  assertConservation() {
+    const physical = [...this.wall, ...this.flipTiles, ...this.archives.map(a => a.tile),
+      ...this.players.flatMap(p => [...p.hand, ...p.discards, ...p.melds.flatMap(m => m.tiles)]),
+      ...(this.pendingKong ? [this.pendingKong.source.tile] : [])]
+    if (physical.length !== 136 || TILE_TYPES.some(t => physical.filter(p => p === t).length !== 4)) throw new Error('136-tile conservation failed')
+    if (this.players.some(p => !Number.isSafeInteger(p.score))) throw new Error('Invalid score')
+    if (this.window || this.result) for (const seat of SEATS) {
+      const effective = this.players[seat].hand.length + 3 * this.players[seat].melds.length
+      const expected = this.window?.kind === 'turn' && seat === this.currentPlayer ? 14 : 13
+      if (effective !== expected) throw new Error(`Seat ${seat} has ${effective} effective tiles, expected ${expected}`)
+    }
+    if (this.openingScores && this.players.reduce((n, p) => n + p.score, 0) !== this.openingScores.reduce((a, b) => a + b, 0)) throw new Error('Score conservation failed')
+  }
+}

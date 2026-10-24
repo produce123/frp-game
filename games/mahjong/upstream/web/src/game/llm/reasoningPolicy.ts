@@ -1,0 +1,253 @@
+import { inferLlmProviderType, providerTypeFromModel, type LlmProviderConfig, type LlmProviderType } from './config'
+
+export type ReasoningPolicyMode = 'explicit-off' | 'explicit-on' | 'always-on' | 'naturally-off' | 'reasoning-only' | 'unknown'
+
+export interface ReasoningPolicy {
+  providerType: LlmProviderType
+  mode: ReasoningPolicyMode
+  requestBody: Record<string, unknown>
+  message: string
+  /** 已要求关闭思考，但部分中转仍会返回推理字段；有最终 content 时可继续解析。 */
+  acceptReasoningResponse: boolean
+}
+
+/** Intrinsic reasoning is not an optional per-seat enhancement and cannot be disabled. */
+export function hasMandatoryReasoning(policy: Pick<ReasoningPolicy, 'mode'>): boolean {
+  return policy.mode === 'always-on' || policy.mode === 'reasoning-only'
+}
+
+export type ProviderDialect = 'official' | 'orcarouter' | 'compatible'
+
+/** 预置官方端点与已知聚合端点使用各自参数方言；未知自定义中转保持保守兼容。 */
+export function inferProviderDialect(baseUrl: string): ProviderDialect {
+  let host = ''
+  try { host = new URL(baseUrl).hostname.toLowerCase() } catch { return 'compatible' }
+  if (host === 'api.orcarouter.ai') return 'orcarouter'
+  if (isDashScopeEndpoint(baseUrl)) return 'official'
+  // token-plan 是百炼的另一个官方接入点，与 dashscope 同方言。
+  if (/^(?:api\.deepseek\.com|dashscope\.aliyuncs\.com|token-plan\.cn-beijing\.maas\.aliyuncs\.com|api\.moonshot\.(?:cn|ai)|ark\.[^.]+\.volces\.com|api\.minimax\.(?:chat|io)|api\.openai\.com|open\.bigmodel\.cn|api\.z\.ai|api\.anthropic\.com)$/.test(host)) {
+    return 'official'
+  }
+  return 'compatible'
+}
+
+/** DashScope/百炼托管端点：千问与别家模型（glm / kimi / deepseek…）都挂在这里。 */
+export function isDashScopeEndpoint(baseUrl: string): boolean {
+  let url: URL
+  try { url = new URL(baseUrl) } catch { return false }
+  const host = url.hostname.toLowerCase()
+  return /(?:^|\.)dashscope\.aliyuncs\.com$/.test(host)
+    || (/(?:^|\.)maas\.aliyuncs\.com$/.test(host) && url.pathname.includes('/compatible-mode/'))
+    || url.pathname.startsWith('/api/llm/relay/token-plan')
+}
+
+/**
+ * DashScope 端点上开关思考的统一参数是 `enable_thinking`；各家原生参数
+ * （`thinking`、`reasoning_effort`）在这里实测无效——`glm-4.7` 收到
+ * `thinking:{type:disabled}` 仍思考 2.8k 字、单次 25s，换成 `enable_thinking:false` 后 0.8s。
+ * 因此托管在 DashScope 的别家模型统一改用 `enable_thinking`。
+ */
+export function dashScopeThinkingBody(mode: ReasoningPolicyMode): Record<string, unknown> | null {
+  if (mode === 'explicit-off') return { enable_thinking: false }
+  if (mode === 'explicit-on' || mode === 'always-on') return { enable_thinking: true }
+  return null
+}
+
+function policy(
+  providerType: LlmProviderType,
+  mode: ReasoningPolicyMode,
+  message: string,
+  requestBody: Record<string, unknown> = {},
+  acceptReasoningResponse = false,
+): ReasoningPolicy {
+  return { providerType, mode, requestBody, message, acceptReasoningResponse }
+}
+
+/**
+ * 支持 `enable_thinking` 的千问型号（QWEN_PREFIX 吸收 `qwen/`、`dashscope/` 等供应商前缀，`^` 只锚定一次）：
+ * - `[.-]\d`：dot 命名与破折号尺寸（qwen3.7-plus / qwen3.8-27b / qwen3-32b / qwen3-30b-a3b）；
+ * - `-(?:max|plus|flash|turbo)`：连字符名字版本（qwen3-max / qwen3-max-preview）；
+ * - 商业系列别名（qwen-max / qwen-plus / qwen-flash / qwen-turbo）。
+ * 不匹配 qwen2.5-*、qwen-long、qwen350、qwen3-coder-*、qwen3-vl-* 这类已知或不认识的命名。
+ */
+const QWEN_PREFIX = String.raw`^(?:[a-z0-9_.-]+/)*qwen-?3?`
+const QWEN_THINKING_TOGGLE = new RegExp(
+  String.raw`${QWEN_PREFIX}(?:[.-]\d|-(?:max|plus|flash|turbo)|$)`,
+)
+/** 纯思考型号：qwq、显式 thinking 变体，以及只发思考版的超大 MoE 版（qwen3.8-2.4t-a95b）。 */
+const QWEN_THINKING_ONLY = new RegExp(
+  String.raw`^(?:[a-z0-9_.-]+/)*(?:qwq|qwen-?3?.*(?:thinking|reasoner)|qwen-?3\.\d+-[a-z0-9.]+t-a\d+b$)`,
+)
+
+/**
+ * 将供应商协议和用户手填模型解析成最佳努力的非思考策略。
+ * 型号识别只用于附加已知参数；未知、推理专用和自定义模型不在客户端拦截。
+ */
+export function resolveReasoningPolicy(
+  config: Pick<LlmProviderConfig, 'baseUrl' | 'model' | 'providerType'>,
+  reasoning = false,
+): ReasoningPolicy {
+  const inferredProviderType = inferLlmProviderType(config.baseUrl, config.model)
+  // 百炼等聚合端点上换型号时，已知厂商型号优先于旧预置（例如 Qwen 预置改为 GLM）。
+  const providerType = providerTypeFromModel(config.model)
+    ?? (!config.providerType || config.providerType === 'custom' ? inferredProviderType : config.providerType)
+  const qualifiedModel = config.model.trim().toLowerCase()
+  const model = qualifiedModel.slice(qualifiedModel.lastIndexOf('/') + 1)
+  const dialect = inferProviderDialect(config.baseUrl)
+  const dashScope = isDashScopeEndpoint(config.baseUrl)
+
+  switch (providerType) {
+    case 'deepseek':
+      if (/(?:reasoner|(^|[-_.])r1(?:[-_.]|$))/.test(model)) {
+        return policy(providerType, 'reasoning-only', 'DeepSeek Reasoner/R1 属于推理专用模型，无法保证关闭思考')
+      }
+      // 百炼仅这两个 V4 固定版本支持 low；其他混合型号普通出牌保持非思考。
+      if (dashScope && /^deepseek-v4-(?:flash-0731|pro-0813)$/.test(model)) {
+        return policy(providerType, 'explicit-on', '已开启 DeepSeek 思考并按场景调整强度', {
+          reasoning_effort: reasoning ? 'high' : 'low',
+        }, true)
+      }
+      return reasoning
+        ? policy(providerType, 'explicit-on', '已开启 DeepSeek 条件思考', dashScope
+          ? (/^deepseek-v4-(?:flash|pro)(?:[.-]|$)/.test(model) ? { reasoning_effort: 'high' } : {})
+          : { thinking: { type: 'enabled' }, reasoning_effort: 'medium' })
+        : policy(providerType, 'explicit-off', '已强制关闭 DeepSeek 思考模式', dashScope
+          ? {} : { thinking: { type: 'disabled' } })
+    case 'qwen':
+      // 型号名漏识别 = 不下发 enable_thinking=false = 默认思考的型号只出思考、content 全空（qwen3-32b 实测）。
+      if (QWEN_THINKING_ONLY.test(model)) {
+        return policy(providerType, 'reasoning-only', '该千问型号始终思考，等待最终回复后解析动作')
+      }
+      // 千问 3 开源尺寸默认开启思考（qwen3-32b / qwen3-235b-a22b / qwen3.8-27b …），必须显式关闭；
+      // 商业版 qwen3.x 与 qwen-max/plus/flash/turbo 系列的混合思考同样用 enable_thinking 控制。
+      if (QWEN_THINKING_TOGGLE.test(model)) {
+        return reasoning
+          ? policy(providerType, 'explicit-on', '已开启千问条件思考', { enable_thinking: true })
+          : policy(providerType, 'explicit-off', '已强制关闭千问思考模式', {
+            enable_thinking: false,
+          })
+      }
+      // qwen3-coder 与 VL/Omni 多模态不走麻将决策的思考开关，不附加供应商参数。
+      if (/^qwen.*(?:coder|vl|omni)/.test(model)) {
+        return policy(providerType, 'naturally-off', '该千问型号按普通模型调用，不附加思考参数')
+      }
+      return policy(providerType, 'unknown', '无法确认该千问型号是否支持非思考模式')
+    case 'kimi':
+      if (/^kimi-k3(?:[.-]|$)/.test(model)) {
+        // 百炼 K3 只接受 max；不能把其它端点的 low/high 方言直接透传过去。
+        return policy(providerType, 'always-on',
+          dashScope ? '百炼 Kimi K3 始终思考且仅支持 max，无法调低强度' : 'Kimi K3 始终思考',
+          dashScope ? {} : {
+          reasoning_effort: reasoning ? 'high' : 'low',
+        })
+      }
+      if (/^kimi-k2[.-]7-code(?:[.-]|$)/.test(model) || model.includes('thinking')) {
+        return policy(providerType, 'reasoning-only', '该 Kimi 型号始终思考，等待最终回复后解析动作')
+      }
+      if (/^kimi-k2[.-](?:5|6)(?:[.-]|$)/.test(model)) {
+        return reasoning
+          ? policy(providerType, 'explicit-on', '已开启 Kimi K2.5/K2.6 条件思考', {
+            ...(dashScope ? {} : { thinking: { type: 'enabled' } }), temperature: 1, top_p: 0.95,
+          })
+          : policy(providerType, 'explicit-off', '已强制关闭 Kimi 思考模式', {
+            ...(dashScope ? {} : { thinking: { type: 'disabled' } }), temperature: 0.6, top_p: 0.95,
+          }, true)
+      }
+      if (/^(?:kimi-k2|moonshot-v1|moonshot-kimi-k2-instruct)/.test(model)) {
+        return policy(providerType, 'naturally-off', '该 Kimi 型号本身不输出思考链')
+      }
+      return policy(providerType, 'unknown', '无法确认该 Kimi 型号是否支持非思考模式')
+    case 'doubao':
+      if (model.includes('thinking')) {
+        return policy(providerType, 'explicit-off', '已强制关闭豆包思考模式', {
+          thinking: { type: 'disabled' },
+        })
+      }
+      if (/^doubao/.test(model)) {
+        return policy(providerType, 'naturally-off', '该豆包型号按非思考模型调用')
+      }
+      return policy(providerType, 'unknown', '无法确认该豆包接入点是否支持非思考模式')
+    case 'minimax':
+      if (dashScope && /^minimax-m2\.(?:1|5)(?:[.-]|$)/.test(model)) {
+        return policy(providerType, 'reasoning-only', '百炼 MiniMax M2.1/M2.5 仅思考，未提供 low 强度档')
+      }
+      if (/^minimax-m(?:1|2)(?:[.-]|$)/.test(model)) {
+        return policy(providerType, 'reasoning-only', 'MiniMax M1/M2 系列为推理模型，当前没有可靠关闭开关')
+      }
+      if (/^minimax-(?:text|01)/.test(model)) {
+        return policy(providerType, 'naturally-off', '该 MiniMax 型号本身不输出思考链')
+      }
+      return policy(providerType, 'unknown', '无法确认该 MiniMax 型号是否支持非思考模式')
+    case 'openai':
+      if (/^o(?:1|3|4)(?:[.-]|$)/.test(model)) {
+        return policy(providerType, 'reasoning-only', 'OpenAI o 系列始终思考，等待最终回复后解析动作')
+      }
+      if (/^gpt-5(?:[.-]|$)/.test(model)) {
+        return reasoning
+          ? policy(providerType, 'explicit-on', '已开启 GPT 条件思考', { reasoning_effort: 'medium' })
+          : policy(providerType, 'explicit-off', '已将 GPT 推理强度设为 none', {
+            reasoning_effort: 'none',
+          })
+      }
+      if (/^(?:gpt-4|gpt-3\.5)/.test(model)) {
+        return policy(providerType, 'naturally-off', '该 GPT 型号本身不是推理模型')
+      }
+      return policy(providerType, 'unknown', '无法确认该 OpenAI 型号是否能关闭推理')
+    case 'glm':
+      if (model.includes('thinking')) {
+        return policy(providerType, 'reasoning-only', '显式 Thinking 型号始终思考，等待最终回复后解析动作')
+      }
+      if (/^glm-5\.3-flashx?(?:[.-]|$)/.test(model)) {
+        const effort = reasoning
+          ? dialect === 'official' ? 'high' : dialect === 'orcarouter' ? 'medium' : 'low'
+          : 'low'
+        return policy(providerType, 'always-on', 'GLM-5.3 Flash 系列始终思考', {
+          reasoning_effort: effort,
+        })
+      }
+      if (/^glm-5\.3(?:[.-]|$)/.test(model)) {
+        const effort = reasoning
+          ? dialect === 'official' ? 'high' : dialect === 'orcarouter' ? 'medium' : 'low'
+          : 'low'
+        return policy(providerType, 'always-on', 'GLM-5.3 始终思考', {
+          reasoning_effort: effort,
+        })
+      }
+      if (dashScope && /^glm-5(?:\.(?:1|2))?(?:[.-]|$)/.test(model)) {
+        // GLM-5 supports non-thinking on DashScope. Keep the expensive high tier
+        // for admitted conditional reasoning instead of every ordinary discard.
+        if (model === 'glm-5' && !reasoning) {
+          return policy(providerType, 'explicit-off', '百炼 GLM-5 普通决策关闭思考')
+        }
+        return policy(providerType, 'explicit-on', '百炼 GLM 默认低强度思考，疑难时提高强度', {
+          reasoning_effort: reasoning ? 'high' : 'low',
+        }, true)
+      }
+      if (/^glm-(?:4\.(?:5|6|7)v?|5)(?:[.-]|$)/.test(model)) {
+        // GLM-4.5V/4.6V 与文本版一样支持切换；无 low 档时普通出牌保持快速模式。
+        return reasoning
+          ? policy(providerType, 'explicit-on', '已开启 GLM 条件思考', dashScope
+            ? {} : { thinking: { type: 'enabled' } })
+          : policy(providerType, 'explicit-off', '已强制关闭 GLM 思考模式', dashScope
+            ? {} : { thinking: { type: 'disabled' } })
+      }
+      if (/^glm-4(?:[.-]|$)/.test(model)) {
+        return policy(providerType, 'naturally-off', '该 GLM 型号本身不是思考模型')
+      }
+      return policy(providerType, 'unknown', '无法确认该 GLM 型号是否支持非思考模式')
+    case 'claude':
+      if (/^claude-sonnet-5(?:[.-]|$)/.test(model)) {
+        return reasoning
+          ? policy(providerType, 'explicit-on', '已开启 Claude Sonnet 5 自适应思考', {
+            thinking: { type: 'adaptive', display: 'summarized' },
+            output_config: { effort: 'medium' },
+          })
+          : policy(providerType, 'explicit-off', '已关闭 Claude Sonnet 5 自适应思考', {
+            thinking: { type: 'disabled' },
+          })
+      }
+      return policy(providerType, 'naturally-off', 'Claude 扩展思考为显式开启；当前请求不会开启')
+    default:
+      return policy(providerType, 'unknown', '自定义 OpenAI 兼容协议按用户配置直接请求')
+  }
+}

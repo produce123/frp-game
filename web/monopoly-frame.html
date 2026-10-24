@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>大富翁</title>
+<style>
+  /*
+   * 大富翁的伪横屏外壳（和 /play/noname 同一套思路，D41）。
+   *
+   * 上游是 3D 棋盘 + 房间/地图 UI，竖屏手机上按钮和棋盘都挤。
+   * 所以：**手机竖着拿 → 内容转 90° 铺满**（用户横过来看就是正常的横版界面），
+   * 电脑（或手机横着拿）→ 直接铺满，地址栏也是干净的 /games/monopoly/。
+   *
+   * 为什么不是给游戏页自己加 rotate：上游 UI 按视口尺寸排版，
+   * 直接转整页它会按竖屏排版、转完只是"竖版内容歪着放"。放进横过来的 iframe 里，
+   * iframe 的视口本身就是横的，排版/缩放/触摸坐标全按横屏算。
+   */
+  html, body { margin: 0; padding: 0; height: 100%; background: #08131f; overflow: hidden; }
+  #rot {
+    position: fixed; left: 0; top: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #game { display: block; border: 0; background: #08131f; }
+  /* 竖屏一瞬间（还没量到横屏尺寸）的兜底提示，避免黑屏 */
+  #hint {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    color: #cfd6e4; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    text-align: center; padding: 24px; pointer-events: none;
+  }
+</style>
+</head>
+<!-- data-frp-fullscreen="landscape"：点全屏时进入真横屏（screen.orientation.lock） -->
+<body data-frp-fullscreen="landscape">
+<div id="rot"><iframe id="game" allow="fullscreen; autoplay" allowfullscreen title="大富翁"></iframe></div>
+<div id="hint">正在打开大富翁…</div>
+<script type="module">
+  const rot = document.getElementById('rot');
+  const game = document.getElementById('game');
+  const hint = document.getElementById('hint');
+
+  /*
+   * 好友从平台点「进入」时地址上会带 `?join=XXXXXX`（上游房间号，最多 12 字符）。
+   * 外壳只是把画面横过来，真正读房号的是游戏页的
+   * `online-room-panel.vue`（`joinRoom(..., { allowCreate:false })`）。
+   * ⚠️ 整串 query 原样转发，别只挑一个参数 —— 丢了 join 的表现是
+   * "点好友的房间只进到大厅、没有自动进房"（无名杀踩过同一个坑）。
+   */
+  const qs = location.search || '';
+  game.src = '/games/monopoly/' + qs;
+
+  /* 只在粗指针设备（手机/平板）上转。判据只用 `(pointer: coarse)` ——
+   * 带触摸屏的 Windows 笔记本 maxTouchPoints 是 10，不能拿它当手机。 */
+  const coarse = matchMedia('(pointer: coarse)').matches;
+
+  function layout() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const rotate = coarse && vh > vw;
+
+    if (rotate) {
+      const w = vh;   // 逻辑视口 = 横过来的那一块（宽 = 屏高）
+      const h = vw;
+      game.style.width = w + 'px';
+      game.style.height = h + 'px';
+      rot.style.width = w + 'px';
+      rot.style.height = h + 'px';
+      rot.style.transform = `translate(${vw}px, 0) rotate(90deg)`;
+    } else {
+      game.style.width = vw + 'px';
+      game.style.height = vh + 'px';
+      rot.style.width = vw + 'px';
+      rot.style.height = vh + 'px';
+      rot.style.transform = '';
+    }
+    hint.style.display = 'none';
+  }
+
+  layout();
+  addEventListener('resize', layout);
+  addEventListener('orientationchange', () => setTimeout(layout, 120));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);
+
+  /* 电脑上没必要走 iframe 这一层：直接回真页面。 */
+  if (!coarse) location.replace('/games/monopoly/' + qs);
+</script>
+<script defer src="/shared/ui/fullscreen.js"></script>
+</body>
+</html>

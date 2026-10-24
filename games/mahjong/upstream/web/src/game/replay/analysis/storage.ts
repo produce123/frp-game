@@ -1,0 +1,513 @@
+// 分析区存储（方案 §9.2、§9.3、§9.4、§9.5）。
+//
+// 与展示回放存储（../storage.ts）的关系：
+// - 独立数据库、独立驱动、**独立失败域**：分析侧的写入失败只停用分析侧，绝不影响展示回放的读写（§9.5）。
+// - 生命周期绑定场次：展示回放被裁掉后，其分析块同步删除（§9.2），由 reconcileLifecycle() 执行。
+// - 读取依赖展示回放提供公开字段（§9.3），因此不建立"展示回放已删、分析区仍悬空"的状态。
+//
+// 本模块不产生任何"必须成功"的副作用：所有对外方法都不抛错，失败只降级并记录缺失（§9.4、§9.5）。
+import {
+  createAnalysisBlockWriter,
+  decodeAnalysisBlock,
+  mayStoreRawBlock,
+  utf8Bytes,
+  type AnalysisBlockPart,
+} from './codec'
+import type {
+  AnalysisAreaStatus, AnalysisCompleteness,
+} from './types'
+import {
+  createAnalysisIndexedDbDriver,
+  createAnalysisMemoryDriver,
+  type AnalysisBlockMeta,
+  type AnalysisGapRecord,
+  type AnalysisMatchMeta,
+  type AnalysisStoredConfig,
+  type AnalysisStoreDriver,
+} from './idb'
+import { createStorageCapability, type StorageCapability } from './capability'
+import { reassembleFragments, splitOversizedPart } from './fragments'
+import { createBudgetLease, type BudgetLease } from './leases'
+
+/** 默认字节预算：可配置软上限候选，正式默认值待设备实测确定（§9.4）。 */
+export const ANALYSIS_DEFAULT_BUDGET_BYTES = 200 * 1024 * 1024
+/** 压缩不可用时允许落库的 raw 字节上限（按场累计）。 */
+export const ANALYSIS_DEFAULT_RAW_BUDGET_BYTES = 8 * 1024 * 1024
+
+export interface AnalysisStorageOptions {
+  driver?: AnalysisStoreDriver | null
+  maxBytes?: number
+  rawBudgetBytes?: number
+  now?: () => number
+  onError?: (detail: string) => void
+  /** 注入 `navigator.storage`（单测用；默认取全局，缺失即视为不支持）。 */
+  storageManager?: Parameters<typeof createStorageCapability>[0]['storage']
+  /** 注入跨标签页预算预留（单测用；默认走 localStorage，两页共享同一份）。 */
+  lease?: BudgetLease
+  /** 关掉"创建时读一次 estimate()"（单测里避免多余的异步调用）。 */
+  probeEstimateOnCreate?: boolean
+}
+
+/** 写入失败原因。 */
+export type AnalysisWriteFailure = 'unavailable' | 'budget' | 'raw-budget' | 'empty' | 'paused'
+
+/**
+ * 写入结果：单一形状（不用判别联合）——本工具链对 await 之后的联合收窄不可靠。
+ * ok=false 时 reason 必填，ok=true 时 reason 为 null；`detail` 说明**最初**是哪一步把这场暂停的
+ * （否则只会看到笼统的 'paused'，线上实测时就吃过这个亏）。
+ */
+export interface AnalysisWriteResult {
+  ok: boolean
+  reason: AnalysisWriteFailure | null
+  storedBytes: number
+  blocks: number
+  paused: boolean
+  detail?: string
+}
+
+export interface AnalysisStorage {
+  /** 分析区是否可用（浏览器不支持、驱动缺失或已因失败停用时为 false）。 */
+  available(): boolean
+  /**
+   * 追加一批记录：内部按 32–64KiB 分批 → 压缩 → 不可变追加。
+   * 预算不足或 raw 超限时**不落库**并留痕，不抛错、不阻塞调用方（§9.3、§9.4）。
+   */
+  write(matchId: string, info: { rulesetId: string }, parts: AnalysisBlockPart[]): Promise<AnalysisWriteResult>
+  /** 读取某场全部分析记录（按块序号拼装；块缺失/坏块时给出不完整标记）。 */
+  read(matchId: string): Promise<{ parts: AnalysisBlockPart[]; meta: AnalysisMatchMeta | null; complete: boolean; reason?: string }>
+  status(matchId: string): Promise<AnalysisAreaStatus>
+  /** 登记/续期配置引用：同一版本配置被多场共享时只存一份，零引用才回收（§9.4）。 */
+  retainConfig(matchId: string, config: { id: string; value: unknown }): Promise<void>
+  readConfigs(matchId: string): Promise<unknown[]>
+  /** 标记"最近查看"：只有明确操作会调用它；后台写入不刷新（§9.4）。 */
+  markViewed(matchId: string): Promise<void>
+  /** 单独删除分析区、保留展示回放；留下"已删除"墓碑供列表显示（§9.2）。 */
+  removeAnalysis(matchId: string): Promise<void>
+  /** 展示回放已不存在的场次，其分析区同步删除（§9.2）；返回被清理的场次。 */
+  reconcileLifecycle(existingMatchIds: string[]): Promise<string[]>
+  /** 按 §9.4 顺序淘汰：分析区优先、按最近查看时间、受保护场次不动。 */
+  evictToBudget(options?: { budgetBytes?: number; protect?: string[] }): Promise<{ removed: string[]; freedBytes: number }>
+  usage(): Promise<{ bytes: number; matches: number }>
+  setBudget(bytes: number): void
+  budget(): number
+  /** 记录缺失范围与原因（容量／队列／写入失败都必须留痕，§9.5）。 */
+  noteGap(matchId: string, gap: AnalysisGapRecord): Promise<void>
+  /**
+   * 浏览器存储能力（§9.4、§10.11）：持久化状态与同源容量估算。
+   * 首次启用录制时申请一次持久化；压力高时**只下调**字节预算，不按估算覆盖逐块账本。
+   */
+  capability(): StorageCapability
+  close(): void
+}
+
+function emptyMeta(matchId: string, rulesetId: string, at: number): AnalysisMatchMeta {
+  return {
+    matchId, rulesetId, createdAt: at, updatedAt: at, lastViewedAt: at,
+    status: 'complete', parts: 0, storedBytes: 0, blockCount: 0, nextSequence: 1, gaps: [], configIds: [],
+  }
+}
+
+/**
+ * 创建分析区存储。
+ * 传入 driver 便于单测；未传时使用 IndexedDB（环境不支持则不可用，所有方法安全空转）。
+ */
+export function createAnalysisStorage(options: AnalysisStorageOptions = {}): AnalysisStorage {
+  const now = options.now ?? (() => Date.now())
+  let driver: AnalysisStoreDriver | null = options.driver === undefined
+    ? createAnalysisIndexedDbDriver()
+    : options.driver
+  let maxBytes = Math.max(0, options.maxBytes ?? ANALYSIS_DEFAULT_BUDGET_BYTES)
+  const rawBudgetBytes = Math.max(0, options.rawBudgetBytes ?? ANALYSIS_DEFAULT_RAW_BUDGET_BYTES)
+  let broken = false
+  /** 因预算/raw 限制或写入失败而暂停的场次；同时记住**最初**的原因（诊断必需）。 */
+  const paused = new Map<string, string>()
+  /**
+   * 浏览器存储能力（§9.4）：压力高时把字节预算**下调**到剩余空间内（留临时写入余量）。
+   * 只下调不上调：estimate() 是同源估算，不能拿来扩大本应用的逐块账本。
+   */
+  const capability = createStorageCapability({
+    ...(options.storageManager !== undefined ? { storage: options.storageManager } : {}),
+    onBudgetPressure: ({ suggestedBytes }) => { maxBytes = Math.min(maxBytes, Math.max(1024 * 1024, suggestedBytes)) },
+  })
+  /**
+   * 跨标签页预算预留（§9.4）：同源多页共享同一份预算，**不能只靠各页自己的计数**。
+   * 预留只覆盖在途写入；别的页拿着过期预留说明它已经走了，会在读取时被回收。
+   */
+  const lease: BudgetLease = options.lease ?? createBudgetLease()
+  // §9.4「启动、批量导入／清理后及有节制的定期检查调用 estimate()」：启动这一次在这里做
+  // （每次加载只问一次，不跟着写入频率走；失败只记快照，不打断任何流程）。
+  if (options.probeEstimateOnCreate !== false) void capability.refreshEstimate()
+
+  function pause(matchId: string, detail: string) {
+    if (!paused.has(matchId)) paused.set(matchId, detail)
+  }
+
+  function report(detail: string) {
+    try { options.onError?.(detail) } catch { /* 失败通知自身也必须安全（§9.5） */ }
+  }
+
+  /** 所有驱动调用的统一守卫：不抛错、失败即停用本实例，并通知一次（§9.5）。 */
+  async function guard<T>(label: string, run: (driver: AnalysisStoreDriver) => Promise<T>, fallback: T): Promise<T> {
+    if (!driver || broken) return fallback
+    try {
+      return await run(driver)
+    } catch (error) {
+      broken = true
+      const detail = `${label} 失败：${String(error).slice(0, 160)}`
+      report(detail)
+      // 只停用分析侧；展示回放存储是另一个实例，不受影响（§9.5）
+      return fallback
+    }
+  }
+
+  const readMeta = (matchId: string) => guard('读取分析元数据', (d) => d.getMatchMeta(matchId), null)
+  const putMeta = (meta: AnalysisMatchMeta) => guard('写入分析元数据', async (d) => { await d.putMatchMeta(meta) }, undefined)
+
+  /** 释放某场持有的配置引用；零引用时回收（§9.4）。 */
+  async function releaseConfigs(matchId: string, configIds: string[]) {
+    for (const id of configIds) {
+      await guard('释放配置引用', async (d) => {
+        const config = await d.getConfig(id)
+        if (!config) return
+        const owners = config.owners.filter((owner) => owner !== matchId)
+        if (owners.length) await d.putConfig({ ...config, owners })
+        else await d.deleteConfig(id)
+      }, undefined)
+    }
+  }
+
+  async function totalBytes(): Promise<number> {
+    return guard('统计分析区字节', async (d) => {
+      const metas = await d.listMatchMetas()
+      return metas.reduce((sum, meta) => sum + meta.storedBytes, 0)
+    }, 0)
+  }
+
+  /**
+   * 按 §9.4 顺序淘汰：分析区优先、按最近查看时间、受保护场次不动。
+   *
+   * 跨标签页协调（§9.4「清理应跨实例协调」）：同一时刻只让一个实例做淘汰 —— 拿到令牌才动手，
+   * 拿不到就等一下再试（淘汰很快）；仍然拿不到就**跳过**这一次，让调用方按"预算不足"如实降级，
+   * 而不是两页各删各的、把彼此的账本和引用计数搞乱。令牌沿用同一套 ttl，那一页崩了会自己过期。
+   */
+  async function evictToBudget(options2: { budgetBytes?: number; protect?: string[] } = {}) {
+    let acquired = lease.tryAcquireEviction()
+    for (let attempt = 0; !acquired && attempt < 5; attempt += 1) {
+      await new Promise<void>((resolve) => { setTimeout(() => resolve(), 20) })
+      acquired = lease.tryAcquireEviction()
+    }
+    if (!acquired) return { removed: [] as string[], freedBytes: 0, skippedByOtherTab: true }
+    try {
+      const budget = Math.max(0, options2.budgetBytes ?? maxBytes)
+      const protect = new Set(options2.protect ?? [])
+      let used = await totalBytes()
+      if (used <= budget) return { removed: [] as string[], freedBytes: 0 }
+      const metas: AnalysisMatchMeta[] = await guard('列出分析元数据', (d) => d.listMatchMetas(), [])
+      // §9.4 顺序：分析区优先、按最近查看／分析使用时间淘汰、不动受保护与正在写入的场次
+      const candidates = metas
+        .filter((meta) => meta.status !== 'deleted' && meta.storedBytes > 0 && !protect.has(meta.matchId))
+        .sort((a, b) => a.lastViewedAt - b.lastViewedAt || a.createdAt - b.createdAt)
+      const removed: string[] = []
+      let freedBytes = 0
+      for (const meta of candidates) {
+        if (used <= budget) break
+        await releaseConfigs(meta.matchId, meta.configIds)
+        await guard('淘汰分析数据', (d) => d.deleteMatchData(meta.matchId), undefined)
+        paused.delete(meta.matchId)
+        used -= meta.storedBytes
+        freedBytes += meta.storedBytes
+        removed.push(meta.matchId)
+      }
+      return { removed, freedBytes }
+    } finally {
+      lease.releaseEviction()
+    }
+  }
+
+  return {
+    available() { return Boolean(driver) && !broken },
+
+    async write(matchId, info, parts) {
+      if (!driver || broken || !parts.length) {
+        const reason: AnalysisWriteFailure = broken || !driver ? 'unavailable' : 'empty'
+        return { ok: false, reason, storedBytes: 0, blocks: 0, paused: paused.has(matchId), detail: paused.get(matchId) }
+      }
+      const pausedDetail = paused.get(matchId)
+      if (pausedDetail) return { ok: false, reason: 'paused', storedBytes: 0, blocks: 0, paused: true, detail: pausedDetail }
+
+      let meta = await readMeta(matchId) ?? emptyMeta(matchId, info.rulesetId, now())
+      // 墓碑（已删除）遇到新写入必须**复活**：否则写进去的记录永远显示「已删除」，
+      // 而 `noteGap` 也会继续把状态压回 deleted（§9.2 的四态就再也回不去）。
+      // 计数器归零是必须的：墓碑对应的块早已被 deleteMatchData 清空。
+      // `configIds` 保留刚读取到的那份 —— 调用方（如导入）通常在本函数之前已登记了配置引用。
+      if (meta.status === 'deleted') {
+        meta = { ...meta, status: 'complete' as AnalysisCompleteness, parts: 0, storedBytes: 0, blockCount: 0, gaps: [] }
+        await putMeta(meta)
+      }
+      const writer = createAnalysisBlockWriter()
+      let storedBytes = 0
+      let blocks = 0
+      // 写入期间保持心跳：否则别的标签页会以为这页已经走了，回收我们**在途**的预留（§9.4）
+      lease.startHeartbeat()
+      try {
+
+      // 片段化（§9.3）：单条超大记录（例如模型返回的超长回答）先切成有界片段，
+      // 否则"按字节分批"会退化成一个巨块，队列峰值与解压开销都不可控。原文逐字保留，读取侧重组。
+      const expanded: AnalysisBlockPart[] = []
+      for (const part of parts) expanded.push(...splitOversizedPart(part))
+      for (const part of expanded) {
+        writer.push(part)
+        // 按目标字节分批：达到目标就刷一块（压缩在写事务之前完成，见 codec）
+        if (!writer.shouldFlush()) continue
+        const outcome = await flushBlock(writer, meta)
+        if (outcome.failure) return outcome.failure
+        storedBytes += outcome.storedBytes
+        blocks += outcome.blocks
+        meta = outcome.meta
+      }
+      const tail = await flushBlock(writer, meta)
+      if (tail.failure) return tail.failure
+      storedBytes += tail.storedBytes
+      blocks += tail.blocks
+
+      const updated: AnalysisMatchMeta = {
+        ...tail.meta,
+        updatedAt: now(),
+      }
+      await putMeta(updated)
+      return { ok: true, reason: null, storedBytes, blocks, paused: false }
+      } finally {
+        lease.release()
+        lease.stopHeartbeat()
+      }
+
+      /**
+       * 刷一块：先做预算与 raw 判定，再不可变追加；任一步失败即留痕并暂停该场。
+       * 返回单一形状（不用判别联合）：本工具链对 await 之后的联合收窄不可靠。
+       */
+      async function flushBlock(
+        target: ReturnType<typeof createAnalysisBlockWriter>,
+        current: AnalysisMatchMeta,
+      ): Promise<{ meta: AnalysisMatchMeta; storedBytes: number; blocks: number; failure: AnalysisWriteResult | null }> {
+        const block = await target.flush(current.nextSequence)
+        if (!block) return { meta: current, storedBytes: 0, blocks: 0, failure: null }
+
+        const pauseWith = async (detail: string, extraGap: AnalysisGapRecord) => {
+          pause(matchId, detail)
+          const next: AnalysisMatchMeta = {
+            ...current, status: 'partial' as AnalysisCompleteness, updatedAt: now(),
+            gaps: [...current.gaps, extraGap],
+          }
+          await putMeta(next)
+          return {
+            meta: next, storedBytes: 0, blocks: 0,
+            failure: { ok: false, reason: 'paused' as AnalysisWriteFailure, storedBytes: 0, blocks: 0, paused: true, detail },
+          }
+        }
+
+        // 压缩不可用/失败时退化为 raw：**只有 raw 块**才受 raw 预算限制（§9.3）
+        if (block.codec === 'raw' && !mayStoreRawBlock(block, { rawBudgetBytes })) {
+          return await pauseWith(
+            `raw-block-over-budget(block=${block.storedBytes},rawBudget=${rawBudgetBytes})`,
+            { scope: 'analysis', reason: 'raw-block-over-budget' },
+          )
+        }
+        // 字节预算：先按 §9.4 顺序淘汰其它分析区，再决定是否暂停本场。
+        // **别的标签页在途的预留要算进来**（§9.4：跨实例协调，不能只看自己这一页的计数）。
+        const used = await totalBytes()
+        const inFlight = lease.othersReserved()
+        if (used + inFlight + block.storedBytes > maxBytes) {
+          await evictToBudget({ protect: [matchId], budgetBytes: Math.max(0, maxBytes - inFlight) })
+          const after = await totalBytes()
+          if (after + lease.othersReserved() + block.storedBytes > maxBytes) {
+            // 记下当时的数字：只报"预算不足"没法判断是账本异常还是真的满了
+            return await pauseWith(
+              `budget-exceeded(used=${after},inflight=${lease.othersReserved()},budget=${maxBytes},block=${block.storedBytes})`,
+              { scope: 'analysis', reason: 'budget-exceeded' },
+            )
+          }
+        }
+        // 写入前取一份在途预留（别的页据此让路），写完立刻释放：预留只覆盖在途字节
+        lease.reserve(block.storedBytes)
+        const appended = await guard('追加分析块', (d) => d.putBlock({
+          id: `${matchId}#${block.sequence}`,
+          matchId,
+          sequence: block.sequence,
+          codec: block.codec,
+          rawBytes: block.rawBytes,
+          storedBytes: block.storedBytes,
+          checksum: block.checksum,
+          parts: block.parts,
+          payload: block.payload,
+        }), false)
+        lease.release()
+        if (!appended) {
+          // 驱动失败（已停用）或序号已被占用：都算这一块没落成功，留痕并暂停本场（§9.5）。
+          // 这两种情况必须分开报：序号冲突通常意味着元数据没写进去（序号没前进），而不是空间问题。
+          const reason = broken ? 'write-failed' : 'sequence-occupied'
+          return await pauseWith(
+            broken ? `write-failed(sequence=${block.sequence})` : `sequence-occupied(sequence=${block.sequence})`,
+            { scope: 'analysis', reason, from: block.sequence },
+          )
+        }
+
+        const next: AnalysisMatchMeta = {
+          ...current,
+          nextSequence: current.nextSequence + 1,
+          parts: current.parts + block.parts,
+          storedBytes: current.storedBytes + block.storedBytes,
+          blockCount: current.blockCount + 1,
+          updatedAt: now(),
+        }
+        await putMeta(next)
+        // 元数据没写成功 ⇒ 序号不会前进，下一次会撞同一个序号（线上实测的"暂停"根因之一）：
+        // 这里必须当场暂停，而不是带着过期序号继续写（§9.5：失败要留痕，不能静默截断）。
+        if (broken) {
+          return await pauseWith(
+            `meta-write-failed(sequence=${block.sequence})`,
+            { scope: 'analysis', reason: 'meta-write-failed', from: block.sequence },
+          )
+        }
+        return { meta: next, storedBytes: block.storedBytes, blocks: 1, failure: null }
+      }
+    },
+
+    async read(matchId) {
+      const meta = await readMeta(matchId)
+      if (!meta) return { parts: [], meta: null, complete: false, reason: 'no-analysis' }
+      const metas: AnalysisBlockMeta[] = await guard('列出分析块', (d) => d.listBlockMetas(matchId), [])
+      const parts: AnalysisBlockPart[] = []
+      for (const blockMeta of metas) {
+        const record = await guard('读取分析块', (d) => d.getBlock(matchId, blockMeta.sequence), null)
+        if (!record) return { parts, meta, complete: false, reason: 'block-missing' }
+        const decoded = await decodeAnalysisBlock({
+          sequence: record.sequence, codec: record.codec, rawBytes: record.rawBytes,
+          storedBytes: record.storedBytes, checksum: record.checksum, parts: record.parts, payload: record.payload,
+        })
+        if (decoded.error || !decoded.parts) return { parts, meta, complete: false, reason: decoded.error ?? 'parse-failed' }
+        parts.push(...decoded.parts)
+      }
+      // 片段重组（§9.3）：缺片 / 坏片必须如实把这一场标成不完整，不能给半份数据
+      const rebuilt = reassembleFragments(parts)
+      const complete = meta.status === 'complete' && metas.length === meta.blockCount && !rebuilt.incomplete.length
+      return {
+        parts: rebuilt.parts, meta, complete,
+        ...(complete ? {} : { reason: rebuilt.incomplete.length ? 'fragment-incomplete' : 'incomplete' }),
+      }
+    },
+
+    async status(matchId) {
+      if (!driver || broken) return 'disabled'
+      const meta = await readMeta(matchId)
+      if (!meta) return 'disabled'
+      return meta.status
+    },
+
+    async retainConfig(matchId, config) {
+      await guard('登记配置引用', async (d) => {
+        const existing = await d.getConfig(config.id)
+        if (existing) {
+          if (!existing.owners.includes(matchId)) await d.putConfig({ ...existing, owners: [...existing.owners, matchId] })
+        } else {
+          await d.putConfig({
+            id: config.id, owners: [matchId], value: config.value,
+            storedBytes: utf8Bytes(JSON.stringify(config.value)),
+          })
+        }
+        // 无论配置是否已存在，都要把 id 记进本场清单：否则读取侧按清单取不到共享配置
+        // （§9.4 的「A、B 两场共享模板」场景就是靠这条闭合引用）。
+        const meta = await d.getMatchMeta(matchId)
+        if (!meta) {
+          // 首次登记常常发生在写入任何分块之前（beginMatch 就是这种情形）：这里不建元数据，
+          // 因为引用关系的权威来源是 owners 表（读取侧按 owners 取），元数据里的清单只是顺带记录。
+          return
+        }
+        if (!meta.configIds.includes(config.id)) {
+          await d.putMatchMeta({ ...meta, configIds: [...meta.configIds, config.id] })
+        }
+      }, undefined)
+    },
+
+    async readConfigs(matchId) {
+      // 按 owners 表取：那才是引用关系的**权威来源**。元数据里的 configIds 只是顺带记录，
+      // 而引用登记常常发生在元数据创建之前（beginMatch 早于任何分块写入），按清单取会漏。
+      const configs: AnalysisStoredConfig[] = await guard('读取配置区', (d) => d.listConfigs(), [])
+      return configs.filter((config) => config.owners.includes(matchId)).map((config) => config.value)
+    },
+
+    async markViewed(matchId) {
+      const meta = await readMeta(matchId)
+      if (!meta) return
+      if (meta.status === 'deleted') return
+      await putMeta({ ...meta, lastViewedAt: now() })
+    },
+
+    async removeAnalysis(matchId) {
+      const meta = await readMeta(matchId)
+      if (!meta) return
+      await guard('删除分析数据', (d) => d.deleteMatchData(matchId), undefined)
+      await releaseConfigs(matchId, meta.configIds)
+      paused.delete(matchId)
+      // 留墓碑：列表要能显示「已删除」，且不再计入字节账本（§9.2）
+      await putMeta({ ...meta, status: 'deleted', parts: 0, storedBytes: 0, blockCount: 0, nextSequence: 1, gaps: [], configIds: [], updatedAt: now() })
+      // 清理后按 §9.4 复检一次同源容量（有节制的检查，不是每次写入都问）
+      void capability.refreshEstimate()
+    },
+
+    async reconcileLifecycle(existingMatchIds) {
+      const existing = new Set(existingMatchIds)
+      const metas: AnalysisMatchMeta[] = await guard('列出分析元数据', (d) => d.listMatchMetas(), [])
+      const removed: string[] = []
+      for (const meta of metas) {
+        if (existing.has(meta.matchId)) continue
+        // 展示回放已不在：分析区不得比它活得更久（§9.2）
+        await releaseConfigs(meta.matchId, meta.configIds)
+        await guard('清理悬空分析', (d) => d.deleteMatchData(meta.matchId), undefined)
+        paused.delete(meta.matchId)
+        removed.push(meta.matchId)
+      }
+      return removed
+    },
+
+    async evictToBudget(options2 = {}) {
+      return evictToBudget(options2)
+    },
+
+    async usage() {
+      const metas: AnalysisMatchMeta[] = await guard('列出分析元数据', (d) => d.listMatchMetas(), [])
+      return {
+        bytes: metas.reduce((sum, meta) => sum + meta.storedBytes, 0),
+        matches: metas.filter((meta) => meta.status !== 'deleted').length,
+      }
+    },
+
+    setBudget(bytes) { maxBytes = Math.max(0, bytes) },
+    budget() { return maxBytes },
+
+    async noteGap(matchId, gap) {
+      const meta = await readMeta(matchId)
+      if (!meta) return
+      await putMeta({
+        ...meta,
+        status: meta.status === 'deleted' ? 'deleted' : 'partial',
+        gaps: [...meta.gaps, gap],
+        updatedAt: now(),
+      })
+    },
+
+    capability() { return capability },
+
+    close() {
+      // 关闭这一页时主动释放预留，别的标签页不必等 ttl 才回收（§9.4）
+      lease.release()
+      lease.stopHeartbeat()
+      try { driver?.close() } catch { /* 关闭失败无需上报 */ }
+      driver = null
+    },
+  }
+}
+
+/** 无 IDB 环境下的兜底实例（内存）：便于测试与"分析关闭"路径复用同一接口。 */
+export function createAnalysisMemoryStorage(options: Omit<AnalysisStorageOptions, 'driver'> = {}): AnalysisStorage {
+  return createAnalysisStorage({ ...options, driver: createAnalysisMemoryDriver() })
+}

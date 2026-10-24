@@ -1,0 +1,74 @@
+{
+	"appId": "com.fatpaper.minemonopoly.mapeditor",
+	"asar": true,
+	"productName": "MineMonopoly Map Editor",
+	"publish": [
+		{
+			"provider": "generic",
+			"url": "https://github.com/FatPaper-1874/mine-monopoly/releases/latest/download/"
+		}
+	],
+	"fileAssociations": [
+		{
+			"ext": ["fpmap"],
+			"name": "MineMonopoly Map Source File",
+			"description": "MineMonopoly Source Map File",
+			"icon": "build/fpmap.ico",
+			"role": "Editor",
+			"isPackage": true
+		}
+	],
+	"releaseInfo": {
+		"releaseNotesFile": "build/release-notes.md"
+	},
+	"directories": {
+		"output": "dist/electron/${version}"
+	},
+	"files": ["dist/frontend", "!dist/frontend/**/*.gz", "dist-electron"],
+	"mac": {
+		"target": ["dmg", "zip"],
+		"artifactName": "${productName}-Mac-${version}-Installer.${ext}",
+		"hardenedRuntime": true,
+		"entitlements": "build/entitlements.mac.plist",
+		"entitlementsInherit": "build/entitlements.mac.plist"
+	},
+	"dmg": {
+		"window": {
+			"width": 540,
+			"height": 380
+		},
+		"contents": [
+			{
+				"x": 144,
+				"y": 150
+			},
+			{
+				"x": 396,
+				"y": 150,
+				"type": "link",
+				"path": "/Applications"
+			}
+		]
+	},
+	"win": {
+		"target": [
+			{
+				"target": "nsis",
+				"arch": ["x64"]
+			}
+		],
+		"artifactName": "${productName}-Windows-${version}-Setup.${ext}"
+	},
+	"nsis": {
+		"oneClick": false,
+		"perMachine": false,
+		"allowToChangeInstallationDirectory": true,
+		"deleteAppDataOnUninstall": false,
+		"differentialPackage": true,
+		"guid": "minemonopoly-map-editor"
+	},
+	"linux": {
+		"target": ["AppImage"],
+		"artifactName": "${productName}-Linux-${version}.${ext}"
+	}
+}

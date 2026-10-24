@@ -1,0 +1,52 @@
+{
+	"name": "@mine-monopoly/client",
+	"author": "Fat_Paper",
+	"description": "Mine-Monopoly的客户端",
+	"private": true,
+	"version": "1.3.4",
+	"type": "module",
+	"main": "dist-electron/main.js",
+	"scripts": {
+		"dev": "vite --host",
+		"build": "node ./scripts/extract-changelog.js && vite build && electron-builder",
+		"build:electron": "node ./scripts/extract-changelog.js && vite build && electron-builder",
+		"build:web": "node ./scripts/extract-changelog.js && vite build --mode web",
+		"build:capacitor": "vite build --mode capacitor",
+		"build:capacitor:ota": "node ./scripts/build-capacitor-ota.js",
+		"dev:capacitor": "vite --host 0.0.0.0",
+		"cap:sync": "npx cap sync",
+		"cap:copy": "npx cap copy",
+		"cap:open": "npx cap open android",
+		"cap:android": "npm run build:capacitor && npx cap copy && npx cap sync",
+		"cap:dev": "npx cap copy && npx cap sync && npm run dev:capacitor",
+		"check": "vue-tsc --noEmit",
+		"electron": "electron .",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@capacitor/core": "^8.4.0",
+		"@capacitor/status-bar": "^8.0.2",
+		"@capgo/capacitor-updater": "^8.49.0",
+		"electron-log": "^5.4.3",
+		"electron-updater": "^6.6.2",
+		"gsap": "^3.12.7"
+	},
+	"devDependencies": {
+		"@capacitor/android": "^8.4.0",
+		"@capacitor/cli": "^8.4.0",
+		"@mine-monopoly/env": "workspace:*",
+		"@mine-monopoly/types": "workspace:*",
+		"@mine-monopoly/ui": "workspace:*",
+		"@mine-monopoly/utils": "workspace:*",
+		"@types/howler": "^2.2.12",
+		"cannon-es": "^0.20.0",
+		"electron": "37.2.6",
+		"electron-builder": "26.0.12",
+		"eventemitter3": "^5.0.0",
+		"howler": "^2.2.4",
+		"html-to-image": "^1.11.11",
+		"marked": "^18.0.3",
+		"peerjs": "^1.5.4",
+		"vue-advanced-cropper": "^2.8.9"
+	}
+}

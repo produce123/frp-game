@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@mine-monopoly/style 预览</title>
+  <link rel="stylesheet" href="dist/index.css">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      padding: 2.5rem 1.25rem;
+    }
+
+    .container {
+      max-width: 75rem;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 2.5rem;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      color: #333;
+      margin-bottom: 0.5rem;
+    }
+
+    header p {
+      color: #666;
+    }
+
+    section {
+      background: white;
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      box-shadow: 0 0.125rem 0.5rem rgba(0, 0, 0, 0.08);
+    }
+
+    section h2 {
+      font-size: 1.25rem;
+      margin-bottom: 1rem;
+      padding-bottom: 0.75rem;
+      border-bottom: 0.125rem solid #eee;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+      gap: 1rem;
+    }
+
+    .swatch {
+      border-radius: 0.5rem;
+      overflow: hidden;
+      border: 0.0625rem solid #e0e0e0;
+    }
+
+    .swatch-color {
+      height: 5rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      color: rgba(0, 0, 0, 0.6);
+      text-shadow: 0 0.0625rem 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .swatch-info {
+      padding: 0.75rem;
+      background: white;
+      font-size: 0.75rem;
+    }
+
+    .swatch-info .name {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 0.25rem;
+    }
+
+    .swatch-info .value {
+      color: #666;
+      font-family: monospace;
+    }
+
+    .spacing-demo {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      flex-wrap: wrap;
+    }
+
+    .spacing-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .spacing-box {
+      background: var(--fp-color-primary);
+      border-radius: 0.25rem;
+    }
+
+    .shadow-demo {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(9.375rem, 1fr));
+      gap: 1.25rem;
+    }
+
+    .shadow-item {
+      padding: 1.25rem;
+      background: white;
+      border-radius: 0.5rem;
+      text-align: center;
+    }
+
+    .layer-demo {
+      position: relative;
+      height: 7.5rem;
+      background: #eee;
+      border-radius: 0.5rem;
+      overflow: hidden;
+    }
+
+    .layer-item {
+      position: absolute;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 0.75rem;
+      font-weight: bold;
+      border-radius: 0.25rem;
+    }
+
+    .texture-demo {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(11.25rem, 1fr));
+      gap: 1rem;
+    }
+
+    .texture-item {
+      padding: 2.5rem 1.25rem;
+      border-radius: 0.75rem;
+      text-align: center;
+      font-weight: 600;
+    }
+
+    .felt-demo {
+      background: var(--fp-color-bg-light);
+      background-image: var(--fp-texture-felt);
+      box-shadow: var(--fp-shadow-card);
+      border-radius: 0.8rem;
+    }
+
+    .stitch-demo {
+      position: relative;
+      padding: 1.5rem;
+      background: #fff8e1;
+      background-image: var(--fp-texture-felt);
+      border-radius: 0.8rem;
+      box-shadow: var(--fp-shadow-card);
+    }
+
+    .stitch-demo::before {
+      content: '';
+      position: absolute;
+      top: 0.4rem;
+      left: 0.4rem;
+      right: 0.4rem;
+      bottom: 0.4rem;
+      border: 0.125rem dashed rgba(0, 0, 0, 0.08);
+      border-radius: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>@mine-monopoly/style</h1>
+      <p>Fatpaper 统一样式变量系统预览</p>
+    </header>
+
+    <!-- 品牌色 -->
+    <section>
+      <h2>品牌色</h2>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-primary);">Primary</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-primary</div>
+            <div class="value">#ff8f00</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-secondary);">Secondary</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-secondary</div>
+            <div class="value">#ffa000</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-tertiary);">Tertiary</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-tertiary</div>
+            <div class="value">#ffc10f</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 语义色 -->
+    <section>
+      <h2>语义色</h2>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-success);">Success</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-success</div>
+            <div class="value">#67c23a</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-warning);">Warning</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-warning</div>
+            <div class="value">#e6a23c</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-error);">Error</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-error</div>
+            <div class="value">#f56c6c</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-info);">Info</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-info</div>
+            <div class="value">#909399</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 背景色 -->
+    <section>
+      <h2>背景色</h2>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-bg);">BG</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-bg</div>
+            <div class="value">#ffcc80</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-bg-light);">BG Light</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-bg-light</div>
+            <div class="value">#fff8e1</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-bg-success);">BG Success</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-bg-success</div>
+            <div class="value">#e1f3d8</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-bg-warning);">BG Warning</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-bg-warning</div>
+            <div class="value">#faecd8</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-bg-error);">BG Error</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-bg-error</div>
+            <div class="value">#fde2e2</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 文字色 -->
+    <section>
+      <h2>文字色</h2>
+      <div class="grid">
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-text-primary); color: white;">Primary</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-text-primary</div>
+            <div class="value">#ff8800</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-text-secondary);">Secondary</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-text-secondary</div>
+            <div class="value">#606266</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-text-placeholder);">Placeholder</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-text-placeholder</div>
+            <div class="value">#c0c4cc</div>
+          </div>
+        </div>
+        <div class="swatch">
+          <div class="swatch-color" style="background: var(--fp-color-text-success);">Success</div>
+          <div class="swatch-info">
+            <div class="name">$fp-color-text-success</div>
+            <div class="value">#67c23a</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 间距 -->
+    <section>
+      <h2>间距</h2>
+      <div class="spacing-demo">
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-xs); height: var(--fp-spacing-xs);"></div>
+          <span>xs: 0.25rem</span>
+        </div>
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-sm); height: var(--fp-spacing-sm);"></div>
+          <span>sm: 0.5rem</span>
+        </div>
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-md); height: var(--fp-spacing-md);"></div>
+          <span>md: 1rem</span>
+        </div>
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-lg); height: var(--fp-spacing-lg);"></div>
+          <span>lg: 1.5rem</span>
+        </div>
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-xl); height: var(--fp-spacing-xl);"></div>
+          <span>xl: 2rem</span>
+        </div>
+        <div class="spacing-item">
+          <div class="spacing-box" style="width: var(--fp-spacing-xxl); height: var(--fp-spacing-xxl);"></div>
+          <span>xxl: 3rem</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 字体 -->
+    <section>
+      <h2>字体</h2>
+      <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+        <div style="font-size: var(--fp-font-size-xs);">XS (0.75rem) - 小号文字</div>
+        <div style="font-size: var(--fp-font-size-sm);">SM (0.875rem) - 小文字</div>
+        <div style="font-size: var(--fp-font-size-base);">Base (1rem) - 基础文字</div>
+        <div style="font-size: var(--fp-font-size-lg);">LG (1.125rem) - 大文字</div>
+        <div style="font-size: var(--fp-font-size-xl);">XL (1.25rem) - 超大文字</div>
+        <div style="font-size: var(--fp-font-size-xxl);">XXL (1.5rem) - 特大文字</div>
+      </div>
+      <div style="margin-top: 1rem; display: flex; gap: 1rem;">
+        <span style="font-weight: var(--fp-font-weight-light);">Light (300)</span>
+        <span style="font-weight: var(--fp-font-weight-normal);">Normal (400)</span>
+        <span style="font-weight: var(--fp-font-weight-medium);">Medium (500)</span>
+        <span style="font-weight: var(--fp-font-weight-bold);">Bold (700)</span>
+      </div>
+    </section>
+
+    <!-- 阴影 -->
+    <section>
+      <h2>阴影</h2>
+      <div class="shadow-demo">
+        <div class="shadow-item" style="box-shadow: var(--fp-shadow-sm);">
+          Small
+        </div>
+        <div class="shadow-item" style="box-shadow: var(--fp-shadow-md);">
+          Medium
+        </div>
+        <div class="shadow-item" style="box-shadow: var(--fp-shadow-lg);">
+          Large
+        </div>
+        <div class="shadow-item" style="box-shadow: var(--fp-shadow-dark);">
+          Dark
+        </div>
+      </div>
+    </section>
+
+    <!-- 层级 -->
+    <section>
+      <h2>层级 (z-index)</h2>
+      <div class="layer-demo">
+        <div class="layer-item" style="z-index: var(--fp-layer-background); width: 100%; height: 100%; background: #e0e0e0;">Background: 0</div>
+        <div class="layer-item" style="z-index: var(--fp-layer-game); left: 10%; top: 20%; width: 60%; height: 60%; background: #a0a0a0;">Game: 10</div>
+        <div class="layer-item" style="z-index: var(--fp-layer-ui); left: 30%; top: 35%; width: 40%; height: 40%; background: #606060;">UI: 20</div>
+        <div class="layer-item" style="z-index: var(--fp-layer-dialog); left: 45%; top: 45%; width: 30%; height: 30%; background: #303030;">Dialog: 70</div>
+        <div class="layer-item" style="z-index: var(--fp-layer-topbar); left: 55%; top: 55%; width: 20%; height: 20%; background: #000;">Topbar: 100</div>
+      </div>
+    </section>
+
+    <!-- 毛毡风格 -->
+    <section>
+      <h2>毛毡风格</h2>
+      <div class="texture-demo">
+        <div class="texture-item felt-demo">
+          毛毡纹理
+        </div>
+        <div class="stitch-demo">
+          带缝线效果
+        </div>
+      </div>
+    </section>
+
+    <!-- 使用示例 -->
+    <section>
+      <h2>使用示例</h2>
+      <pre style="background: #f5f5f5; padding: 1rem; border-radius: 0.5rem; overflow-x: auto;"><code style="font-family: monospace; font-size: 0.875rem;">/* SCSS 导入 */
+@use '@mine-monopoly/style/src/variables' as fp;
+
+.button {
+  background: fp.$fp-color-primary;
+  padding: fp.$fp-spacing-md;
+  font-size: fp.$fp-font-size-base;
+  box-shadow: fp.$fp-shadow-card;
+}
+
+/* CSS 变量 */
+.card {
+  background: var(--fp-color-bg-light);
+  box-shadow: var(--fp-shadow-card);
+  padding: var(--fp-spacing-md);
+  border-radius: 0.8rem;
+}</code></pre>
+    </section>
+  </div>
+</body>
+</html>

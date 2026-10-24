@@ -1,0 +1,33 @@
+import { expect, test } from '@playwright/test'
+
+test.describe.configure({ mode: 'serial' })
+// 源码变更后 vite dev 首次重打包可能超过默认 30s（R6.23 记录的环境慢载，
+// 与 local-game.smoke.spec.ts 同一放开关口）。
+test.setTimeout(120_000)
+
+test('莲花麻将（旧版翻精）本地开局并亮出精指示牌', async ({ page }) => {
+  const pageErrors: string[] = []
+  page.on('pageerror', (error) => pageErrors.push(error.message))
+
+  await page.goto('/')
+
+  // 选择「莲花麻将」玩法
+  await page.locator('.game-settings button', { hasText: '玩法' }).click()
+  await page.getByRole('button', { name: /莲花麻将 翻精/ }).click()
+  await page.getByRole('button', { name: '确定' }).click()
+
+  // 开始对局
+  await page.getByRole('button', { name: /开始东风场/ }).click()
+  await expect(page.locator('.game-table-hud')).toBeVisible()
+  await expect(page.locator('canvas.mahjong-scene')).toBeVisible({ timeout: 15_000 })
+
+  // 翻精指示牌出现（开局含两次掷骰 + 翻精，且音效会拉长等待，放宽到 30s），
+  // 且开牌流程推进（手牌出现）
+  await expect(page.locator('.flip-indicator')).toBeVisible({ timeout: 30_000 })
+  await expect.poll(
+    () => page.locator('.hand-tile-slot').count(),
+    { timeout: 30_000, message: '莲花麻将开局应完成发牌' },
+  ).toBeGreaterThanOrEqual(4)
+
+  expect(pageErrors).toEqual([])
+})

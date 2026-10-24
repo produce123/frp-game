@@ -1,0 +1,1269 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #1e2d4a;
+  --accent: #e94560;
+  --accent-hover: #ff6b81;
+  --text-primary: #eee;
+  --text-secondary: #aab;
+  --board-bg: #d4a76a;
+  --board-line: #8b6914;
+  --board-dot: #5a4510;
+  --cannon-color: #e94560;
+  --ghost-color: #4ecdc4;
+  --success: #2ecc71;
+  --warning: #f39c12;
+  --cell-size: 60px;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.screen {
+  display: none;
+  min-height: 100vh;
+  padding: 20px;
+  animation: fadeIn 0.3s ease;
+}
+
+.screen.is-active {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Main Menu */
+.menu-container {
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+}
+
+.game-title {
+  margin-bottom: 40px;
+}
+
+.title-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.game-title h1 {
+  font-size: 2.5rem;
+  background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 8px;
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.menu-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.menu-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 24px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: left;
+}
+
+.menu-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent);
+  transform: translateX(4px);
+}
+
+.btn-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.btn-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  display: block;
+}
+
+.btn-desc {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  display: block;
+  margin-top: 2px;
+}
+
+/* Setup Screens */
+.setup-container, .lobby-container, .rules-container, .editor-container {
+  max-width: 600px;
+  width: 100%;
+  margin: auto;
+}
+
+.setup-container h2, .lobby-container h2, .editor-container h2, .rules-container h2 {
+  text-align: center;
+  margin-bottom: 24px;
+  font-size: 1.5rem;
+}
+
+.setup-section {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.setup-section h3 {
+  font-size: 1rem;
+  margin-bottom: 12px;
+  color: var(--text-secondary);
+}
+
+.preset-maps {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preset-map-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+}
+
+.preset-map-btn:hover {
+  border-color: var(--accent);
+}
+
+.preset-map-btn.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.preset-map-btn .map-name {
+  font-weight: 600;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.preset-map-btn .map-desc {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.custom-settings {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-row label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.setting-row input {
+  width: 60px;
+  padding: 6px 8px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.setting-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.side-select {
+  display: flex;
+  gap: 12px;
+}
+
+.side-btn {
+  flex: 1;
+  padding: 16px;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.side-btn:hover {
+  border-color: var(--accent);
+}
+
+.side-btn.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.side-icon {
+  font-size: 32px;
+}
+
+.difficulty-select {
+  display: flex;
+  gap: 10px;
+}
+
+.difficulty-btn {
+  flex: 1;
+  padding: 12px 8px;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.difficulty-btn:hover {
+  border-color: var(--accent);
+}
+
+.difficulty-btn.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.diff-icon {
+  font-size: 24px;
+}
+
+.difficulty-btn span:nth-child(2) {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.diff-desc {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.action-btn {
+  padding: 10px 24px;
+  /* 平台硬指标：真实点击目标 ≥44px。这一档原来算出来只有 42px
+     （20px 内边距 + 22px 行盒，0.95rem 的 normal 行高），
+     按钮又都是撑满一行的主操作，手机上最容易点空。
+     用 min-height 兜住，不去动 padding：视觉几乎不变，量出来是 44。 */
+  min-height: 44px;
+  background: var(--accent);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.action-btn:hover {
+  background: var(--accent-hover);
+}
+
+.back-btn {
+  padding: 10px 24px;
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.back-btn:hover {
+  border-color: var(--text-primary);
+  color: var(--text-primary);
+}
+
+.setup-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.setup-actions .back-btn {
+  flex: 0 0 auto;
+}
+
+.setup-actions .start-btn {
+  flex: 1;
+  padding: 12px 24px;
+  background: var(--success);
+  border: none;
+  border-radius: 8px;
+  color: white;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.setup-actions .start-btn:hover {
+  filter: brightness(1.1);
+}
+
+/* Board Editor */
+.editor-hint {
+  text-align: center;
+  color: var(--text-secondary);
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+}
+
+.editor-tools {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.tool-btn {
+  padding: 8px 16px;
+  background: var(--bg-card);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.85rem;
+}
+
+.tool-btn:hover {
+  border-color: var(--accent);
+}
+
+.tool-btn.active {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.editor-board-wrapper {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.editor-info {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin-bottom: 16px;
+  font-size: 0.95rem;
+  color: var(--text-secondary);
+}
+
+/* Online Lobby */
+.lobby-actions {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.lobby-card {
+  flex: 1;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 24px;
+  text-align: center;
+}
+
+.lobby-card h3 {
+  margin-bottom: 8px;
+}
+
+.lobby-card p {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+}
+
+.lobby-hint {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  margin-bottom: 16px;
+}
+
+.lobby-status {
+  text-align: center;
+  color: var(--accent);
+  font-size: 0.9rem;
+  min-height: 22px;
+  margin: 4px 0 12px;
+}
+
+/* 6 位房间号输入 */
+.code-input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: var(--bg-secondary);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.35em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.code-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.room-code-display {
+  font-family: ui-monospace, Consolas, 'Courier New', monospace;
+  font-size: 2.6rem;
+  font-weight: 700;
+  letter-spacing: 0.3em;
+  text-align: center;
+  color: var(--accent);
+  background: var(--bg-secondary);
+  border-radius: 10px;
+  padding: 16px 10px;
+  margin-bottom: 14px;
+  user-select: all;
+}
+
+.relay-panel {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+
+.relay-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+  margin-bottom: 10px;
+}
+
+.relay-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.relay-actions .action-btn {
+  flex: 1;
+  width: auto;
+}
+
+.copied-tag {
+  color: var(--success);
+  font-size: 0.8rem;
+}
+
+/* 联机准备界面 */
+.ready-banner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 14px 18px;
+  margin-bottom: 18px;
+}
+
+.ready-role {
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.ready-meta {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.ready-waiting {
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* 房主选自己执哪一方 */
+.side-select {
+  display: flex;
+  gap: 10px;
+}
+
+.side-btn {
+  flex: 1;
+  padding: 12px 8px;
+  background: var(--bg-secondary);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.side-btn small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.side-btn:hover {
+  border-color: var(--accent);
+}
+
+.side-btn.selected {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.waiting-spinner {
+  width: 34px;
+  height: 34px;
+  margin: 10px auto 16px;
+  border: 3px solid rgba(255,255,255,0.15);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* Game Screen */
+#screen-game {
+  display: none;
+  padding: 0;
+}
+
+#screen-game.is-active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.game-container {
+  width: 100%;
+  max-width: 700px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 12px;
+}
+
+.game-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  margin-bottom: 8px;
+}
+
+.icon-btn {
+  /* 44px 是平台的点击区域底线（tools/check-game.mjs 会实测，手机上手指够得着）。
+     原来是 36×36 —— 体检直接报了"点击区域小于 44px"。 */
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex: none;
+  background: var(--bg-card);
+  border: none;
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: var(--accent);
+}
+
+.turn-indicator {
+  padding: 6px 20px;
+  background: var(--bg-card);
+  border-radius: 20px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.turn-indicator.cannon-turn {
+  background: rgba(233, 69, 96, 0.2);
+  color: var(--cannon-color);
+}
+
+.turn-indicator.ghost-turn {
+  background: rgba(78, 205, 196, 0.2);
+  color: var(--ghost-color);
+}
+
+.game-info-brief {
+  display: flex;
+  gap: 12px;
+  font-size: 0.85rem;
+}
+
+.board-wrapper {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 8px;
+  /* 演出期间那行小字（body.frp-anim-busy 的 ::after）要有个定位基准。
+     加它不会挪动任何东西：position: relative 不参与 flex 布局计算。 */
+  position: relative;
+}
+
+.game-board {
+  position: relative;
+  background: var(--board-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  /* 棋盘是 flex 子项，绝不能让它被压缩：
+     否则画布（width:100%）会跟着缩放，而按 px 绝对定位的格子不会，
+     棋子就会相对网格整体偏移（手机上"棋子对不上十字交点"就是这个原因）。 */
+  flex: none;
+}
+
+.board-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.board-cell {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.board-cell .cell-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--board-dot);
+  border-radius: 50%;
+  transition: all 0.15s;
+}
+
+.board-cell:hover .cell-dot {
+  transform: scale(1.5);
+  background: var(--accent);
+}
+
+.board-cell .piece {
+  width: 70%;
+  height: 70%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell-size) * 0.4);
+  transition: all 0.2s;
+  position: relative;
+  z-index: 3;
+}
+
+.piece.cannon {
+  background: radial-gradient(circle at 35% 35%, #ff6b81, var(--cannon-color));
+  box-shadow: 0 2px 8px rgba(233, 69, 96, 0.4);
+}
+
+.piece.ghost {
+  background: radial-gradient(circle at 35% 35%, #7efff0, var(--ghost-color));
+  box-shadow: 0 2px 8px rgba(78, 205, 196, 0.4);
+}
+
+.piece.selected {
+  transform: scale(1.15);
+  box-shadow: 0 0 0 3px white, 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.board-cell.highlight .cell-dot {
+  transform: scale(2);
+  background: var(--success);
+  opacity: 0.7;
+}
+
+.board-cell.capture-highlight .cell-dot {
+  transform: scale(2.5);
+  background: var(--accent);
+  opacity: 0.8;
+}
+
+.board-cell.last-move {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+}
+
+.game-footer {
+  width: 100%;
+  /* 左：音效/特效开关（44px 可点区域）；右：一句状态文字。 */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.game-status {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  min-height: 20px;
+}
+
+/* ---------------------------------------------------------------------------
+   对阵条：两个座位各一个头像圆。
+   圆环颜色（自己=蓝 / 其他真人=橙 / 人机=灰虚线圈）是**语义**，由平台
+   shared/ui/react.js 的 ringClass() + shared/ui/ui.css 的 .frp-avatar 给，
+   本游戏**不许**在这里改颜色或尺寸语义 —— 只能调整它摆在哪儿。
+   --------------------------------------------------------------------------- */
+.versus-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 100%;
+  padding: 2px 0 6px;
+}
+
+.vs-seat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 12px;
+  transition: background 0.2s;
+}
+
+/* 轮到谁，谁那块亮一点（比在棋盘上数格子快得多） */
+.vs-seat.is-turn {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.vs-label {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+  max-width: 9em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-vs {
+  flex: none;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* 单机对局没有玩家 id（也就没有头像可点），画一个纯标记顶上，别留一块空白 */
+.vs-pip {
+  flex: none;
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--bg-card);
+  border: 2.5px solid #8b93a3;
+  font-size: 1.1rem;
+}
+
+/* ---------------------------------------------------------------------------
+   首页身份行：「你：X · ID Y」
+   名字与 ID 都来自平台账号（docs/GAME-SPEC.md §6），本作**没有再问名字的界面**。
+   ⚠️ 打开页面**立刻**就画出来（先读浏览器里记着的那份身份，见 js/ui/app.js 的
+   renderMeLine()），不等 WebSocket 的 ready —— 公网那次握手要 2~3 秒，
+   空白那几秒看起来就像"没登录"。
+   ⚠️ ID 那颗按钮的 min-height/min-width 44px 是平台硬指标
+   （tools/check-game.mjs 实测：任一边 <44 就报"点击区域小于 44px"），别为了紧凑改小。
+   --------------------------------------------------------------------------- */
+.cg-me {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.cg-me-id {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  background: transparent;
+  border: 1px dashed var(--ui-border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.cg-me-id:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+/* 身份还没到（既没有 me 也没有缓存）时是禁用的 —— 点了没反应比点出一句报错好。
+   这条正常情况下只出现在"真的没登录"的人身上，一瞬都不会出现。 */
+.cg-me-id:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---------------------------------------------------------------------------
+   音效 / 特效开关
+   ⚠️ min-height/min-width 44px 是平台硬指标（tools/check-game.mjs 会实测：
+   任一边 <44 就报"点击区域小于 44px"）。别为了好看改小。
+   --------------------------------------------------------------------------- */
+.cg-prefs {
+  display: flex;
+  gap: 8px;
+  flex: none;
+}
+
+.menu-prefs {
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.pref-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: inherit;
+  cursor: pointer;
+  flex: none;
+  transition: background 0.2s;
+}
+
+.pref-btn:hover {
+  background: var(--accent);
+}
+
+/* 特效关掉时（body.no-fx）连 CSS 的过渡也停掉 —— 只关 JS 动画的话，
+   选中/高亮这些 transition 还会动，"关了特效"就名不副实。 */
+body.no-fx .piece,
+body.no-fx .cell-dot,
+body.no-fx .board-cell,
+body.no-fx .screen {
+  transition: none;
+  animation: none;
+}
+
+/* ---------------------------------------------------------------------------
+   走子与吃子的演出（js/ui/app.js 的 playMoveAnimation / spawnCaptureFx）
+   --------------------------------------------------------------------------- */
+
+/* 被吃掉的子：在那一格叠一个瞬间的残影，放大、旋转、淡出 */
+.capture-fx {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.capture-fx.cannon {
+  background: radial-gradient(circle at 35% 35%, #ff6b81, var(--cannon-color));
+  box-shadow: 0 0 14px rgba(233, 69, 96, 0.7);
+}
+
+.capture-fx.ghost {
+  background: radial-gradient(circle at 35% 35%, #7efff0, var(--ghost-color));
+  box-shadow: 0 0 14px rgba(78, 205, 196, 0.7);
+}
+
+/* ---------------------------------------------------------------------------
+   演出期间锁输入（js/ui/app.js 的 animBusy()，决定见 docs/DECISIONS.md D10、
+   docs/GAME-SPEC.md §4「演出期间锁输入」）
+
+   服务端那一帧已经把回合推进过了，而画面还在一步一步演（一步 460ms）——
+   这时候点棋盘，看到的是"我这一手之前"的盘，点出来的是"已经轮到我"的下一手。
+   所以演出期间把棋盘禁点（JS 那侧 handleCellClick 也会再判一次 `busy()`，
+   两道防线都要有：只靠 CSS 挡不住脚本直接调）。
+
+   ⚠️ **这里只拦点击，绝不把棋盘调暗/变灰**（用户原话："不要忽然暗屏"）。
+      原来这条写着 `opacity: .5`，一演动画整张棋盘就暗一下，看起来像画面坏了。
+      现在**颜色一个字节都没变**，提示改由下面那行小字承担。
+      `tests/browser.ai-fill.mjs` 第 11b 节钉着"演出期间棋盘的 opacity 必须还是 1、
+      filter 必须是 none"——谁再把暗屏加回来，用例立刻红。
+
+   ⚠️ 只锁棋盘。房间级的操作（开始 / 离开 / 邀请好友 / 加人机）不在这张盘上，
+   底栏那两个「音效 / 特效」开关也刻意留着 —— 看动画的时候正好想静音一下。
+   --------------------------------------------------------------------------- */
+
+body.frp-anim-busy #game-board {
+  pointer-events: none;
+}
+
+/* 演出期间棋盘右下角外侧的一行小字（不要去动 #game-board 的颜色）。
+   【为什么用伪元素】演出状态本来就在 <body> 的类名上（平台 /shared/ui/anim.js 挂的），
+   这边只要"长得出来 / 自己消失"，**不需要游戏额外记一个 JS 状态** ——
+   少一个状态就少一处"忘了清掉"的地方。所以九成靠 CSS，JS 一行逻辑都不用加。
+
+   ⚠️ 伪元素必须 absolute：`.board-wrapper` 是 display:flex，伪元素一旦在流里就会
+      变成一个 flex 子项跟着参与布局，把棋盘挤小/挤偏 —— 而棋盘上"画布的网格 / px 定位的
+      格子 / 格子里的棋子"共用同一个原点，挪一点就是"棋子对不上十字交点"。
+      上面那句 position: relative 只给它当定位基准，不改布局。
+
+   ⚠️ 位置按**棋盘**的尺寸算（--board-w / --board-h 由 app.js 的 buildBoard() 写在
+      :root 上，和 --cell-size 一起），而不是按整个 wrapper 的右下角：
+      wrapper 是 flex:1 且棋盘居中，在"宽高同时吃满"的方屏机型上，wrapper 的右下角
+      正好压在棋盘最后一个格子上，那样就会**遮住棋子**。贴着棋盘右下角外侧放，
+      既还是"棋盘区域的右下角"，又永远压在棋盘外面（下面是空当，或者顶到页脚
+      右端那片空白，页脚左边是开关、中间是状态文字）。
+
+   ⚠️ 不挡点击（pointer-events: none）、单行不换行、右边界不超过棋盘的右边界 ——
+      压不进屏幕外，也不会撑出横向滚动条（平台体检实测 scrollWidth，多 1px 就红）。 */
+body.frp-anim-busy .board-wrapper::after {
+  content: '演出中，请稍候…';
+  position: absolute;
+  top: calc(50% + var(--board-h, 6) * var(--cell-size, 60px) / 2 + 4px);
+  left: calc(50% + var(--board-w, 6) * var(--cell-size, 60px) / 2);
+  transform: translateX(-100%);
+  z-index: 5;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-border);
+  color: var(--ui-muted);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  white-space: nowrap;
+  pointer-events: none;
+  /* 淡入，不是"啪"地弹出来。0.18 秒短到不碍事，所以不挂到 body.no-fx 上
+     （那一条关的是棋子滑动/残影这些"动作"，一个纯透明度渐显不属于要关的东西）。 */
+  animation: cg-busy-hint 0.18s ease-out;
+}
+
+@keyframes cg-busy-hint {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Game Over Modal */
+.modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  animation: fadeIn 0.3s ease;
+}
+
+.modal-content {
+  background: var(--bg-card);
+  border-radius: 16px;
+  padding: 40px;
+  text-align: center;
+  max-width: 400px;
+  width: 90%;
+}
+
+.modal-content h2 {
+  font-size: 1.8rem;
+  margin-bottom: 12px;
+}
+
+.modal-content p {
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+  font-size: 1.1rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.modal-actions .action-btn {
+  flex: 1;
+  background: var(--success);
+}
+
+.modal-actions .back-btn {
+  flex: 1;
+  text-align: center;
+}
+
+/* Rules Screen */
+.rules-container {
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.rules-content {
+  margin-bottom: 24px;
+}
+
+.rule-section {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 12px;
+}
+
+.rule-section h3 {
+  margin-bottom: 12px;
+  font-size: 1.1rem;
+}
+
+.rule-section p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.rule-section ul {
+  list-style: none;
+  padding: 0;
+}
+
+.rule-section li {
+  padding: 6px 0;
+  padding-left: 20px;
+  position: relative;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.rule-section li::before {
+  content: '•';
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
+
+.rule-diagram {
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+  text-align: center;
+  font-family: monospace;
+  font-size: 0.9rem;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  :root {
+    --cell-size: 44px;
+  }
+
+  .game-title h1 {
+    font-size: 1.8rem;
+  }
+
+  .title-icon {
+    font-size: 48px;
+  }
+
+  .lobby-actions {
+    flex-direction: column;
+  }
+
+  .custom-settings {
+    grid-template-columns: 1fr;
+  }
+
+  .editor-tools {
+    flex-wrap: wrap;
+  }
+
+  .setup-actions {
+    flex-direction: column;
+  }
+
+  .setup-actions .back-btn {
+    order: 2;
+  }
+
+  .difficulty-select {
+    flex-direction: column;
+  }
+
+  .difficulty-btn {
+    flex-direction: row;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .diff-desc {
+    display: none;
+  }
+}
+
+@media (max-width: 400px) {
+  :root {
+    --cell-size: 36px;
+  }
+
+  .screen {
+    padding: 12px;
+  }
+}
+
+@media (min-width: 1200px) {
+  :root {
+    --cell-size: 70px;
+  }
+}
+
+/* ===========================================================================
+   平台共用组件的外观（房间界面 / 邀请卡片 / 按钮）
+   —— shared/ui/ui.css 里所有颜色都写成 var(--ui-*, 兜底值)，
+      游戏只要在这里把 --ui-* 映射到自己的配色，共用组件就跟着本游戏的风格走。
+      这就是"结构统一、风格各自保留"的落地点，见 docs/GAME-SPEC.md 第 8 节。
+      不写这一段也能用（会退回 ui.css 里的中性配色），但会跟棋盘格格不入。
+   =========================================================================== */
+:root {
+  --ui-surface: var(--bg-card);
+  --ui-border: rgba(255, 255, 255, 0.14);
+  --ui-text: var(--text-primary);
+  --ui-muted: var(--text-secondary);
+  --ui-accent: var(--accent);
+  --ui-accent-text: #fff;
+  --ui-ok: var(--success);
+  --ui-danger: var(--accent);
+  --ui-radius: 10px;
+}
+
+/* 准备区里本游戏自己的两块设置（选边 / 选地图），见 js/ui/online.js 的 renderSetup */
+.cg-setup-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.cg-map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 在线界面里那张"准备区"卡片：房间外壳和游戏设置贴在一起，别中间空一大截 */
+#online-panel .frp-room-setup {
+  margin-top: 12px;
+}
+
+/* 房主/客人看到的是同一块界面，客人那些按钮是 disabled 的 —— 让它一眼看得出来是只读，
+   而不是"点了没反应"。 */
+.side-btn:disabled,
+.preset-map-btn:disabled {
+  opacity: 0.85;
+  cursor: default;
+}
+
+.side-btn:disabled:hover,
+.preset-map-btn:disabled:hover {
+  background: var(--bg-card);
+}

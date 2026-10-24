@@ -1,0 +1,185 @@
+import {buildCandidateFeatures, buildPublicDecisionSnapshot, unknownCandidateFeatures, type DecisionInput} from './candidates'
+import {candidateLine} from './prompt'
+import type {Candidate, CanonicalAction} from './schema'
+import {tileName} from '../core/rules/tiles'
+import {bloodFlowAiActions, decideBloodFlowAction, decideBloodFlowActionEv, bloodFlowKongValue} from '../variants/lotus/bloodFlow/ai'
+import type {BloodFlowAiConfig} from '../variants/lotus/bloodFlow/config'
+import {BLOOD_FLOW_AI, BLOOD_FLOW_CONFIG} from '../variants/lotus/bloodFlow/config'
+import {bloodFlowEvContext, isFinalSelfDrawWin} from '../variants/lotus/bloodFlow/evContext'
+import {visibleTiles, type BloodFlowSeatView} from '../variants/lotus/bloodFlow/seatView'
+import type {BloodFlowAction} from '../variants/lotus/bloodFlow/state'
+import {detectBigHandRoute, narrowActionsToRoute, type BigHandRoute} from '../variants/lotus/bloodFlow/bigHandRoute'
+import {bloodFlowReadiness,bloodFlowClaimWaitComparison} from './bloodFlowWaitComparison'
+
+export interface BloodFlowDecisionMetadata {roundIndex?:number;dealerIndex?:number;seatWind?:string;roundWind?:string}
+export const BLOOD_FLOW_PROMPT_RULES = '莲花麻将血流：非精白板按进张、番型和风险取舍，价值相近优先保留；沿用翻精、白板受限替代、数牌吃和字牌顺；支持鸡胡、七对、十三幺、十三烂、七星十三烂及清一色、混一色、碰碰胡、大小三元、大小四喜、九莲宝灯、绿一色、清幺九、混幺九、三暗刻、四暗刻、字一色、三杠、四杠、豪华七对、断幺九、全带幺、门清（1番：无副露即可，可与任何番种叠加）、平胡（1番：存在"4顺子+1将、无刻子"的拆解，可副露、字牌也可成顺，精牌只能补顺不能补刻）、一色三步高/四步高、一色三节高/四节高、清龙；没有任何计分番种时算鸡胡（0.5番、支付减半）。番型倍率按番值**相加**（清一色8 + 门清1 = 9），自然成立硬胡×2；真实倍率、封顶和收益以 currentWin 为准。可点炮、多响和抢补杠，胡后继续；首次胡锁手，之后只能处理新摸牌，已胡仍付款；牌墙耗尽才结算。精吊任意听（自摸听口覆盖全部34种牌）只能自摸，吃胡（含地胡）与抢杠均禁止，杠上开花保留；首次胡锁手后仍按此限制。任意听的连锁收益只计算剩余本家摸牌机会，不包含吃胡收入。候选 features.ev 为本地期望收益估算（自摸按 2 倍×3 家、锁手连锁、首胡门槛、改张/单吊任意听、抢杠两值），仅作依据；早局低番胡会锁手，可结合潜力考虑改张或过。点炮赔付=底分10×番型倍率×事件倍率（点炮×1、自摸/抢杠×2、杠上开花×4），单家封顶128倍；杠另有加成（明杠+1、风杠+1、暗杠+2，但已成三杠/四杠番种时不再叠加；鸡胡不与任何番型叠加——开了杠只算杠番、不加鸡胡的0.5番）。杠候选带 features.kongValue（开杠价值 = 杠收益 − 防守风险 − 自手牌型损失）：net ≤ 0 表示这一杠会拆掉自己的七对/豪华七对、破坏门清或让向听变差，默认建议不会是杠。同一张牌打给在做大牌（清一色/三元/四喜等）的对手，代价可达鸡胡的16~64倍；候选 features.opponentRisk 给出该牌按公共信息估算的赔付档与信号。对手没副露时也能读牌河：整局不打字牌与幺九＝十三幺/字一色嫌疑，整局不打某花色＝九莲/清一色嫌疑，此时字牌幺九与嫌疑花色才是贵的，中张相对便宜——必打一张时应按这个方向选损失最小的牌。对手已胡过的番型同样是公开信息（features.opponentRisk.signals 里的「已胡十三幺」等）：已公开番型限定了他的牌型，锁手后依然成立，因此比读牌河更可靠。兜/弃政策：state.defense.mode 为 fold 时，本家未听牌且可达听口过窄而对手已做成十六倍级及以上大牌（三十二倍级的十三幺/九莲宝灯也算）——此时应只打最安全的牌、不要吃碰杠；若 ownAnyWaitReachable 为真（打一张即单吊任意听，此后每巡必胡、永不弃牌）或 ownCeiling 不低于对手倍率，则应继续进攻。state.defense.restricted 为真时，候选已在本地下游收窄（吃碰杠不会出现、弃牌只留安全档），只需在给出的候选里选择，不要因为缺少选项而报错。'
+
+function label(action:BloodFlowAction,view:BloodFlowSeatView):string {
+  const player=view.players[view.seat]
+  if(action.kind==='discard')return `打出${tileName(player.hand[action.index])}`
+  if(action.kind==='chi')return `吃${action.tiles.map(tileName).join('')}`
+  if(action.kind==='concealed-kong')return `暗杠${tileName(action.tile)}`
+  if(action.kind==='added-kong')return `补杠${tileName(player.melds[action.meldIndex].tile)}`
+  return {win:'胡牌（首次胡后锁手）',pass:'过',peng:'碰',gang:'直杠','wind-kong':'风杠'}[action.kind]
+}
+
+/** LLM routes are advisory by default; explicit legacy configs retain their historical filter. */
+function narrowToBigHandRoute(view:BloodFlowSeatView,actions:readonly BloodFlowAction[],aiConfig:BloodFlowAiConfig){
+  if(isFinalSelfDrawWin(view))return {actions,collapsed:false,route:null}
+  const player=view.players[view.seat]
+  if(aiConfig.routeAdviceOnly){
+    const route=view.public.seats[view.seat].locked?null:detectBigHandRoute(player.hand,player.melds,view.jokers,aiConfig.bigHandRoute)
+    return {actions,collapsed:false,route}
+  }
+  const ownScore=player.score
+  const topOpponent=Math.max(...view.players.filter(p=>p.seat!==view.seat).map(p=>p.score))
+  return narrowActionsToRoute(player.hand,player.melds,view.jokers,actions,{
+    config:aiConfig.bigHandRoute,
+    basePoints:BLOOD_FLOW_CONFIG.basePoints,
+    immediateWinPayment:view.ownScore?.paymentPerPayer??0,
+    wallCount:view.wallCount,
+    scoreDeficit:Math.max(0,topOpponent-ownScore),
+  })
+}
+
+/** Adapt authoritative candidates, never re-enumerate or prune them using old end-of-round rules. */
+/**
+ * 被收窄掉的动作与原因（§3.3）：narrowActionsToRoute 只返回布尔，清单由**前后差集**得出。
+ * 原因即这次收窄的依据本身（大牌路线承诺），不另编造说法。
+ */
+export function collapsedActionsOf<T extends { kind: string }>(
+  original: readonly T[],
+  kept: readonly T[],
+  reason: string,
+): Array<{ action: T; reason: string }> {
+  const keep = new Set(kept.map(action => JSON.stringify(action)))
+  return original
+    .filter(action => !keep.has(JSON.stringify(action)))
+    .map(action => ({ action, reason }))
+}
+
+/** Same recommendation path used by prompts and offline policy verification. */
+export function bloodFlowDecisionPlan(view:BloodFlowSeatView,aiConfig:BloodFlowAiConfig){
+  const actions=bloodFlowAiActions(view,aiConfig)
+  const routePlan=narrowToBigHandRoute(view,actions,aiConfig)
+  const offered=routePlan.actions
+  const offeredView=offered===actions?view:({...view,ownActions:offered} as BloodFlowSeatView)
+  const player=view.players[view.seat]
+  const validShape=[13,14].includes(player.hand.length+3*player.melds.length)
+  const useEv=aiConfig.llmEvFeatures&&validShape
+  const recommended=validShape?(useEv?decideBloodFlowActionEv(offeredView,aiConfig):decideBloodFlowAction(offeredView)):offered[0]
+  return {actions,routePlan,offered,offeredView,validShape,useEv,recommended}
+}
+
+export function buildBloodFlowDecisionInput(view:BloodFlowSeatView,requestId:string,metadata:BloodFlowDecisionMetadata={},aiConfig:BloodFlowAiConfig=BLOOD_FLOW_AI) {
+  const player=view.players[view.seat],source=view.window?.source
+  const {actions,routePlan,offered,offeredView,validShape,useEv,recommended}=bloodFlowDecisionPlan(view,aiConfig)
+  const chiActions=offered.filter((a):a is Extract<BloodFlowAction,{kind:'chi'}>=>a.kind==='chi')
+  const canonical=(a:BloodFlowAction):CanonicalAction=>a.kind==='discard'?{kind:'discard',handIndex:a.index}
+    :a.kind==='chi'?{kind:'chi',optionIndex:chiActions.indexOf(a)}:a
+  const claim=view.window?.kind!=='turn'
+  const lastAction=view.actionEvents.at(-1)
+  const turnOrigin=player.drawnTileIndex<0&&lastAction?.actorIndex===view.seat
+    ?lastAction.type==='chi'?'chi':lastAction.type==='peng'?'peng':'draw':'draw'
+  const publicTiles=[view.flipTile,...view.players.flatMap(p=>[...p.discards,...p.melds.flatMap(m=>m.tiles)]),...view.public.batches.map(b=>b.source.tile)]
+  const deltaFor=(action:CanonicalAction):number|null=>{
+    const kind=action.kind==='gang'?'discard':action.kind==='added-kong'?'added':action.kind==='concealed-kong'?'concealed':action.kind==='wind-kong'?'wind':null
+    return kind?BLOOD_FLOW_CONFIG.basePoints*BLOOD_FLOW_CONFIG.kongPayments[kind]*(kind==='discard'?1:3):null
+  }
+  // The tile-structure evaluator is the existing lotus evaluator; only scoring
+  // is overridden. The public request below carries the actual blood-flow ID.
+  const input:DecisionInput={ruleCode:'lotus-legacy',decision:claim?'claim':'turn',playerIndex:view.seat,
+    hand:player.hand,melds:player.melds,exposedMelds:player.melds.length,jokerTiles:view.jokers,wildcardTiles:['white'],
+    visibleTiles:visibleTiles(view),publicTiles,peers:view.players.map(player=>({...player,
+      winCount:view.public.seats[player.seat]?.winCount??0,locked:view.public.seats[player.seat]?.locked??false})),scores:view.players.map(p=>p.score),
+    tile:claim?source?.tile:undefined,from:claim?source?.seat:undefined,
+    chiOptions:chiActions.map(a=>({kind:/^[mps]/.test(a.tiles[0])?'sequence':['east','south','west','north'].includes(a.tiles[0])?'wind':'dragon',tiles:a.tiles})),
+    upperLastDiscard:view.players[(view.seat+3)%4].discards.at(-1),wallCount:view.wallCount,
+    opponentPatternRisk:aiConfig.opponentPatternRisk,
+    earlyRound:player.discards.length<2,turnOrigin,drawnTile:player.hand[player.drawnTileIndex]??null,
+    requestId,stateVersion:String(view.version),scoreDeltaForAction:deltaFor,
+    seatWind:metadata.dealerIndex==null?undefined:['东','南','西','北'][(view.seat-metadata.dealerIndex+4)%4],
+    roundWind:metadata.roundIndex==null?undefined:metadata.roundIndex<=4?'东':'南',...metadata}
+  // EV 特征与默认推荐同源：本地贪婪决策的结果就是 engineSuggestion；llmEvFeatures 关闭时回退旧提示词。
+  const evCtx=useEv?bloodFlowEvContext(view,aiConfig):null
+  const readiness=bloodFlowReadiness(view)
+  const candidates=offered.map((action,index)=>{
+    const mapped=canonical(action)
+    const features=validShape&&action.kind!=='win'?buildCandidateFeatures(input,mapped,'unknown'):unknownCandidateFeatures()
+    const comparison=bloodFlowClaimWaitComparison(view,action,readiness.summary)
+    if(comparison){
+      features.waitComparison=comparison
+      if(action.kind==='pass'){
+        features.ready=comparison.after.ready
+        features.waitsTotal=comparison.after.selfDrawWaitCount
+        features.effectiveRemaining=comparison.after.selfDrawRemaining
+        if(comparison.after.ready)features.shanten=0
+      }
+      if(comparison.breaksAnyWait)features.risks.push(`会拆掉当前精吊任意听；再弃${comparison.bestDiscard}后的最佳自摸听口${comparison.after.selfDrawWaitCount}种，吃胡听口${comparison.after.discardWaitCount}种`)
+    }
+    if(action.kind==='pass')features.actionEffect=view.window?.kind==='turn'
+      ?view.public.seats[view.seat].locked?'放弃新摸牌并摸切该牌'
+        :'仅放弃本次自摸胡，不会自动弃牌、不会摸牌或结束回合；仍由本家选择弃牌或开杠。直接选择弃牌也会放弃本次胡。'
+      :'放弃本次响应，不取得来牌；后续按窗口中其他玩家的动作推进'
+    if(action.kind==='win'){
+      features.ready=true
+      if(view.ownScore){
+        features.scoreDelta=view.ownScore.paymentPerPayer*(source?.kind==='draw'?3:1)
+        features.scoreDeltaBand=features.scoreDelta>=400?'高':features.scoreDelta>0?'中':'n/a'
+      }
+      features.specialPattern=view.ownScore?.items.map(p=>p.label).join('、')??'n/a'
+      if(isFinalSelfDrawWin(view))features.risks.push('末张自摸：胡后本局结束，改张不再有后续摸牌收益')
+      else if(!view.public.seats[view.seat].locked)features.risks.push('首次胡后锁手，不能再改手或吃碰杠；比较当前收益和后续听口')
+    }
+    if(evCtx){
+      if(action.kind==='win'){
+        const declined=Boolean(!isFinalSelfDrawWin(view)&&view.ownScore&&view.ownScore.paymentPerPayer<evCtx.floor&&evCtx.potentialTotal>=aiConfig.potentialFloor)
+        features.ev={win:{immediateTotal:evCtx.immediateTotal,lockedChain:Math.round(evCtx.chainAfterWin),
+          floor:evCtx.floor,floorStage:evCtx.floorStage,...(evCtx.floorWaived?{floorWaived:true}:{}),
+          ...(declined?{declinedReason:evCtx.topDirections.map(d=>BLOOD_FLOW_CONFIG.patterns[d.id].label).join('、')||'牌型潜力'}:{})},
+        ...(evCtx.robEv?{rob:evCtx.robEv}:{})}
+      } else if(action.kind==='discard'){
+        const reform=evCtx.reformCandidates.find(c=>c.index===action.index)
+        if(reform)features.ev={reform:{chain:Math.round(reform.ev),anyWait:reform.anyWait,waitCount:reform.waitCount,patterns:reform.patterns}}
+      } else if(action.kind==='pass'&&evCtx.winOffered){
+        features.developmentPotential={score:Math.round(evCtx.developEv),scope:'heuristic-pattern-potential',
+          basis:view.window?.kind==='turn'&&player.drawnTileIndex>=0?'drawn-tile-removed':'current-hand'}
+        if(evCtx.robEv)features.ev={rob:evCtx.robEv}
+      }
+    }
+    // 摸切与自摸胡归档摸牌后的暗手完全相同，复用同源预测；不扩充本地改张候选或改动推荐。
+    const drawnDiscard=Boolean(evCtx?.winOffered&&!evCtx.locked&&view.window?.kind==='turn'
+      &&view.window.source.kind==='draw'&&action.kind==='discard'&&action.index===player.drawnTileIndex)
+    // Gross fixed-hand income only: do not present unknown payments or later reforms as a net EV.
+    if(evCtx && (features.ev?.win || features.ev?.reform || drawnDiscard)){
+      features.ev??={}
+      const immediate=features.ev.win?.immediateTotal??0
+      const future=features.ev.win?.lockedChain??features.ev.reform?.chain??Math.round(evCtx.chainAfterWin)
+      const waitCount=drawnDiscard?(features.waitsTotal??(Array.isArray(features.waits)?features.waits.length:0)):undefined
+      features.ev.income={immediate,future,total:immediate+future,horizonOwnDraws:aiConfig.chainHorizon,
+        model:evCtx.incomeModel,scope:'fixed-hand-gross',
+        excludes:['opponent-payments','future-hand-improvements',...(evCtx.incomeModel==='self-draw-v1'?['discard-wins']:[])],
+        ...(features.ev.reform?{anyWait:features.ev.reform.anyWait,waitCount:features.ev.reform.waitCount}
+          :waitCount!==undefined?{anyWait:waitCount===34,waitCount}:{})}
+    }
+    if(features.shanten!=='n/a'&&features.shanten>2&&features.ukeire===0){
+      features.ukeire='n/a';features.effectiveTiles='n/a';delete features.effectiveTotal
+      features.risks.push('三向听及以上未枚举有效进张，不代表没有进张')
+    }
+    // 开杠价值（第 3 步）：杠候选带上"杠收益 − 防守风险 − 自手牌型损失"的拆解，
+    // 让模型看得到这一杠要拆掉什么（默认建议已经按同一口径算过）。
+    const kong=bloodFlowKongValue(offeredView,action,aiConfig)
+    if(kong)features.kongValue={gain:Math.round(kong.gain),risk:Math.round(kong.risk),
+      selfLoss:{total:Math.round(kong.selfLoss.total),sevenPairs:Math.round(kong.selfLoss.sevenPairs),
+        concealedHand:Math.round(kong.selfLoss.concealedHand),shanten:Math.round(kong.selfLoss.shanten)},
+      net:Math.round(kong.net),...(kong.selfLoss.reasons.length?{reasons:kong.selfLoss.reasons}:{})}
+    const common:Candidate={id:`A${index}`,label:label(action,view),action:mapped,features,legalityKey:JSON.stringify(action)}
+    return {...common,action,canonical:common,summary:candidateLine(common,'lotus-blood-flow')}
+  })
+  const state={...buildPublicDecisionSnapshot(input),ruleCode:'lotus-blood-flow' as const}
+  const request={ruleCode:'lotus-blood-flow',state,candidates:candidates.map(c=>c.canonical),
+    engineSuggestion:candidates.find(c=>JSON.stringify(c.action)===JSON.stringify(recommended))?.id??candidates[0]?.id}
+  return {candidates,request,readiness,bigHandRoute:routePlan.route,collapsedByRoute:routePlan.collapsed,
+    // 被收窄动作的清单（§3.3）：给分析记录用，让"这一手为什么只有这些选项"可解释
+    collapsedActions: collapsedActionsOf(actions, routePlan.actions, 'big-hand-route')}
+}

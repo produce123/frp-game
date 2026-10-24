@@ -1,0 +1,47 @@
+services:
+  monopoly-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    image: monopoly-server
+    container_name: monopoly-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-8081}:${SERVER_PORT:-8081}"  # 主服务器
+      - "${ICE_SERVER_PORT:-8082}:${ICE_SERVER_PORT:-8082}"  # ICE 服务器
+      - "${MONOPOLY_ADMIN_PORT:-8083}:${MONOPOLY_ADMIN_PORT:-8083}"  # Admin 管理面板
+    env_file:
+      - .env
+    extra_hosts:
+      - "monopoly-coturn:172.19.0.1"
+    volumes:
+      # Persist user-uploaded files (avatars, game maps, logs)
+      - server-public:/app/apps/server/public
+    networks:
+      - monopoly-network
+
+  coturn:
+    image: coturn/coturn:debian
+    container_name: monopoly-coturn
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - /www/wwwroot/monopoly/coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+      - ${COTURN_CERTS_PATH:-/www/wwwroot/monopoly/coturn/certs}:/etc/coturn/certs:ro
+    env_file:
+      - .env
+    command:
+      - "-c"
+      - "/etc/coturn/turnserver.conf"
+      - "--external-ip=${EXTERNAL_IP}"
+      - "--static-auth-secret=${TURN_SECRET}"
+      - "--prometheus"
+      - "--prometheus-port=9641"
+      - "--log-file=stdout"
+
+networks:
+  monopoly-network:
+    external: true
+
+volumes:
+  server-public:

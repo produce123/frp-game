@@ -1,0 +1,177 @@
+<script setup lang="ts">
+import { ref, VNode, isVNode, computed } from "vue";
+import FpDialog from "../fp-dialog/fp-dialog.vue";
+import { UISchema, FormSchema } from "@mine-monopoly/types";
+import UiRenderer from "../ui-renderer/ui-renderer.vue";
+import CustomForm from "../custom-form/index.vue";
+import { useGameData } from "@src/store/game";
+import { parseRichText } from "@mine-monopoly/utils";
+
+export interface Props {
+	title?: string;
+	content?: string | VNode | (() => VNode) | UISchema;
+	form?: FormSchema[];
+	confirmText?: string;
+	cancelText?: string;
+	showCancel?: boolean;
+}
+
+const props = withDefaults(defineProps<Props>(), {
+	title: "提示",
+	confirmText: "确认",
+	cancelText: "",
+});
+
+const emits = defineEmits<{
+	confirm: [data?: any]; // 修改为支持传递数据
+	cancel: [];
+	close: [];
+}>();
+
+// 解析富文本内容
+const parsedContent = computed(() => {
+	if (typeof props.content === "string") {
+		return parseRichText(props.content);
+	}
+	return props.content;
+});
+
+const formData = ref<Record<string, any>>({}); // 存储表单数据
+
+// 监听表单数据变化（由 UiRenderer 或 CustomForm 触发）
+const handleFormChange = (data: Record<string, any>) => {
+	formData.value = data;
+};
+
+const visible = ref(false);
+
+const open = () => {
+	visible.value = true;
+};
+
+defineExpose({ open });
+
+const handleConfirm = () => {
+	// 检查是否有表单数据
+	// 优先检查 props.form，其次检查 props.content 是否为 UISchema
+	const hasForm = props.form || (props.content && typeof props.content === "object" && "type" in props.content);
+	const dataToSubmit = hasForm ? formData.value : undefined;
+
+	emits("confirm", dataToSubmit);
+	visible.value = false;
+};
+
+const handleCancel = () => {
+	emits("cancel");
+	visible.value = false;
+};
+
+const handleDialogClose = () => {
+	emits("close");
+};
+</script>
+
+<template>
+	<FpDialog
+		v-model:visible="visible"
+		:title="title"
+		:hidden-footer="true"
+		:append-to-body="true"
+		style="min-width: 26rem; max-width: 90vw"
+		@cancel="handleDialogClose"
+	>
+		<div class="message-content">
+			<!-- 渲染 content -->
+			<component v-if="isVNode(parsedContent)" :is="parsedContent" />
+			<div v-else-if="typeof parsedContent === 'string'" v-html="parsedContent"></div>
+			<UiRenderer
+				v-else-if="parsedContent && typeof parsedContent === 'object' && 'type' in parsedContent"
+				:context="useGameData().$state"
+				:schema="parsedContent as UISchema"
+				@update:model-value="handleFormChange"
+			/>
+
+			<!-- 渲染 form（如果有） -->
+			<CustomForm
+				v-if="form"
+				:schema="form"
+				submit-text=""
+				@update:model-value="handleFormChange"
+			/>
+		</div>
+
+		<div class="message-footer">
+			<button v-if="cancelText" class="btn-cancel" @click="handleCancel">
+				{{ cancelText }}
+			</button>
+
+			<button class="btn-confirm" @click="handleConfirm">
+				{{ confirmText }}
+			</button>
+		</div>
+	</FpDialog>
+</template>
+
+<style lang="scss" scoped>
+.message-content {
+	font-size: 1rem;
+	color: var(--fp-color-text-regular, #333);
+	line-height: 1.5;
+
+	// 使用 pre-wrap 保留换行符和空格
+	// white-space: pre-wrap;
+
+	// 直接针对 UiRenderer 的文本节点设置样式
+	// 使用 :deep() 穿透到子组件，并使用 !important 确保优先级
+	// :deep(.ui-text-node) {
+	// 	white-space: pre-wrap !important;
+	// }
+
+	// 确保所有子元素也继承 white-space
+	:deep(*) {
+		white-space: inherit;
+	}
+
+	// 在表单前添加 margin
+	:deep(.custom-form) {
+		margin-top: 1rem;
+	}
+}
+
+.message-footer {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.75rem;
+	margin-top: 0.625rem;
+
+	button {
+		padding: 0.5em 1.2em;
+		border-radius: 0.375rem;
+		font-size: 1rem;
+		cursor: pointer;
+		border: none;
+		transition: filter 0.2s;
+
+		&.btn-confirm {
+			background-color: var(--fp-color-secondary);
+			color: white;
+
+			&:hover {
+				filter: brightness(0.9);
+			}
+		}
+
+		&.btn-cancel {
+			border: 0.0625rem solid #b0b1b3;
+			background-color: #ffffff;
+			color: var(--fp-color-tertiary);
+			border-color: var(--fp-color-tertiary);
+			text-shadow: none;
+
+			&:hover {
+				filter: brightness(0.95);
+			}
+		}
+	}
+}
+</style>

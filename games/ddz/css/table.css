@@ -1,0 +1,219 @@
+/*
+ * 斗地主（/ddz/）—— **只有页面外壳**的样式。
+ *
+ * ⚠️ 牌桌本身一张图都不是这里画的：牌桌是上游 GODOT-DouDiZhu 的网页导出
+ * （`table/`，在 iframe 里跑的 WebAssembly）。这个文件只管：
+ *   顶栏、房间外壳外面那点间距、牌桌那层的定位/加载遮罩/"退出房间"小条。
+ *
+ * 房间界面（房号、成员、邀请、开始、离开）的样式在 `/shared/ui/ui.css`，不在这里。
+ */
+
+:root {
+  --ddz-bg: #0d1b14;
+  --ddz-fg: #e8f0ea;
+  --ddz-dim: #9fb2a6;
+  --ddz-line: rgba(255, 255, 255, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--ddz-bg);
+  color: var(--ddz-fg);
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+/* hidden 属性对上 display:grid/flex 会被压掉，统一兜一层 */
+[hidden] {
+  display: none !important;
+}
+
+#ddz-app {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 12px 14px 28px;
+}
+
+/* ------------------------------ 顶栏 ------------------------------ */
+
+.ddz-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  border-bottom: 1px solid var(--ddz-line);
+  padding-bottom: 8px;
+}
+
+.ddz-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--ddz-fg);
+  text-decoration: none;
+  font-size: 20px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ddz-back:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.ddz-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 700;
+  flex: 1;
+}
+
+.ddz-me {
+  color: var(--ddz-dim);
+  font-size: 13px;
+  max-width: 46%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ddz-main {
+  padding-top: 14px;
+  min-height: 60vh;
+}
+
+.ddz-foot {
+  margin-top: 22px;
+  color: var(--ddz-dim);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.ddz-foot a {
+  color: #8fd6ae;
+}
+
+.ddz-stage-note {
+  margin: 8px 0 0;
+}
+
+/* ------------------------------ 牌桌那一层 ------------------------------ */
+
+/*
+ * 为什么牌桌自己独立一层（而不是塞进房间面板）：
+ * 房间外壳每次 room.state 都会整块重画面板，iframe 被搬进搬出在某些浏览器里会重新加载
+ * ——那等于每走一手重开一次游戏。所以它固定在这儿，进对局时 mean 把这一层显出来。
+ */
+.ddz-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #000;
+}
+
+.ddz-stage iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  background: #000;
+}
+
+.ddz-stage-chip {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #e8f0ea;
+  font-size: 13px;
+  backdrop-filter: blur(4px);
+}
+
+.ddz-stage-code-label {
+  color: var(--ddz-dim);
+  font-size: 12px;
+}
+
+.ddz-stage-chip code {
+  font-family: ui-monospace, Consolas, monospace;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.ddz-stage-chip button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.08);
+  color: #e8f0ea;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ddz-stage-chip button:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.ddz-stage-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  place-content: center;
+  gap: 6px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(circle at 50% 40%, #123222, #05100a 70%);
+  color: #cfe3d6;
+}
+
+.ddz-stage-loading p {
+  margin: 0;
+  font-size: 16px;
+}
+
+.ddz-stage-loading-note {
+  color: var(--ddz-dim);
+  font-size: 12px;
+  max-width: 34ch;
+  margin: 0 auto !important;
+}
+
+.ddz-stage-rotate {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  text-align: center;
+  background: rgba(5, 16, 10, 0.92);
+  color: #cfe3d6;
+}
+
+.ddz-stage-rotate a {
+  color: #8fd6ae;
+}
+
+@media (max-width: 420px) {
+  #ddz-app {
+    padding: 10px 10px 24px;
+  }
+}

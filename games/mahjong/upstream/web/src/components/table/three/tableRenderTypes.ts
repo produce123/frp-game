@@ -1,0 +1,60 @@
+import type { DealAnimation, LastDiscard, OpeningStage, WinEffect } from '../../../game/core/contracts/gamePort'
+import type { GamePlayer, TableActionEvent, TileType, WinPresentation } from '../../../game/core/contracts/types'
+import type { TableThemeName } from './tableTheme'
+import type { WinBatch, SourceTileEvent } from '../../../game/variants/lotus/bloodFlow/types'
+import type { WinPileBatch } from './bloodFlowWinPile'
+import type { BloodFlowCue } from '../../../game/variants/lotus/bloodFlow/presentation'
+import type { KongWeatherCue } from '../../../game/core/presentation/kongWeather'
+
+export interface TableProps {
+  kongWeather?: readonly KongWeatherCue[]
+  /** 血流胡牌牌堆（盖楼）：实时给完整 WinBatch，回放给按"胡"步累积的结构子集。 */
+  bloodFlowBatches?: readonly WinPileBatch[]
+  bloodFlowCompact?: boolean
+  bloodFlowPresentationKey?: string
+  bloodFlowCue?: BloodFlowCue | null
+  bloodFlowHiddenRecords?: readonly string[]
+  bloodFlowSourceEvent?: SourceTileEvent
+  bloodFlowOwnDraw?: {sourceId:string;x:number;y:number} | null
+  /** 当前牌桌主题；切换时只重建 3D 牌桌，不刷新页面。 */
+  themeName?: TableThemeName
+  players?: GamePlayer[]
+  /** 当前客户端对应的绝对座位；牌山需要按此座位旋转到本地视角。 */
+  localSeat?: number
+  currentPlayer?: number
+  lastDiscard?: LastDiscard | null
+  wall?: TileType[]
+  wallHeadDrawn?: number
+  wallCount?: number
+  horses?: TileType[]
+  /** 本局精牌集合，用于 3D 牌面标记和亮牌排序。 */
+  jokerTiles?: TileType[]
+  /** 可替代精牌的实体牌；不计入精牌集合。 */
+  wildcardTiles?: TileType[]
+  revealHands?: boolean
+  winnerIndex?: number
+  winEffect?: WinEffect | null
+  winPresentation?: WinPresentation | null
+  dealAnimation?: DealAnimation
+  openingStage?: OpeningStage | null
+  diceValues?: number[]
+  dealerIndex?: number
+  diceThrowerIndex?: number
+  tableActionEvent?: TableActionEvent | null
+  /** 莲花麻将开局计算好的牌山断点；未传时回退按 diceValues 计算 */
+  wallBreakIndex?: number
+  /** 莲花麻将翻出的指示牌（精），需在牌山上翻出牌面 */
+  flipTile?: TileType | null
+  /** 翻精所在物理墩（0..67），指示牌在牌山上的位置 */
+  flipStack?: number
+}
+
+export type ResolvedTableProps = {
+  [K in keyof Required<TableProps>]: Exclude<Required<TableProps>[K], undefined>
+}
+
+export interface TableTransform {
+  x: number
+  z: number
+  rotation: number
+}

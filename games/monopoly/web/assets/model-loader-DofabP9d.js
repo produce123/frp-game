@@ -1,0 +1,1 @@
+import{G as o}from"./three-vendor-NIihX5yT.js";import{g as e}from"./index-DGaz9bsi.js";const r=new o;function n(o){return new Promise((e,n)=>{r.load(`${o}`,o=>{e(o)},void 0,o=>{n(o)})})}r.setDRACOLoader(e());export{n as l};

@@ -1,0 +1,23 @@
+// =============================================================================
+// Fatpaper 字体变量系统
+// 命名规范: $fp-font-{property}-{variant}
+// =============================================================================
+
+// ---- 字体大小 ----
+$fp-font-size-xs: 0.75rem;
+$fp-font-size-sm: 0.875rem;
+$fp-font-size-base: 1rem;
+$fp-font-size-lg: 1.125rem;
+$fp-font-size-xl: 1.25rem;
+$fp-font-size-xxl: 1.5rem;
+
+// ---- 字重 ----
+$fp-font-weight-light: 300;
+$fp-font-weight-normal: 400;
+$fp-font-weight-medium: 500;
+$fp-font-weight-bold: 700;
+
+// ---- 行高 ----
+$fp-font-line-height-tight: 1.25;
+$fp-font-line-height-normal: 1.5;
+$fp-font-line-height-relaxed: 1.75;

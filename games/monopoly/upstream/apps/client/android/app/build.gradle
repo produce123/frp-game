@@ -1,0 +1,136 @@
+apply plugin: 'com.android.application'
+import groovy.json.JsonSlurper
+
+// ============================================================
+// APK 签名配置
+// 支持两种方式（优先级从高到低）：
+//   1. CI/CD：环境变量 RELEASE_KEYSTORE_BASE64 + RELEASE_STORE_PASSWORD 等
+//   2. 本地开发：根目录下的 keystore.properties 文件
+// ============================================================
+
+def keystorePropertiesFile = rootProject.file("keystore.properties")
+def keystoreProperties = new Properties()
+def hasKeystoreProps = keystorePropertiesFile.exists()
+
+if (hasKeystoreProps) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+// 判断是否为 CI 环境（通过环境变量传入，确保非空）
+def ciKeystoreB64 = System.getenv("RELEASE_KEYSTORE_BASE64")
+def hasCIKeystore = ciKeystoreB64 != null && !ciKeystoreB64.trim().isEmpty()
+def keystorePath = null
+
+if (hasCIKeystore) {
+    // CI 模式：从环境变量 base64 解码生成临时 keystore 文件
+    def keystoreBytes = ciKeystoreB64.decodeBase64()
+    keystorePath = rootProject.file("ci-release.keystore")
+    keystorePath.withOutputStream { it.write(keystoreBytes) }
+    logger.info("CI signing: keystore decoded to ${keystorePath}")
+    println("CI signing: keystore decoded (${keystoreBytes.length} bytes)")
+}
+
+def hasSigningConfig = hasKeystoreProps || hasCIKeystore
+
+def clientPackageJsonFile = rootProject.file("../package.json")
+def clientVersionName = "1.0.0"
+def clientVersionCode = 1
+
+if (clientPackageJsonFile.exists()) {
+    def clientPackage = new JsonSlurper().parse(clientPackageJsonFile)
+    clientVersionName = (clientPackage.version ?: clientVersionName).toString()
+
+    def semverParts = clientVersionName.tokenize("-")[0]
+        .tokenize(".")
+        .collect { part -> part ==~ /\d+/ ? part.toInteger() : 0 }
+
+    while (semverParts.size() < 3) {
+        semverParts << 0
+    }
+
+    clientVersionCode = semverParts[0] * 10000 + semverParts[1] * 100 + semverParts[2]
+    println("Android app version: ${clientVersionName} (${clientVersionCode})")
+} else {
+    println("Android app version: package.json not found, fallback to ${clientVersionName} (${clientVersionCode})")
+}
+
+// 打印签名诊断信息
+if (hasSigningConfig) {
+    println("Signing config: ENABLED (${hasCIKeystore ? 'CI' : 'local'})")
+} else {
+    println("Signing config: DISABLED — APK will be unsigned or debug-signed")
+}
+
+android {
+    namespace = "com.fatpaper.minemonopoly"
+    compileSdk = rootProject.ext.compileSdkVersion
+
+    signingConfigs {
+        if (hasSigningConfig) {
+            release {
+                if (hasCIKeystore) {
+                    storeFile file(keystorePath)
+                    storePassword System.getenv("RELEASE_STORE_PASSWORD")
+                    keyAlias     System.getenv("RELEASE_KEY_ALIAS") ?: "release"
+                    keyPassword  System.getenv("RELEASE_KEY_PASSWORD") ?: System.getenv("RELEASE_STORE_PASSWORD")
+                } else {
+                    storeFile file(keystoreProperties['storeFile'])
+                    storePassword keystoreProperties['storePassword']
+                    keyAlias keystoreProperties['keyAlias']
+                    keyPassword keystoreProperties['keyPassword']
+                }
+            }
+        }
+    }
+
+    defaultConfig {
+        applicationId "com.fatpaper.minemonopoly"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode clientVersionCode
+        versionName clientVersionName
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        aaptOptions {
+             // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
+             // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
+            ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~:!*.gz'
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // 有签名配置时使用正式签名，否则使用 debug 签名（仅用于本地测试）
+            signingConfig hasSigningConfig ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+}
+
+repositories {
+    flatDir{
+        dirs '../capacitor-cordova-android-plugins/src/main/libs', 'libs'
+    }
+}
+
+dependencies {
+    implementation fileTree(include: ['*.jar'], dir: 'libs')
+    implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
+    implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
+    implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
+    implementation project(':capacitor-android')
+    testImplementation "junit:junit:$junitVersion"
+    androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
+    androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"
+    implementation project(':capacitor-cordova-android-plugins')
+}
+
+apply from: 'capacitor.build.gradle'
+
+try {
+    def servicesJSON = file('google-services.json')
+    if (servicesJSON.text) {
+        apply plugin: 'com.google.gms.google-services'
+    }
+} catch(Exception e) {
+    logger.info("google-services.json not found, google-services plugin not applied. Push Notifications won't work")
+}

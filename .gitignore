@@ -1,0 +1,65 @@
+# 隧道真实密钥（配置已按 tcp/、http/ 分文件夹，规则要覆盖子目录 ——
+# `*.local` 匹配不到 `frpc.local.ini`，别指望它兜住）
+frpc/**/*.local.ini
+
+# 本机真实地址/隧道备忘（只留本地，不发布）
+docs/*.local.md
+*.local.ini
+
+# agent 团队/会话状态（可能含提示词与临时信息，不进仓库）
+.agent-teams/
+
+# 根目录临时文件
+tmp-*.log
+
+# 截图：public-* 是打公网地址时截的，地址栏里有真实域名/端口，禁止发布
+tests/screenshots/public-*.png
+
+# 数据库（里面有密码哈希和会话）
+data/
+*.db
+*.db-shm
+*.db-wal
+
+# 依赖与产物
+node_modules/
+dist/
+build/
+out/
+.next/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+# 狼人杀的前端产物**要提交**（约 7MB）：平台不需要 node_modules 就能跑，
+# 只有改前端时才要 `cd games/werewolf/app && pnpm install && pnpm build`
+# 然后把 `app/out/` 覆盖到 `games/werewolf/dist/`（见 games/werewolf/README.md）。
+!games/werewolf/dist/
+!games/werewolf/dist/**
+
+# 环境与密钥
+.env
+.env.*
+# 大富翁构建配置没有密钥（地图 key 来自公开前端包），要跟着源码一起提交
+!games/monopoly/upstream/.env.frp
+*.local
+*.pem
+*.key
+
+# 日志
+*.log
+logs/
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 原版无名杀：上游 GPL-3.0 源码（约 1.2GB）+ pnpm 依赖 + 构建产物（dist/）。
+# **整目录不进 git** —— 它不是我们的代码，而且体积是仓库的几百倍。
+# 恢复/更新方式：`node tools/noname-update.mjs`（拉上游 main + pnpm install + pnpm build）。
+# 见 docs/GAMES.md 的《无名杀 Web》一节。
+games/noname-web/
+# 下载源码用的临时目录（.tmp-noname/noname.zip 约 1.2GB）
+.tmp-noname/

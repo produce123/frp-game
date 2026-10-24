@@ -1,0 +1,14 @@
+{
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"paths": {
+			"@/*": ["./src/*"],
+			"@mine-monopoly/env": ["../../packages/env/src/browser.ts"],
+			"@mine-monopoly/types": ["../../packages/types/index.ts"],
+			"@mine-monopoly/utils": ["../../packages/utils/index.ts"],
+			"@mine-monopoly/style": ["../../packages/style/dist/types.d.ts"]
+		}
+	},
+	"include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+	"exclude": ["src/**/model-text"]
+}

@@ -1,0 +1,12 @@
+// =============================================================================
+// Fatpaper 层级变量系统 (z-index)
+// 命名规范: $fp-layer-{name}
+// =============================================================================
+
+$fp-layer-background: 0;
+$fp-layer-game: 10;
+$fp-layer-ui: 20;
+$fp-layer-fly-item: 30;
+$fp-layer-dialog: 70;
+$fp-layer-loading: 90;
+$fp-layer-topbar: 100;

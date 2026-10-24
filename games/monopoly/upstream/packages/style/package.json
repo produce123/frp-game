@@ -1,0 +1,19 @@
+{
+  "name": "@mine-monopoly/style",
+  "version": "1.0.0",
+  "description": "Fatpaper 统一样式变量与类型定义",
+  "main": "dist/index.ts",
+  "types": "dist/types.d.ts",
+  "scripts": {
+    "build": "node build/generate-types.js && sass src/index.scss dist/index.css",
+    "generate-types": "node build/generate-types.js",
+    "preview": "npx http-server . -o preview.html -p 8080",
+    "watch": "sass --watch src/index.scss dist/index.css"
+  },
+  "keywords": ["style", "scss", "variables", "fatpaper"],
+  "author": "FatPaper",
+  "license": "ISC",
+  "devDependencies": {
+    "sass": "^1.77.0"
+  }
+}

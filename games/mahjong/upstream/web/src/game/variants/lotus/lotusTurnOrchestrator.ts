@@ -1,0 +1,542 @@
+// 「莲花麻将」回合/响应编排。弃牌响应优先级：胡 > 杠 > 碰 > 吃（仅下家），单响拦胡。
+import { removeLastDiscard } from '../../core/rules/actions'
+import { performDiscardGang, performPeng, type ActionContext } from '../../core/rules/actions'
+import { sortTilesWithJokers } from '../../core/rules/tiles'
+import { PACE_MS } from '../../core/local/localGameConfig'
+import type { TileType } from '../../core/contracts/types'
+import type { LotusController, LotusHuAction, LotusTurnContext } from './lotusControllers'
+import { canChi, canWinOnDiscard, matchingCount, type ChiMeld, LOTUS_RULESET, windKong } from './lotusRules'
+import type { LotusEndGameOptions, LotusGameState } from './lotusState'
+import type { LotusTurnAction } from './lotusControllers'
+import { createTurnRunner, type TurnOptions } from '../../shared/runtime/turnRunner'
+import type { RuleSet } from '../../core/rules/ruleset'
+import type { FollowDealerTracker } from '../../shared/runtime/followDealer'
+import { createLlmContextSource } from '../../core/controllers/llmContext'
+import { isLocalLlmSeat } from '../../core/presentation/localLlmVoiceRegistry'
+
+interface ClaimCandidate {
+  playerIndex: number
+  canPeng: boolean
+  canGang: boolean
+  chiOptions: ChiMeld[]
+}
+
+interface LotusTurnOrchestratorOptions {
+  state: LotusGameState
+  controllers: LotusController[]
+  tableContext: ActionContext
+  structuralMeldCount(playerIndex: number): number
+  drawFor(playerIndex: number, fromTail?: boolean): Promise<boolean>
+  performConcealedKong(playerIndex: number, tile: TileType, options?: { noContinue?: boolean }): Promise<void>
+  performWindKong(playerIndex: number): Promise<void>
+  declareAddedKong(playerIndex: number, meldIndex: number, tile: TileType): void
+  settleAddedKong(playerIndex: number): unknown
+  discardTile(playerIndex: number, handIndex: number): unknown
+  endDraw(): unknown
+  endGame(winnerIndex: number, options?: LotusEndGameOptions): unknown
+  announce(text: string, tone?: string): void
+  later(callback: () => void, delay: number): number
+  ruleset?: RuleSet
+  /** 跟庄跟踪器：吃/碰/杠/胡等打断第一圈的动作发生时使其失效。 */
+  followDealer?: FollowDealerTracker
+}
+
+export function createLotusTurnOrchestrator(options: LotusTurnOrchestratorOptions) {
+  const { state } = options
+  const ruleset = options.ruleset ?? LOTUS_RULESET
+  let runner!: ReturnType<typeof createTurnRunner<LotusGameState, LotusController, LotusTurnAction>>
+  // v1.1 LLM 适配：局况/可见牌/请求版本元数据（莲花：翻精为万能、白板为替代牌面）。
+  const llm = createLlmContextSource(state, {
+    jokerTiles: () => state.jokerTiles.value,
+    wildcardTiles: () => state.wildcardTiles.value,
+  })
+
+  function hasSettled() {
+    return state.phase.value === 'settled'
+  }
+
+  function interruptFollow() {
+    options.followDealer?.interrupt()
+  }
+
+  function seatDistance(from: number, to: number) {
+    return (to - from + state.players.length) % state.players.length
+  }
+
+  function canWinDiscard(playerIndex: number, tile: TileType) {
+    const player = state.players[playerIndex]
+    if (!player) return false
+    // 听任意只能自摸：全听口（单吊精）不提供点炮胡（地胡依附点炮一并失效）。
+    return canWinOnDiscard(
+      player.hand,
+      tile,
+      options.structuralMeldCount(playerIndex),
+      state.jokerTiles.value,
+      (state.jokerTiles.value.includes(tile) || state.wildcardTiles.value.includes(tile)) ? [tile] : [],
+      state.wildcardTiles.value,
+    )
+  }
+
+  function canRobKong(playerIndex: number, tile: TileType) {
+    const player = state.players[playerIndex]
+    if (!player) return false
+    return ruleset.win.canRobKong(
+      player.hand,
+      tile,
+      options.structuralMeldCount(playerIndex),
+      { jokers: state.jokerTiles.value, jokerSubstitutes: state.wildcardTiles.value },
+    )
+  }
+
+  function beginTurn(playerIndex: number, turnOptions: TurnOptions = {}) {
+    return runner.beginTurn(playerIndex, turnOptions)
+  }
+
+  // ── 弃牌响应：胡 > 杠 > 碰 > 吃（仅下家），单响 ─────────────────────────
+
+  function findHu(from: number, tile: TileType): number[] {
+    return state.players
+      .map((player, playerIndex) => ({
+        playerIndex,
+        distance: seatDistance(from, playerIndex),
+        canHu: playerIndex !== from && canWinDiscard(playerIndex, tile),
+      }))
+      .filter(({ canHu }) => canHu)
+      .sort((a, b) => a.distance - b.distance)
+      .map(({ playerIndex }) => playerIndex)
+  }
+
+  function routeDiscard(from: number, tile: TileType) {
+    const isFirstDiscard = state.roundFirstDiscard.value
+    state.roundFirstDiscard.value = false
+    const huPlayers = findHu(from, tile)
+    if (huPlayers.length) {
+      void offerHu(huPlayers, from, tile, isFirstDiscard, new Map())
+      return
+    }
+    continueClaims(from, tile)
+  }
+
+  async function offerHu(
+    list: number[],
+    from: number,
+    tile: TileType,
+    isFirstDiscard: boolean,
+    decisions: Map<number, LotusHuAction>,
+  ) {
+    const [playerIndex, ...remaining] = list
+    if (playerIndex === undefined) {
+      continueClaims(from, tile, decisions)
+      return
+    }
+    const player = state.players[playerIndex]
+    const count = matchingCount(player.hand, tile)
+    const chiOptions = playerIndex === (from + 1) % state.players.length
+      ? canChi(player.hand, tile, state.jokerTiles.value)
+      : []
+    const dihu = isFirstDiscard && from === state.dealer.value
+    const ctx = {
+      hand: player.hand,
+      exposedMelds: options.structuralMeldCount(playerIndex),
+      tile,
+      from,
+      dihu,
+      jokers: state.jokerTiles.value,
+      canPeng: count >= 2,
+      canGang: count >= 3,
+      chiOptions,
+      visibleTiles: visibleTilesFor(playerIndex),
+      ruleset,
+    }
+    const action = await options.controllers[playerIndex].requestDiscardHu(ctx)
+    if (hasSettled()) return
+    if (action.kind !== 'win' || !canWinDiscard(playerIndex, tile)) {
+      decisions.set(playerIndex, action)
+      if (action.kind === 'win') decisions.set(playerIndex, { kind: 'pass' })
+      void offerHu(remaining, from, tile, isFirstDiscard, decisions)
+      return
+    }
+    interruptFollow()
+    options.announce(`${player.name} 胡!`, 'red')
+    options.endGame(playerIndex, { winTile: tile, dihu, winHand: [...player.hand, tile], sourceFrom: from })
+  }
+
+  /** 精牌弃出后按普通牌面参与杠 → 碰 → 吃（下家）响应。 */
+  function continueClaims(from: number, tile: TileType, decisions = new Map<number, LotusHuAction>()) {
+    const claimants = findClaims(from, tile)
+    if (claimants.length) {
+      void offerNextClaim(claimants, tile, from, decisions)
+      return
+    }
+    options.later(() => { void beginTurn((from + 1) % state.players.length) }, PACE_MS.afterDiscardToNextTurn)
+  }
+
+  function findClaims(from: number, tile: TileType): ClaimCandidate[] {
+    return state.players
+      .map((player, playerIndex) => ({
+        playerIndex,
+        count: matchingCount(player.hand, tile),
+        chiOptions: playerIndex === (from + 1) % state.players.length
+          ? canChi(player.hand, tile, state.jokerTiles.value)
+          : [],
+        distance: seatDistance(from, playerIndex),
+      }))
+      .filter(({ playerIndex, count, chiOptions }) => playerIndex !== from && (count >= 2 || chiOptions.length > 0))
+      // 全局优先级：杠(1) > 碰(2) > 吃(3)，同级再按座位距离（对齐后端 find_claims）。
+      .sort((a, b) => {
+        const pa = a.count >= 3 ? 1 : a.count >= 2 ? 2 : 3
+        const pb = b.count >= 3 ? 1 : b.count >= 2 ? 2 : 3
+        return pa !== pb ? pa - pb : a.distance - b.distance
+      })
+      .map(({ playerIndex, count, chiOptions }) => ({
+        playerIndex,
+        canPeng: count >= 2,
+        canGang: count >= 3,
+        chiOptions,
+      }))
+  }
+
+  function visibleTilesFor(playerIndex: number) {
+    return state.players.flatMap((player, index) => index === playerIndex
+      ? [...player.hand, ...player.melds.flatMap((meld) => meld.tiles), ...player.discards]
+      : [...player.discards, ...player.melds.flatMap((meld) => meld.tiles)])
+  }
+
+  function publicTilesFor(_playerIndex: number) {
+    return state.players.flatMap((player) => [
+      ...player.discards,
+      ...player.melds.flatMap((meld) => meld.tiles),
+    ])
+  }
+
+  function upperLastDiscardFor(playerIndex: number) {
+    const upperIndex = (playerIndex - 1 + state.players.length) % state.players.length
+    return state.players[upperIndex]?.discards.at(-1)
+  }
+
+  function earlyRoundFor(playerIndex: number) {
+    return state.players[playerIndex]?.discards.length < 2
+  }
+
+  async function offerNextClaim(
+    claimants: ClaimCandidate[],
+    tile: TileType,
+    from: number,
+    decisions = new Map<number, LotusHuAction>(),
+  ) {
+    const [claimant, ...remainingClaims] = claimants
+    if (!claimant) {
+      options.later(() => { void beginTurn((from + 1) % state.players.length) }, PACE_MS.afterDiscardToNextTurn)
+      return
+    }
+    const player = state.players[claimant.playerIndex]
+    const decided = decisions.get(claimant.playerIndex)
+    if (decided) {
+      if (decided.kind === 'gang' && claimant.canGang) {
+        interruptFollow()
+        performDiscardGang(options.tableContext, claimant.playerIndex, tile, from)
+        options.later(() => { void beginTurn(claimant.playerIndex, { fromTail: true }) }, PACE_MS.afterClaimGang)
+        return
+      }
+      if (decided.kind === 'peng' && claimant.canPeng) {
+        interruptFollow()
+        performPeng(options.tableContext, claimant.playerIndex, tile, from)
+        options.later(() => { void beginTurn(claimant.playerIndex, { skipDraw: true, afterClaim: 'peng' }) }, PACE_MS.skipDrawPengDelay)
+        return
+      }
+      if (decided.kind === 'chi' && claimant.chiOptions.some((option) => option.tiles.join(',') === decided.meld.tiles.join(','))) {
+        performChi(claimant.playerIndex, decided.meld, tile, from)
+        options.later(() => { void beginTurn(claimant.playerIndex, { skipDraw: true, afterClaim: 'chi' }) }, PACE_MS.afterClaimPeng)
+        return
+      }
+      return offerNextClaim(remainingClaims, tile, from, decisions)
+    }
+      const ctx = {
+        ...llm.meta(claimant.playerIndex, 'claim'),
+        hand: player.hand,
+        exposedMelds: options.structuralMeldCount(claimant.playerIndex),
+        canPeng: claimant.canPeng,
+        canGang: claimant.canGang,
+        tile,
+        from,
+        chiOptions: claimant.chiOptions,
+        jokers: state.jokerTiles.value,
+        visibleTiles: visibleTilesFor(claimant.playerIndex),
+        publicTiles: publicTilesFor(claimant.playerIndex),
+        upperLastDiscard: upperLastDiscardFor(claimant.playerIndex),
+        earlyRound: earlyRoundFor(claimant.playerIndex),
+        wallCount: state.wall.value.length,
+      }
+    const action = await options.controllers[claimant.playerIndex].requestClaim(ctx)
+    if (hasSettled()) return
+
+    switch (action.kind) {
+      case 'pass':
+        return offerNextClaim(remainingClaims, tile, from, decisions)
+      case 'gang':
+        if (!claimant.canGang) return offerNextClaim(remainingClaims, tile, from, decisions)
+        interruptFollow()
+        performDiscardGang(options.tableContext, claimant.playerIndex, tile, from)
+        options.later(
+          () => { void beginTurn(claimant.playerIndex, { fromTail: true }) },
+          PACE_MS.afterClaimGang,
+        )
+        return
+      case 'peng':
+        if (!claimant.canPeng) return offerNextClaim(remainingClaims, tile, from, decisions)
+        interruptFollow()
+        performPeng(options.tableContext, claimant.playerIndex, tile, from)
+        if (action.discardIndex !== undefined) {
+          options.later(
+            () => { options.discardTile(claimant.playerIndex, action.discardIndex!) },
+            PACE_MS.afterClaimPeng,
+          )
+        } else {
+          options.later(
+            () => { void beginTurn(claimant.playerIndex, { skipDraw: true, afterClaim: 'peng' }) },
+            PACE_MS.skipDrawPengDelay,
+          )
+        }
+        return
+      case 'chi':
+        if (!claimant.chiOptions.some((option) => option.tiles.join(',') === action.meld.tiles.join(','))) {
+          return offerNextClaim(remainingClaims, tile, from, decisions)
+        }
+        performChi(claimant.playerIndex, action.meld, tile, from)
+        options.later(
+          () => { void beginTurn(claimant.playerIndex, { skipDraw: true, afterClaim: 'chi' }) },
+          PACE_MS.afterClaimPeng,
+        )
+        return
+    }
+  }
+
+  /** 吃：仅弃牌下家可吃。 */
+  function offerChi(from: number, tile: TileType, decisions = new Map<number, LotusHuAction>()) {
+    const nextPlayer = (from + 1) % state.players.length
+    const player = state.players[nextPlayer]
+    const chiOptions = canChi(player.hand, tile, state.jokerTiles.value)
+    const decided = decisions.get(nextPlayer)
+    if (decided) {
+      if (decided.kind === 'chi' && chiOptions.some((option) => option.tiles.join(',') === decided.meld.tiles.join(','))) {
+        performChi(nextPlayer, decided.meld, tile, from)
+        options.later(() => { void beginTurn(nextPlayer, { skipDraw: true, afterClaim: 'chi' }) }, PACE_MS.afterClaimPeng)
+        return
+      }
+      options.later(() => { void beginTurn(nextPlayer) }, PACE_MS.afterDiscardToNextTurn)
+      return
+    }
+    if (!chiOptions.length) {
+      options.later(() => { void beginTurn(nextPlayer) }, PACE_MS.afterDiscardToNextTurn)
+      return
+    }
+    void requestChi(nextPlayer, chiOptions, tile, from)
+  }
+
+  async function requestChi(playerIndex: number, chiOptions: ChiMeld[], tile: TileType, from: number) {
+    const player = state.players[playerIndex]
+    const action = await options.controllers[playerIndex].requestChi({
+      ...llm.meta(playerIndex, 'claim'),
+      hand: player.hand,
+      tile,
+      from,
+      chiOptions,
+      jokers: state.jokerTiles.value,
+      ruleset,
+    })
+    if (hasSettled()) return
+    if (action.kind === 'pass') {
+      options.later(() => { void beginTurn(playerIndex) }, PACE_MS.afterDiscardToNextTurn)
+      return
+    }
+    if (!chiOptions.some((option) => option.tiles.join(',') === action.meld.tiles.join(','))) {
+      options.later(() => { void beginTurn(playerIndex) }, PACE_MS.afterDiscardToNextTurn)
+      return
+    }
+    performChi(playerIndex, action.meld, tile, from)
+    options.later(
+      () => { void beginTurn(playerIndex, { skipDraw: true, afterClaim: 'chi' }) },
+      PACE_MS.afterClaimPeng,
+    )
+  }
+
+  function performChi(playerIndex: number, meld: ChiMeld, tile: TileType, from: number) {
+    interruptFollow()
+    const player = state.players[playerIndex]
+    player.drawnTileIndex = -1
+    removeLastDiscard(state.players[from].discards, tile)
+    meld.tiles.forEach((item) => {
+      if (item === tile) return
+      const index = player.hand.indexOf(item)
+      if (index >= 0) player.hand.splice(index, 1)
+    })
+    player.hand = sortTilesWithJokers(player.hand, state.jokerTiles.value)
+    player.melds.push({ type: 'chi', tile, from, tiles: meld.tiles })
+    state.currentPlayer.value = playerIndex
+    options.tableContext.showTableAction('chi', playerIndex, from, tile, player.melds.length - 1)
+    if (!isLocalLlmSeat(playerIndex)) options.tableContext.playSound('chi.mp3')
+  }
+
+  // ── 加杠 / 抢杠 ────────────────────────────────────────────────
+
+  function findRobbers(kongPlayerIndex: number, tile: TileType) {
+    return state.players
+      .map((player, playerIndex) => ({
+        playerIndex,
+        distance: seatDistance(kongPlayerIndex, playerIndex),
+        canRob: playerIndex !== kongPlayerIndex && canRobKong(playerIndex, tile),
+      }))
+      .filter(({ canRob }) => canRob)
+      .sort((a, b) => a.distance - b.distance)
+      .map(({ playerIndex }) => playerIndex)
+  }
+
+  function requestAddedKong(playerIndex: number, meldIndex: number, tile: TileType) {
+    const [robberIndex, ...remainingRobbers] = findRobbers(playerIndex, tile)
+    options.declareAddedKong(playerIndex, meldIndex, tile)
+    if (robberIndex === undefined) {
+      options.later(() => { options.settleAddedKong(playerIndex) }, PACE_MS.beforeRobKong)
+      return
+    }
+    state.pendingKong.value = { playerIndex, meldIndex, tile, remainingRobbers }
+    options.later(() => { void offerRobKong(robberIndex) }, PACE_MS.beforeRobKong)
+  }
+
+  async function offerRobKong(robberIndex: number) {
+    const kong = state.pendingKong.value
+    if (!kong || hasSettled()) return
+    const robber = state.players[robberIndex]
+    const action = await options.controllers[robberIndex].requestRobKong({
+      hand: robber.hand,
+      exposedMelds: options.structuralMeldCount(robberIndex),
+      tile: kong.tile,
+      from: kong.playerIndex,
+      jokers: state.jokerTiles.value,
+    })
+    if (hasSettled() || state.pendingKong.value !== kong) return
+    // 抢杠响应来自远端客户端，必须在收到 hu 后再次用房主状态验牌。
+    if (action === 'pass' || !canRobKong(robberIndex, kong.tile)) {
+      const [nextRobber, ...remaining] = kong.remainingRobbers
+      if (nextRobber === undefined) return options.settleAddedKong(kong.playerIndex)
+      state.pendingKong.value = { ...kong, remainingRobbers: remaining }
+      options.later(() => { void offerRobKong(nextRobber) }, PACE_MS.betweenRobKongs)
+      return
+    }
+    options.announce(`${state.players[robberIndex].name} 抢杠胡!`, 'red')
+    state.pendingKong.value = null
+    options.later(() => {
+      options.endGame(robberIndex, {
+        robbedKong: true,
+        robbedKongPlayerIndex: kong.playerIndex,
+        winTile: kong.tile,
+        winHand: [...robber.hand, kong.tile],
+        sourceFrom: kong.playerIndex,
+      })
+    }, PACE_MS.betweenRobKongs)
+  }
+
+  // ── 杠后补摸来源标记（杠上开花） ─────────────────────────────
+
+  function markDrawSource(playerIndex: number, fromTail: boolean) {
+    runner.markDrawSource(playerIndex, fromTail)
+  }
+
+  function clearDrawSource() {
+    runner.clearDrawSource()
+  }
+
+  function isKongDraw(playerIndex: number) {
+    return runner.isKongDraw(playerIndex)
+  }
+
+  runner = createTurnRunner<LotusGameState, LotusController, LotusTurnAction>({
+    state,
+    controllers: options.controllers,
+    drawFor: options.drawFor,
+    endDraw: options.endDraw,
+    buildContext: (player, playerIndex, turnOptions, kongBloom) => ({
+      ...llm.meta(playerIndex, 'turn'),
+      hand: player.hand,
+      melds: player.melds,
+      exposedMelds: options.structuralMeldCount(playerIndex),
+      kongBloom,
+      // 庄家首回合 preDrawn：引擎跳摸，但对远端视作已摸牌（天胡判定）。
+      skipDraw: Boolean(turnOptions.skipDraw) && !Boolean(turnOptions.preDrawn),
+      isDealer: playerIndex === state.dealer.value,
+      jokers: state.jokerTiles.value,
+      visibleTiles: visibleTilesFor(playerIndex),
+      publicTiles: publicTilesFor(playerIndex),
+      upperLastDiscard: upperLastDiscardFor(playerIndex),
+      earlyRound: earlyRoundFor(playerIndex),
+      wallCount: state.wall.value.length,
+      afterKong: Boolean(turnOptions.fromTail),
+      turnOrigin: turnOptions.fromTail ? 'kong-draw'
+        : turnOptions.afterClaim ?? (turnOptions.preDrawn ? 'opening' : 'draw'),
+      drawnTile: !turnOptions.skipDraw && player.drawnTileIndex >= 0
+        ? player.hand[player.drawnTileIndex] ?? null : null,
+      ruleset,
+    }),
+    requestTurn: (controller, context) => controller.requestTurn(context as LotusTurnContext),
+    handleAction: async (action, playerIndex, player, _turnOptions, api) => {
+        switch (action.kind) {
+          case 'win':
+            if (!ruleset.win.isWinningHand(player.hand, options.structuralMeldCount(playerIndex), {
+              jokers: state.jokerTiles.value,
+              jokerSubstitutes: state.wildcardTiles.value,
+            })) {
+              return options.discardTile(playerIndex, player.hand.length - 1)
+            }
+            interruptFollow()
+          return options.endGame(playerIndex, {
+            selfDraw: true,
+            kongBloom: api.isKongDraw(playerIndex),
+            winHand: [...player.hand],
+          })
+          case 'added-kong':
+            if (!Number.isInteger(action.meldIndex)
+              || !player.melds[action.meldIndex]
+              || player.melds[action.meldIndex].type !== 'peng'
+              || !player.hand.includes(player.melds[action.meldIndex].tile)) {
+              return options.discardTile(playerIndex, player.hand.length - 1)
+            }
+            interruptFollow()
+          return requestAddedKong(playerIndex, action.meldIndex, player.melds[action.meldIndex].tile)
+          case 'concealed-kong':
+            if (!ruleset.win.concealedKongs(player.hand, { jokers: state.jokerTiles.value }).includes(action.tile)) {
+              return options.discardTile(playerIndex, player.hand.length - 1)
+            }
+            interruptFollow()
+          await options.performConcealedKong(playerIndex, action.tile, { noContinue: true })
+          if (api.hasSettled()) return
+          return beginTurn(playerIndex, { fromTail: true })
+          case 'wind-kong':
+            if (!windKong(player.hand, state.jokerTiles.value)) {
+              return options.discardTile(playerIndex, player.hand.length - 1)
+            }
+            interruptFollow()
+          await options.performWindKong(playerIndex)
+          if (api.hasSettled()) return
+          return beginTurn(playerIndex, { fromTail: true })
+          case 'discard':
+            return options.discardTile(
+              playerIndex,
+              Number.isInteger(action.handIndex)
+                && action.handIndex >= 0
+                && action.handIndex < player.hand.length
+                ? action.handIndex
+                : player.hand.length - 1,
+            )
+      }
+    },
+  })
+
+  return {
+    beginTurn,
+    routeDiscard,
+    performChi,
+    requestAddedKong,
+    markDrawSource,
+    clearDrawSource,
+    isKongDraw,
+  }
+}

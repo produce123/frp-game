@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>大炮轰小鬼</title>
+  <!-- 平台统一用 emoji 当图标，本游戏不再带 favicon 文件；data: 空图标可以免掉一次 404 -->
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/shared/ui/ui.css">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Main Menu -->
+    <div id="screen-menu" class="screen is-active">
+      <div class="menu-container">
+        <div class="game-title">
+          <div class="title-icon">🎯</div>
+          <h1>大炮轰小鬼</h1>
+          <p class="subtitle">策略棋盘对战游戏</p>
+        </div>
+        <!-- 首页身份行：名字 + 可点复制的 ID（另外两个游戏首页都有，本作补齐）。
+             名字与 ID 都来自平台账号（docs/GAME-SPEC.md 第 6 节），本作不许再有输入名字的地方。
+             ⚠️ 打开页面**立刻就画**（先读浏览器里记着的那份身份，见 js/ui/app.js 的
+                renderMeLine），不等 WebSocket 的 ready —— 公网那次握手要 2~3 秒，
+                空白那几秒看起来就像"没登录"。等 ready 到了再以服务端那份对齐。
+             ⚠️ ID 那颗按钮的可点区域必须 ≥44px（平台硬指标，tools/check-game.mjs 会实测）。 -->
+        <div class="cg-me">
+          <span class="cg-me-name" id="menu-me-name">正在确认身份…</span>
+          <button class="cg-me-id" type="button" id="menu-me-id" disabled title="点一下复制你的玩家 ID">ID —</button>
+        </div>
+        <div class="menu-buttons">
+          <button class="menu-btn" onclick="showScreen('local-setup')">
+            <span class="btn-icon">👥</span>
+            <span class="btn-text">本地对局</span>
+            <span class="btn-desc">两人在同一电脑对弈</span>
+          </button>
+          <button class="menu-btn" onclick="showScreen('ai-setup')">
+            <span class="btn-icon">🤖</span>
+            <span class="btn-text">人机对局</span>
+            <span class="btn-desc">选择阵营挑战电脑</span>
+          </button>
+          <button class="menu-btn" onclick="enterOnline()">
+            <span class="btn-icon">🌐</span>
+            <span class="btn-text">在线对局</span>
+            <span class="btn-desc">创建或加入房间</span>
+          </button>
+          <button class="menu-btn" onclick="showScreen('rules')">
+            <span class="btn-icon">📖</span>
+            <span class="btn-text">游戏规则</span>
+            <span class="btn-desc">了解玩法与规则</span>
+          </button>
+        </div>
+        <!-- 音效 / 特效开关。状态存在**平台那一份**偏好里（FrpUI.prefs，键 frp.prefs），
+             棋盘底栏还有一份（data-pref 认领）—— 平台设置栏改了这两处会跟着变，两处不会打架。
+             ⚠️ 可点区域必须 ≥44px（平台硬指标，tools/check-game.mjs 会实测）。 -->
+        <div class="cg-prefs menu-prefs">
+          <button class="pref-btn" type="button" data-pref="sound" aria-pressed="true">🔊 音效</button>
+          <button class="pref-btn" type="button" data-pref="fx" aria-pressed="true">✨ 特效</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Setup Screen (shared for local/AI) -->
+    <div id="screen-local-setup" class="screen">
+      <div class="setup-container">
+        <h2>本地对局 - 游戏设置</h2>
+        <div class="setup-section">
+          <h3>选择预设地图</h3>
+          <div class="preset-maps" id="preset-maps-local"></div>
+        </div>
+        <div class="setup-section">
+          <h3>自定义设置</h3>
+          <div class="custom-settings">
+            <div class="setting-row">
+              <label>棋盘宽度:</label>
+              <input type="number" id="board-width-local" min="4" max="15" value="6">
+            </div>
+            <div class="setting-row">
+              <label>棋盘高度:</label>
+              <input type="number" id="board-height-local" min="4" max="15" value="6">
+            </div>
+            <div class="setting-row">
+              <label>大炮数量:</label>
+              <input type="number" id="cannon-count-local" min="1" max="10" value="2">
+            </div>
+            <div class="setting-row">
+              <label>小鬼数量:</label>
+              <input type="number" id="ghost-count-local" min="1" max="50" value="18">
+            </div>
+          </div>
+          <button class="action-btn" onclick="showEditor('local')">编辑初始位置</button>
+        </div>
+        <div class="setup-actions">
+          <button class="back-btn" onclick="showScreen('menu')">返回</button>
+          <button class="start-btn" onclick="startLocalGame()">开始游戏</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI Setup Screen -->
+    <div id="screen-ai-setup" class="screen">
+      <div class="setup-container">
+        <h2>人机对局 - 游戏设置</h2>
+        <div class="setup-section">
+          <h3>选择阵营</h3>
+          <div class="side-select">
+            <button class="side-btn selected" id="side-cannon" onclick="selectSide('cannon')">
+              <span class="side-icon">💣</span>
+              <span>大炮方</span>
+            </button>
+            <button class="side-btn" id="side-ghost" onclick="selectSide('ghost')">
+              <span class="side-icon">👻</span>
+              <span>小鬼方</span>
+            </button>
+          </div>
+        </div>
+        <div class="setup-section">
+          <h3>选择难度</h3>
+          <div class="difficulty-select">
+            <button class="difficulty-btn" id="diff-easy" onclick="selectDifficulty('easy')">
+              <span class="diff-icon">🌱</span>
+              <span>简单</span>
+              <span class="diff-desc">预判 1 步</span>
+            </button>
+            <button class="difficulty-btn selected" id="diff-normal" onclick="selectDifficulty('normal')">
+              <span class="diff-icon">⚔️</span>
+              <span>普通</span>
+              <span class="diff-desc">预判 2 步</span>
+            </button>
+            <button class="difficulty-btn" id="diff-hard" onclick="selectDifficulty('hard')">
+              <span class="diff-icon">💀</span>
+              <span>困难</span>
+              <span class="diff-desc">预判 6~8 步</span>
+            </button>
+          </div>
+        </div>
+        <div class="setup-section">
+          <h3>选择预设地图</h3>
+          <div class="preset-maps" id="preset-maps-ai"></div>
+        </div>
+        <div class="setup-section">
+          <h3>自定义设置</h3>
+          <div class="custom-settings">
+            <div class="setting-row">
+              <label>棋盘宽度:</label>
+              <input type="number" id="board-width-ai" min="4" max="15" value="6">
+            </div>
+            <div class="setting-row">
+              <label>棋盘高度:</label>
+              <input type="number" id="board-height-ai" min="4" max="15" value="6">
+            </div>
+            <div class="setting-row">
+              <label>大炮数量:</label>
+              <input type="number" id="cannon-count-ai" min="1" max="10" value="2">
+            </div>
+            <div class="setting-row">
+              <label>小鬼数量:</label>
+              <input type="number" id="ghost-count-ai" min="1" max="50" value="18">
+            </div>
+          </div>
+          <button class="action-btn" onclick="showEditor('ai')">编辑初始位置</button>
+        </div>
+        <div class="setup-actions">
+          <button class="back-btn" onclick="showScreen('menu')">返回</button>
+          <button class="start-btn" onclick="startAIGame()">开始游戏</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Board Editor -->
+    <div id="screen-editor" class="screen">
+      <div class="editor-container">
+        <h2>编辑初始位置</h2>
+        <p class="editor-hint">点击棋盘格子放置棋子，再次点击移除</p>
+        <div class="editor-tools">
+          <button class="tool-btn active" id="tool-cannon" onclick="selectTool('cannon')">💣 放置大炮</button>
+          <button class="tool-btn" id="tool-ghost" onclick="selectTool('ghost')">👻 放置小鬼</button>
+          <button class="tool-btn" id="tool-erase" onclick="selectTool('erase')">🗑️ 擦除</button>
+        </div>
+        <div class="editor-board-wrapper">
+          <div id="editor-board" class="game-board"></div>
+        </div>
+        <div class="editor-info">
+          <span>大炮: <strong id="editor-cannon-count">0</strong></span>
+          <span>小鬼: <strong id="editor-ghost-count">0</strong></span>
+        </div>
+        <div class="setup-actions">
+          <button class="back-btn" onclick="backFromEditor()">返回设置</button>
+          <button class="start-btn" onclick="confirmEditor()">确认</button>
+        </div>
+      </div>
+    </div>
+
+<!-- 在线对局。房间外壳（房号 / 成员 / 邀请好友 / 开始 / 离开）全部由
+         /shared/ui/room.js 画 —— 三个游戏长得一样的就是这一块，见 docs/GAME-SPEC.md 第 8 节。
+         本游戏只往"准备区"里填自己的设置项（选边 + 选地图 + 地图编辑器）。 -->
+    <div id="screen-online-ready" class="screen">
+      <div class="game-container">
+        <div class="setup-section">
+          <h3>在线对局</h3>
+        </div>
+
+        <div id="online-panel"></div>
+
+        <!-- 地图编辑器会读这两个值（showEditor('online') 里取的），
+             不放界面但必须存在，否则点"编辑初始位置"会读取 undefined 而崩掉。 -->
+        <input type="hidden" id="board-width-online" value="6">
+        <input type="hidden" id="board-height-online" value="6">
+
+        <div class="setup-actions">
+          <button class="back-btn" onclick="showScreen('menu')">返回菜单</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="screen-game" class="screen">
+      <div class="game-container">
+        <div class="game-header">
+          <button class="icon-btn" onclick="confirmQuit()">✕</button>
+          <div class="turn-indicator" id="turn-indicator">
+            <span id="turn-text">大炮方回合</span>
+          </div>
+          <div class="game-info-brief">
+            <span id="ghost-remaining">👻 ×18</span>
+            <span id="cannon-remaining">💣 ×2</span>
+          </div>
+        </div>
+        <!-- 对阵条：两个座位各一个头像圆（自己=蓝圈 / 其他真人=橙圈 / 人机=灰虚线圈），
+             点头像就能扔鸡蛋 / 送鲜花（互动由 /shared/ui/react.js 全包，本游戏不写一行）。
+             内容由 app.js 的 renderVersusBar() 画；单机对局没有玩家 id，画的是纯标记。 -->
+        <div id="versus-bar" class="versus-bar"></div>
+        <div class="board-wrapper">
+          <div id="game-board" class="game-board"></div>
+        </div>
+        <div class="game-footer">
+          <div class="cg-prefs">
+            <button class="pref-btn" type="button" data-pref="sound" aria-pressed="true">🔊 音效</button>
+            <button class="pref-btn" type="button" data-pref="fx" aria-pressed="true">✨ 特效</button>
+          </div>
+          <div id="game-status" class="game-status"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Modal -->
+    <div id="game-over-modal" class="modal" style="display:none;">
+      <div class="modal-content">
+        <h2 id="game-over-title">游戏结束</h2>
+        <p id="game-over-message"></p>
+        <div class="modal-actions">
+          <button class="action-btn" onclick="restartGame()">再来一局</button>
+          <button class="back-btn" onclick="backToMenu()">返回菜单</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Rules Screen -->
+    <div id="screen-rules" class="screen">
+      <div class="rules-container">
+        <h2>游戏规则</h2>
+        <div class="rules-content">
+          <section class="rule-section">
+            <h3>🎯 游戏简介</h3>
+            <p>大炮轰小鬼是一款不对称策略棋盘游戏。大炮方拥有强大的远程攻击能力，小鬼方则以数量优势围堵大炮。双方斗智斗勇，看谁能笑到最后！</p>
+          </section>
+          <section class="rule-section">
+            <h3>📋 基本规则</h3>
+            <ul>
+              <li><strong>棋盘：</strong>默认为6×6的网格棋盘，棋子放在交叉点上</li>
+              <li><strong>棋子：</strong>大炮方2枚大炮，小鬼方18枚小鬼</li>
+              <li><strong>先手：</strong>大炮方先手</li>
+              <li><strong>移动：</strong>每回合只能移动一枚己方棋子，横竖走一格到相邻的空位</li>
+            </ul>
+          </section>
+          <section class="rule-section">
+            <h3>💣 大炮吃子规则</h3>
+            <p>大炮吃子需要满足以下条件：</p>
+            <ul>
+              <li>大炮、一个空格、一枚小鬼三者在同一条直线上（横或竖）</li>
+              <li>大炮和小鬼之间刚好隔一个空位</li>
+              <li>满足条件时，大炮跳到小鬼的位置，将该小鬼移出棋盘</li>
+            </ul>
+            <div class="rule-diagram">
+              <p>示意图：💣 → ○ → 👻 = 💣跳到👻位置，👻被移除</p>
+            </div>
+          </section>
+          <section class="rule-section">
+            <h3>👻 小鬼的限制</h3>
+            <p>小鬼不能吃掉大炮，只能通过围堵来限制大炮的行动。小鬼需要配合默契，形成包围圈将大炮困住。</p>
+          </section>
+          <section class="rule-section">
+            <h3>🏆 胜负判定</h3>
+            <ul>
+              <li><strong>大炮方获胜：</strong>当场上小鬼数量小于等于大炮数量时</li>
+              <li><strong>小鬼方获胜：</strong>当所有大炮都被堵死，无法移动时</li>
+            </ul>
+          </section>
+          <section class="rule-section">
+            <h3>💡 策略提示</h3>
+            <ul>
+              <li><strong>大炮方：</strong>利用远程攻击逐步削减小鬼数量，注意保持灵活的移动空间</li>
+              <li><strong>小鬼方：</strong>协调配合，从多个方向包围大炮，限制其活动范围</li>
+            </ul>
+          </section>
+        </div>
+        <button class="back-btn" onclick="showScreen('menu')">返回菜单</button>
+      </div>
+    </div>
+  </div>
+
+<!-- ⚠️ 加载顺序不能动：模块脚本天然 defer，而 HTML 规定 defer 脚本与模块脚本
+       **按文档顺序**在解析结束后依次执行。bridge 必须在经典脚本之前跑完，
+       否则 app.js 开头的 `let playerSide = CANNON` 会读到 undefined。
+
+       平台那几个共用脚本也有先后：protocol（常量）→ net（GameNet）→ ui（FrpUI）
+       → anim（演出队列）→ react（头像与互动，它要读 FrpAnim）→ room（房间外壳，
+       它要读 FrpReact）。tools/check-game.mjs 会实测这个顺序。 -->
+  <script type="module" src="/shared/protocol.mjs"></script>
+  <script type="module" src="js/bridge.js"></script>
+  <script defer src="/shared/net/net.js"></script>
+  <script defer src="/shared/ui/ui.js"></script>
+  <script defer src="/shared/ui/anim.js"></script>
+  <script defer src="/shared/ui/react.js"></script>
+  <script defer src="/shared/ui/room.js"></script>
+    <script defer src="/shared/ui/no-idm.js"></script>
+    <script defer src="/shared/ui/fullscreen.js"></script>
+  <script defer src="js/ui/audio.js"></script>
+  <script defer src="js/ui/online.js"></script>
+  <script defer src="js/ui/app.js"></script>
+</body>
+</html>
+

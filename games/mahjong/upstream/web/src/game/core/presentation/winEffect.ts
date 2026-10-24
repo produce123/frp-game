@@ -1,0 +1,47 @@
+import { seatTableLayout } from './tableLayout'
+import type { TileType, WinPresentation } from '../contracts/types'
+
+export const WIN_EFFECT_DURATION = 2600
+export const WIN_REVEAL_DURATION = 1500
+export const WIN_EFFECT_SOUND_DELAY = 320
+
+/** DOM 胡牌立绘的独占引导段；结束后再启动 Three.js 光束（R6.23：按用户要求立绘停留约 2 秒）。 */
+export const WIN_CUE_LEAD_DURATION = 1600
+/** 立绘退出段，保证透明度归零后才让光束占用中央区域。 */
+export const WIN_CUE_EXIT_DURATION = 400
+
+export const REDUCED_WIN_EFFECT_DURATION = 420
+export const REDUCED_WIN_REVEAL_DURATION = 360
+export const REDUCED_WIN_CUE_LEAD_DURATION = 450
+export const REDUCED_WIN_CUE_EXIT_DURATION = 0
+
+export const WIN_DISPLAY_LAYOUTS = Object.freeze([0,1,2,3].map(seat => Object.freeze(seatTableLayout(seat).win)))
+
+export function winDisplayLayout(playerIndex: number) {
+  return WIN_DISPLAY_LAYOUTS[playerIndex] ?? WIN_DISPLAY_LAYOUTS[0]
+}
+
+export function splitWinningTile(hand: TileType[] = [], presentation: WinPresentation | null = null) {
+  const tiles = [...hand]
+  if (!presentation?.tile) return { hand: tiles, displayTile: null, removedIndex: -1 }
+  if (presentation.robbedKong || presentation.discardWin) {
+    return { hand: tiles, displayTile: presentation.tile, removedIndex: -1 }
+  }
+
+  const preferredIndex = presentation.sourceIndex
+  const removedIndex = Number.isInteger(preferredIndex)
+    && preferredIndex >= 0
+    && preferredIndex < tiles.length
+    && tiles[preferredIndex] === presentation.tile
+    ? preferredIndex
+    : tiles.lastIndexOf(presentation.tile)
+
+  if (removedIndex >= 0) tiles.splice(removedIndex, 1)
+  return { hand: tiles, displayTile: presentation.tile, removedIndex }
+}
+
+export function prefersReducedMotion() {
+  return typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}

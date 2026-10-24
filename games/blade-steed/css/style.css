@@ -1,0 +1,1129 @@
+/* =========================================================================
+   刀马 BladeSteed — 深色护眼极简聚会风
+   手机优先：所有可点区域 ≥ 48px，字号在窄屏也不缩到看不清。
+   ========================================================================= */
+
+:root {
+  --bg: #0e1116;
+  --bg-2: #141a23;
+  --card: #1a212b;
+  --card-2: #212a36;
+  --line: #2a3444;
+  --text: #e7eef8;
+  --dim: #8b9bb0;
+  --accent: #ffb454;
+  --accent-dim: #6b5124;
+  --green: #6ee7b7;
+  --red: #ff7b7b;
+  --blue: #7cb7ff;
+  --radius: 14px;
+  --pad: 14px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 必须放在最前面：下面给 .sheet 写了 display:grid，
+   作者样式会盖掉浏览器默认的 [hidden]{display:none}，
+   结果「藏起来」的对局菜单其实一直盖在页面上，什么都点不动。 */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  overscroll-behavior: none;
+}
+
+body {
+  /* 背景一点点渐变更耐看，也不会抢戏 */
+  background-image: radial-gradient(1200px 600px at 50% -10%, #1a2432 0%, transparent 60%);
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+input {
+  font-family: inherit;
+  font-size: inherit;
+}
+
+#app {
+  position: relative;
+  height: 100%;
+  min-height: 100dvh;
+}
+
+/* ------------------------------- 屏幕切换 ------------------------------- */
+
+.screen {
+  display: none;
+  flex-direction: column;
+  gap: var(--pad);
+  padding: calc(var(--pad) + env(safe-area-inset-top)) var(--pad) calc(var(--pad) + env(safe-area-inset-bottom));
+  min-height: 100dvh;
+  max-width: 560px;
+  margin: 0 auto;
+  animation: screen-in 0.22s ease;
+}
+
+.screen.is-active {
+  display: flex;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --------------------------------- 首页 --------------------------------- */
+
+.home-hero {
+  text-align: center;
+  padding: 6vh 0 1vh;
+}
+
+.logo {
+  margin: 0;
+  font-size: 64px;
+  letter-spacing: 0.15em;
+  font-weight: 800;
+  background: linear-gradient(160deg, #ffd899, #ffb454 40%, #d9803a);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 40px rgba(255, 180, 84, 0.18);
+}
+
+.logo-sub {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--pad);
+  box-shadow: var(--shadow);
+}
+
+.field-label {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--dim);
+  letter-spacing: 0.05em;
+}
+
+.hint {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.6;
+}
+
+.home-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.big-btn {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  min-height: 62px;
+  padding: 12px 16px;
+  text-align: left;
+  border-radius: var(--radius);
+  background: var(--card);
+  border: 1px solid var(--line);
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+
+.big-btn:active {
+  transform: scale(0.985);
+  background: var(--card-2);
+}
+
+.big-btn.primary {
+  background: linear-gradient(160deg, #2a2113, #1d1a15);
+  border-color: var(--accent-dim);
+}
+
+.big-btn.primary:active {
+  background: #322713;
+}
+
+.big-btn-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.big-btn-sub {
+  font-size: 12.5px;
+  color: var(--dim);
+}
+
+.toggles {
+  display: flex;
+  gap: 10px;
+  margin-top: auto;
+  padding-top: 10px;
+}
+
+.toggle {
+  flex: 1;
+  min-height: 48px;
+  border-radius: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 14px;
+}
+
+.toggle[aria-pressed='true'] {
+  color: var(--text);
+  border-color: #3a4a60;
+  background: var(--card);
+}
+
+.toggle[aria-pressed='false'] {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+/* ------------------------------- 通用页头 ------------------------------- */
+
+.page-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+}
+
+.page-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.icon-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.icon-btn:active {
+  background: var(--card-2);
+}
+
+.icon-btn.back {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.seg {
+  display: flex;
+  gap: 8px;
+}
+
+.seg-btn {
+  flex: 1;
+  min-height: 52px;
+  border-radius: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--dim);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.seg-btn.is-on {
+  background: linear-gradient(160deg, #2a2113, #1d1a15);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* -------------------------------- 牌桌 -------------------------------- */
+
+.screen.board {
+  padding: calc(8px + env(safe-area-inset-top)) 8px calc(8px + env(safe-area-inset-bottom));
+  gap: 8px;
+  max-width: 720px;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.board-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.board-status {
+  display: flex;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pill {
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pill.ghost {
+  color: var(--dim);
+  font-weight: 500;
+}
+
+.pill.hot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.timer {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--card);
+  border: 2px solid var(--line);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  transition: border-color 0.2s;
+}
+
+.timer.urgent {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.timer.idle {
+  opacity: 0.35;
+}
+
+/*
+ * 演出中：队列没排空时不显示在跑的倒计时（那会变成"数字在动却点不了"）。
+ * 三个字放不进 48px 的圆里，所以字号缩一档 —— 只改这一个圈，不动别的尺寸。
+ */
+.timer.busy {
+  font-size: 11px;
+  font-weight: 600;
+  opacity: 0.6;
+}
+
+.map-wrap {
+  flex: 1 1 auto;
+  min-height: 180px;
+  position: relative;
+  border-radius: var(--radius);
+  background: radial-gradient(80% 70% at 50% 50%, #16202c 0%, #10151c 100%);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.map {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.board-bottom {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+}
+
+.log-strip {
+  max-height: 4.6em;
+  overflow-y: auto;
+  font-size: 12.5px;
+  color: var(--dim);
+  line-height: 1.65;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(20, 26, 35, 0.7);
+  border: 1px solid var(--line);
+  scrollbar-width: thin;
+}
+
+.log-strip .log-line:last-child {
+  color: var(--text);
+}
+
+.action-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 34vh;
+  scrollbar-width: thin;
+  padding-bottom: 2px;
+}
+
+.panel-title {
+  font-size: 13px;
+  color: var(--dim);
+  text-align: center;
+}
+
+.rps-row {
+  display: flex;
+  gap: 10px;
+}
+
+.rps-btn {
+  flex: 1;
+  min-height: 68px;
+  border-radius: var(--radius);
+  background: var(--card);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 15px;
+  font-weight: 600;
+  transition: transform 0.08s;
+}
+
+.rps-btn:active {
+  transform: scale(0.96);
+}
+
+.rps-btn .emoji {
+  font-size: 26px;
+  line-height: 1;
+}
+
+.rps-btn.is-picked {
+  border-color: var(--accent);
+  background: linear-gradient(160deg, #2a2113, #1d1a15);
+  color: var(--accent);
+}
+
+.rps-btn:disabled {
+  opacity: 0.4;
+}
+
+.ready-row {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.ready-chip {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--dim);
+}
+
+.ready-chip.on {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+/* 人机座位（联机房间里按「＋ 添加人机」加出来的座位，见 server/games/blade-steed.mjs）。
+   ready 标记上再给一道虚线边，扫一眼就能和真人分开（地图那头是灰虚线圈 + 灰名字）。
+   单机的视图里没有 isAI 这个字段，所以单机牌桌不受影响。 */
+.ready-chip.is-ai {
+  border-style: dashed;
+}
+
+.act-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.act-btn {
+  min-height: 54px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 4px;
+}
+
+.act-btn:active {
+  background: var(--card-2);
+}
+
+.act-btn.hot {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.act-btn.danger {
+  border-color: #6d3030;
+  color: var(--red);
+}
+
+.act-btn .sub {
+  font-size: 11px;
+  color: var(--dim);
+  font-weight: 400;
+}
+
+.act-btn.wide {
+  grid-column: 1 / -1;
+}
+
+.waiting {
+  text-align: center;
+  padding: 14px 10px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: 14px;
+  color: var(--dim);
+}
+
+.waiting b {
+  color: var(--accent);
+}
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  padding: 0 12px;
+  border-radius: 12px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  font-size: 15px;
+}
+
+.order-item .idx {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  background: var(--bg-2);
+  color: var(--dim);
+}
+
+.order-item.is-sel {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.order-item .swaphint {
+  margin-left: auto;
+  font-size: 11.5px;
+  color: var(--dim);
+}
+
+/* -------------------------------- 规则 -------------------------------- */
+
+.rules {
+  font-size: 14px;
+  color: #cfdcec;
+}
+
+.rules h3 {
+  margin: 18px 0 6px;
+  font-size: 15px;
+  color: var(--accent);
+}
+
+.rules h3:first-child {
+  margin-top: 0;
+}
+
+.rules ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.rules li {
+  margin: 5px 0;
+  line-height: 1.7;
+}
+
+.rules b {
+  color: #fff;
+}
+
+/* ------------------------------ 地图 SVG ------------------------------ */
+
+.city-ring {
+  fill: rgba(34, 45, 60, 0.55);
+  stroke: #33415a;
+  stroke-width: 1.6;
+}
+
+.city-ring.mine {
+  stroke: var(--accent-dim);
+}
+
+.city-ring.dead {
+  stroke-dasharray: 4 4;
+}
+
+.city-name {
+  fill: #7f8fa6;
+  font-size: 11px;
+  text-anchor: middle;
+  font-weight: 600;
+}
+
+.wild-ring {
+  fill: rgba(28, 46, 40, 0.5);
+  stroke: #2f5548;
+  stroke-width: 1.6;
+  stroke-dasharray: 6 5;
+}
+
+.wild-name {
+  fill: #5f8f79;
+  font-size: 11px;
+  text-anchor: middle;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+}
+
+.token {
+  cursor: pointer;
+  transition: transform 0.45s cubic-bezier(0.34, 1.4, 0.5, 1);
+}
+
+/* 透明的大热区：手机上要好点，所以它比头像本身大一圈。
+   fill 是透明的，默认的 visiblePainted 在部分浏览器上不算命中，必须显式 all。 */
+.token .tok-hit {
+  fill: transparent;
+  pointer-events: all;
+  cursor: pointer;
+}
+
+.token .tok-face {
+  fill: #22303f;
+  stroke: #3b4b61;
+  stroke-width: 2.2;
+  transition: stroke 0.2s, fill 0.2s;
+}
+
+/* 平台头像：裁在脸那个圆里，纯展示，不吃指针（热区是下面的 .tok-hit） */
+.token .tok-img {
+  pointer-events: none;
+}
+
+/* 轮次高亮：轮到谁行动。**只改底色和线宽**，圈的颜色留给下面那三条"语义"规则 —— */
+.token.is-current .tok-face {
+  stroke: var(--accent);
+  stroke-width: 3.2;
+  fill: #2f2717;
+}
+
+/*
+ * 圆环配色是**语义**：自己=蓝 / 其他真人=橙 / 人机=灰。
+ * 和 shared/ui/react.js 的 `FrpReact.ringClass(id, isBot)`（以及 ui.css 里 .frp-avatar
+ * 的那三条）是同一套判定 —— 三个游戏的用户学会一个就该认得下一个，所以谁都不许改。
+ * 这里只是把它落到 SVG 上：`.tok-face` 的 stroke 就是那个圈
+ * （本作的头像没有单独的"环"元素，圈＝圆的描边）。
+ *
+ * ⚠️ 顺序是刻意的：这三条排在 `.is-current` **之后**，所以轮到谁行动时
+ *    圈的颜色仍旧说"他是谁"（不然电脑一行动，它的灰圈就变成主色了），
+ *    行动者的标记靠上面的金色底。
+ */
+.token.is-me .tok-face {
+  stroke: var(--blue);
+}
+
+/* 其他真人：橙（和 ui.css 的 .frp-avatar.is-human 同一个色值） */
+.token.is-human .tok-face {
+  stroke: #ff9f43;
+}
+
+/* 人机：灰 + 虚线圈（颜色之外再加一层形状，色盲也分得清） */
+.token.is-bot .tok-face {
+  stroke: #8b93a3;
+  stroke-dasharray: 3.2 2.4;
+}
+
+.token.is-bot .tok-char {
+  fill: #b9c0cc;
+}
+
+/* 兼容旧的类名：联机房间的人机会同时带上 is-ai（board.js 的 ready 标记也用 is-ai）。
+   ⚠️ 这里**不写颜色** —— 颜色归上面那三条"语义"规则管，写两份迟早分叉。 */
+.token.is-ai .tok-face {
+  stroke-dasharray: 3.2 2.4;
+}
+
+.token .tok-char {
+  fill: #e7eef8;
+  /* 字号是**用户坐标**（SVG 里的 px 就是用户单位），跟着头像半径一起放大：
+     半径 12.5 → 17，字号 14 → 19（改这两处要一起改，不然字会溢出圆） */
+  font-size: 19px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+/* 出局的人：**放在语义色之后** —— 死了的人不再讲身份，一律灰圈 + 暗底 + 灰名字 */
+.token.is-dead {
+  opacity: 0.35;
+}
+
+.token.is-dead .tok-face {
+  fill: #1b1f26;
+  stroke: #3a3f47;
+}
+
+.token.is-dead .tok-char {
+  fill: #6a727d;
+}
+
+/* 名字不止一个字（平台昵称）：字号收小，再由 map.js 的 textLength 压进头像圆里 */
+.token .tok-char.is-long {
+  font-size: 11.5px;
+}
+
+.token .tok-hpbg {
+  fill: #10151c;
+  stroke: #2a3444;
+  stroke-width: 0.6;
+}
+
+.token .tok-hpfill {
+  fill: var(--green);
+  transition: width 0.3s ease;
+}
+
+.token .tok-hpfill.warn {
+  fill: var(--accent);
+}
+
+.token .tok-hpfill.low {
+  fill: var(--red);
+}
+
+.token .tok-hptext {
+  fill: #cddaea;
+  font-size: 11px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.token .eq {
+  fill: #5b6879;
+  font-size: 11.5px;
+  font-weight: 700;
+  text-anchor: middle;
+  dominant-baseline: central;
+  opacity: 0.32;
+  pointer-events: none;
+}
+
+.token .eq.has {
+  fill: var(--accent);
+  opacity: 1;
+}
+
+/* ------------------------------- 特效 SVG ------------------------------- */
+
+.fly-item {
+  font-size: 18px;
+  text-anchor: middle;
+  dominant-baseline: central;
+  pointer-events: none;
+}
+
+.dmg-float {
+  font-size: 15px;
+  font-weight: 800;
+  text-anchor: middle;
+  pointer-events: none;
+  animation: dmg-up 0.9s ease-out forwards;
+}
+
+@keyframes dmg-up {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.7);
+  }
+  25% {
+    opacity: 1;
+    transform: translateY(-2px) scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-26px) scale(1);
+  }
+}
+
+.slash {
+  stroke: #fff2d4;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  fill: none;
+  pointer-events: none;
+  animation: slash-in 0.32s ease-out forwards;
+}
+
+@keyframes slash-in {
+  0% {
+    opacity: 0;
+    stroke-dashoffset: 40;
+  }
+  30% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    stroke-dashoffset: 0;
+  }
+}
+
+.pop-text {
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+  pointer-events: none;
+  animation: dmg-up 0.9s ease-out forwards;
+}
+
+.shake {
+  animation: shake 0.32s ease;
+}
+
+@keyframes shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(6, 9, 13, 0.72);
+  display: grid;
+  place-items: end center;
+  animation: screen-in 0.18s ease;
+}
+
+.sheet-inner {
+  width: 100%;
+  max-width: 480px;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sheet-inner h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--dim);
+  text-align: center;
+}
+
+.sheet-btn {
+  min-height: 52px;
+  border-radius: 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  font-size: 15px;
+}
+
+.sheet-btn:active {
+  background: var(--card-2);
+}
+
+.sheet-btn.danger {
+  color: var(--red);
+  border-color: #5a2a2a;
+}
+
+/* 中央播报横幅 */
+.banner {
+  position: fixed;
+  left: 50%;
+  top: 18%;
+  transform: translate(-50%, -50%) scale(0.9);
+  /* 播报只是「看」的，永远压在弹层下面，免得挡住能点的东西 */
+  z-index: 30;
+  padding: 12px 22px;
+  border-radius: 14px;
+  background: rgba(24, 32, 43, 0.94);
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 700;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.banner.show {
+  animation: banner-pop 1.6s ease forwards;
+}
+
+@keyframes banner-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.85);
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  75% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.98);
+  }
+}
+
+/* ------------------------------ 小屏微调 ------------------------------ */
+
+/*
+ * 演出期间锁住动作控件（用户第 2 条反馈 / docs/DECISIONS.md D10）。
+ *
+ * 服务端是**同步**把 AI 整轮跑完再推回来的（见 server/games/blade-steed.mjs），
+ * 所以"演出还在放"的时候报文里的回合其实早就推进过了 —— 玩家这时候还能点，
+ * 就会一边看动画一边把局面往前推（用户实测：快速连点会把画面演成"所有人都被打死了"）。
+ * 平台的 shared/ui/anim.js 在队列没排空时给 <body> 挂 frp-anim-busy，这里接住它：
+ * 把**会发消息的动作控件**变灰 + 禁点。
+ *
+ * ⚠️ 只圈动作控件（.rps-btn / .order-item / .act-grid 里的 .act-btn / 排顺序那个
+ *    .act-btn.hot.wide）。**房间级按钮不受影响**：开始 / 离开 / 邀请 / 加人机
+ *    都是房间外壳（shared/ui/room.js）画的，不在 .board 下面，天然命不中。
+ * ⚠️ 结束面板里的「回到首页」也是 .act-btn，但它不在 .act-grid 里、也没有 .hot，
+ *    所以不会被变灰 —— 导航不该被演出挡住。
+ * ⚠️ 灰掉只是"看得见"的那一半，另一半在 JS 里：board.js 的 _blocked() 在点击时
+ *    直接不发消息（平台脚本没加载时 CSS 不会灰，那时 JS 也不锁，两边一致）。
+ */
+body.frp-anim-busy .board .action-panel .rps-btn,
+body.frp-anim-busy .board .action-panel .order-list .order-item,
+body.frp-anim-busy .board .action-panel .act-grid .act-btn,
+body.frp-anim-busy .board .action-panel .act-btn.hot.wide {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+@media (max-width: 380px) {
+  .logo {
+    font-size: 52px;
+  }
+  .rps-btn {
+    min-height: 60px;
+  }
+  .act-btn {
+    min-height: 50px;
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 720px) {
+  .screen.board {
+    max-width: 860px;
+  }
+  .map-wrap {
+    min-height: 320px;
+  }
+}
+
+/* 关掉特效时，只留必要的位移过渡，其它动画一律不播 */
+body.no-fx .fly-item,
+body.no-fx .slash,
+body.no-fx .dmg-float,
+body.no-fx .pop-text {
+  display: none;
+}
+
+body.no-fx .token {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   接入平台之后的补充（原项目里没有这些）
+   ========================================================================== */
+
+/*
+ * 共用组件（/shared/ui/ui.css）的风格覆盖。
+ * DOM 结构由平台统一提供，颜色 / 圆角 / 字号由这里决定 ——
+ * 这就是 docs/DECISIONS.md D4 说的「对外组件统一、视觉风格各自保留」。
+ */
+:root {
+  --ui-accent: #ffb454;
+  --ui-accent-text: #241a08;
+  --ui-surface: #1a212b;
+  --ui-surface-2: #212a36;
+  --ui-border: #2a3444;
+  --ui-text: #e7eef8;
+  --ui-muted: #8b9bb0;
+  --ui-ok: #6ee7b7;
+  --ui-danger: #ff7b7b;
+  --ui-radius: 14px;
+}
+
+/* ---------- 首页的身份行：名字与 ID 来自平台账号，游戏里不再问名字 ---------- */
+
+.me-line {
+  margin: 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--dim);
+  word-break: break-all;
+}
+
+.login-hint a {
+  color: var(--accent);
+}
+
+/* ---------- 房间外壳里属于本游戏的两块内容 ---------- */
+
+/* 房主的设置区（FrpRoom 把它画在「开始游戏」上面） */
+.setup {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.setup .field-label {
+  margin: 0;
+}
+
+.setup-label {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.setup .seg {
+  display: flex;
+  gap: 8px;
+}
+
+/* 手机硬指标：可点区域 ≥ 44px（主按钮 48px） */
+.setup .seg-btn {
+  flex: 1;
+  min-height: 48px;
+}
+
+/*
+ * 联机牌桌住在房间外壳里（不是整屏），所以地图高度不能靠 flex 撑开，得给个明确的值。
+ * 桌面端封顶 360px，免得地图把行动按钮挤到屏幕外面去。
+ *
+ * ⚠️ 这两个数是**量出来**的（tests/browser.size.mjs）：小屏手机上原来
+ *    min(46vh, 320px) 配上写死的 400×340 画布，2 人局的地图内容只有 86px 高、
+ *    头像直径 20.6px（用户报的"地图太小"就是这个）。现在画布紧贴内容
+ *    （见 js/ui/map.js 的 _viewBox），高度再放宽一点，360×640 上地图有 333px 高。
+ * ⚠️ 往上加之前先想清楚：房间外壳本身**可以上下滚**，地图越高行动按钮越靠下，
+ *    短屏手机上要多滑一下才点得到。别再超过 50vh / 360px。
+ */
+.online-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.online-board .map-wrap {
+  flex: none;
+  height: min(50vh, 360px);
+  min-height: 220px;
+}
+
+/*
+ * 单机牌桌是整屏固定高度的（.screen.board 有 height:100dvh; overflow:hidden），
+ * 而这一屏的内容现在套了一层 #local-board —— 它必须把 flex 链条接上，
+ * 否则地图不会伸缩、行动面板会被挤到屏幕外。
+ */
+#screen-board .board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.icon-btn.menu {
+  font-size: 19px;
+}

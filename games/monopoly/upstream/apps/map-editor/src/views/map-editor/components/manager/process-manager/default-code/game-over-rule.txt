@@ -1,0 +1,6 @@
+(async (context: GameContext, gameProcess: IGameProcess) => {
+	// 返回 false 表示游戏继续
+	// 返回玩家ID数组表示游戏结束，数组顺序即为排名（索引0为第一名）
+	// 示例: return [winnerId, secondPlaceId, ...];
+	return false;
+});

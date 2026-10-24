@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0d1b14" />
+    <meta name="description" content="斗地主 —— 三人牌桌。界面来自上游 GODOT-DouDiZhu，规则跑在服务器上。" />
+    <title>斗地主 · frp-game</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/shared/ui/ui.css" />
+    <link rel="stylesheet" href="css/table.css" />
+  </head>
+  <body>
+    <!--
+      这一页只做三件事：平台身份、房间外壳（FrpRoom）、把服务器视图塞进牌桌。
+      **牌桌本身是上游的 Godot 网页导出**（`table/`），不在这里画。
+
+      ⚠️ 页面里**没有**起昵称的输入框：名字和头像都来自平台账号
+      （和狼人杀/大富翁/无名杀一致，见 docs/DECISIONS.md D33/D40）。
+    -->
+    <div id="ddz-app">
+      <header class="ddz-bar">
+        <a class="ddz-back" href="/" title="回平台首页">←</a>
+        <h1 class="ddz-title">斗地主</h1>
+        <span class="ddz-me" id="ddz-me"></span>
+      </header>
+
+      <main class="ddz-main">
+        <div id="ddz-online-panel"></div>
+        <p class="ddz-foot">
+          规则跑在服务器上 · 别人的手牌永远不会出现在任何报文里 ·
+          <a href="/play/ddz">手机横屏版</a>
+        </p>
+      </main>
+    </div>
+
+    <!--
+      牌桌：Godot 网页导出（iframe）。
+      为什么不直接塞进房间面板：FrpRoom 每次 room.state 都会把面板整块重画，
+      iframe 被 appendChild 搬来搬去在部分浏览器里会**重新加载**（等于每走一手重开一次游戏）。
+      所以它自己待在固定层里，进对局时把这一层显示出来。
+    -->
+    <div id="ddz-stage" class="ddz-stage" hidden>
+      <div class="ddz-stage-chip">
+        <span class="ddz-stage-code-label">房间号</span>
+        <code id="ddz-stage-code"></code>
+        <button type="button" id="ddz-stage-leave">退出房间</button>
+      </div>
+      <iframe id="ddz-table" title="斗地主牌桌" allow="autoplay; fullscreen; gamepad"></iframe>
+      <div class="ddz-stage-loading" id="ddz-stage-loading">
+        <p>牌桌加载中…</p>
+        <p class="ddz-stage-loading-note">第一次进对局要下约 20MB（引擎 + 牌面 + 语音），之后浏览器会缓存。</p>
+      </div>
+      <div class="ddz-stage-rotate" id="ddz-stage-rotate">
+        <p>把手机横过来玩</p>
+        <a href="/play/ddz">用横屏外壳打开</a>
+      </div>
+    </div>
+
+    <!--
+      脚本顺序和另外几个游戏一致：protocol.mjs 是 module（天然 defer），
+      后面几条经典脚本也 defer，执行顺序就与文档里写的一致。
+      ⚠️ anim.js / react.js 必须在 room.js 之前（room.js 在加载时就把 FrpReact 抓进了闭包）。
+    -->
+    <script type="module" src="/shared/protocol.mjs"></script>
+    <script defer src="/shared/net/net.js"></script>
+    <script defer src="/shared/ui/ui.js"></script>
+    <script defer src="/shared/ui/anim.js"></script>
+    <script defer src="/shared/ui/react.js"></script>
+    <script defer src="/shared/ui/room.js"></script>
+    <script defer src="/shared/ui/no-idm.js"></script>
+    <script defer src="/shared/ui/fullscreen.js"></script>
+    <script defer src="js/online.js"></script>
+  </body>
+</html>

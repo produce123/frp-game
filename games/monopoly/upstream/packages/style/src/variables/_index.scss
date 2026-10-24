@@ -1,0 +1,136 @@
+// =============================================================================
+// Fatpaper 样式变量统一入口
+// =============================================================================
+
+@import 'colors';
+@import 'spacing';
+@import 'typography';
+@import 'shadows';
+@import 'textures';
+@import 'breakpoints';
+
+// 输出 CSS 自定义属性（供运行时使用）
+:root {
+  // 品牌色
+  --fp-color-primary: #{$fp-color-primary};
+  --fp-color-secondary: #{$fp-color-secondary};
+  --fp-color-tertiary: #{$fp-color-tertiary};
+
+  // 语义色
+  --fp-color-success: #{$fp-color-success};
+  --fp-color-warning: #{$fp-color-warning};
+  --fp-color-error: #{$fp-color-error};
+  --fp-color-info: #{$fp-color-info};
+  --fp-color-message: #{$fp-color-message};
+
+  // 背景色
+  --fp-color-bg: #{$fp-color-bg};
+  --fp-color-bg-transparent: #{$fp-color-bg-transparent};
+  --fp-color-bg-light: #{$fp-color-bg-light};
+  --fp-color-bg-disable: #{$fp-color-bg-disable};
+
+  --fp-color-bg-success: #{$fp-color-bg-success};
+  --fp-color-bg-warning: #{$fp-color-bg-warning};
+  --fp-color-bg-error: #{$fp-color-bg-error};
+  --fp-color-bg-message: #{$fp-color-bg-message};
+
+  // 边框色
+  --fp-color-border-base: #{$fp-color-border-base};
+  --fp-color-border-light: #{$fp-color-border-light};
+  --fp-color-border-lighter: #{$fp-color-border-lighter};
+  --fp-color-border-extra-light: #{$fp-color-border-extra-light};
+
+  --fp-color-border-success: #{$fp-color-border-success};
+  --fp-color-border-warning: #{$fp-color-border-warning};
+  --fp-color-border-error: #{$fp-color-border-error};
+  --fp-color-border-message: #{$fp-color-border-message};
+
+  // 文字色
+  --fp-color-text-primary: #{$fp-color-text-primary};
+  --fp-color-text-secondary: #{$fp-color-text-secondary};
+  --fp-color-text-regular: #{$fp-color-text-regular};
+  --fp-color-text-placeholder: #{$fp-color-text-placeholder};
+  --fp-color-text-white: #{$fp-color-text-white};
+  --fp-color-text-disable: #{$fp-color-text-disable};
+
+  --fp-color-text-success: #{$fp-color-text-success};
+  --fp-color-text-warning: #{$fp-color-text-warning};
+  --fp-color-text-error: #{$fp-color-text-error};
+  --fp-color-text-message: #{$fp-color-text-message};
+
+  // 状态变体
+  --fp-color-primary-hover: #{$fp-color-primary-hover};
+  --fp-color-primary-active: #{$fp-color-primary-active};
+  --fp-color-primary-light-5: #{$fp-color-primary-light-5};
+  --fp-color-primary-light-9: #{$fp-color-primary-light-9};
+
+  --fp-color-success-hover: #{$fp-color-success-hover};
+  --fp-color-success-active: #{$fp-color-success-active};
+
+  --fp-color-warning-hover: #{$fp-color-warning-hover};
+  --fp-color-warning-active: #{$fp-color-warning-active};
+
+  --fp-color-error-hover: #{$fp-color-error-hover};
+  --fp-color-error-active: #{$fp-color-error-active};
+
+  --fp-color-info-hover: #{$fp-color-info-hover};
+  --fp-color-info-active: #{$fp-color-info-active};
+
+  // 遮罩色
+  --fp-color-mask-white: #{$fp-color-mask-white};
+  --fp-color-mask-black: #{$fp-color-mask-black};
+
+  // 间距
+  --fp-spacing-xs: #{$fp-spacing-xs};
+  --fp-spacing-sm: #{$fp-spacing-sm};
+  --fp-spacing-md: #{$fp-spacing-md};
+  --fp-spacing-lg: #{$fp-spacing-lg};
+  --fp-spacing-xl: #{$fp-spacing-xl};
+  --fp-spacing-xxl: #{$fp-spacing-xxl};
+
+  // 字体
+  --fp-font-size-xs: #{$fp-font-size-xs};
+  --fp-font-size-sm: #{$fp-font-size-sm};
+  --fp-font-size-base: #{$fp-font-size-base};
+  --fp-font-size-lg: #{$fp-font-size-lg};
+  --fp-font-size-xl: #{$fp-font-size-xl};
+  --fp-font-size-xxl: #{$fp-font-size-xxl};
+
+  --fp-font-weight-light: #{$fp-font-weight-light};
+  --fp-font-weight-normal: #{$fp-font-weight-normal};
+  --fp-font-weight-medium: #{$fp-font-weight-medium};
+  --fp-font-weight-bold: #{$fp-font-weight-bold};
+
+  --fp-font-line-height-tight: #{$fp-font-line-height-tight};
+  --fp-font-line-height-normal: #{$fp-font-line-height-normal};
+  --fp-font-line-height-relaxed: #{$fp-font-line-height-relaxed};
+
+  // 阴影
+  --fp-shadow-sm: #{$fp-shadow-sm};
+  --fp-shadow-md: #{$fp-shadow-md};
+  --fp-shadow-lg: #{$fp-shadow-lg};
+  --fp-shadow-dark: #{$fp-shadow-dark};
+
+  --fp-text-shadow: #{$fp-text-shadow};
+  --fp-text-shadow-light: #{$fp-text-shadow-light};
+  --fp-text-shadow-surround-white: #{$fp-text-shadow-surround-white};
+  --fp-text-shadow-embroider: #{$fp-text-shadow-embroider};
+  --fp-text-shadow-pressed: #{$fp-text-shadow-pressed};
+
+  --fp-shadow-depth: #{$fp-shadow-depth};
+  --fp-shadow-inset: #{$fp-shadow-inset};
+  --fp-shadow-card: #{$fp-shadow-card};
+
+  // 纹理
+  --fp-texture-knit: #{$fp-texture-knit};
+  --fp-texture-felt: #{$fp-texture-felt};
+  --fp-stitch-color-light: #{$fp-stitch-color-light};
+  --fp-stitch-color-dark: #{$fp-stitch-color-dark};
+
+  // 断点
+  --fp-breakpoint-xs: #{$fp-breakpoint-xs};
+  --fp-breakpoint-sm: #{$fp-breakpoint-sm};
+  --fp-breakpoint-md: #{$fp-breakpoint-md};
+  --fp-breakpoint-lg: #{$fp-breakpoint-lg};
+  --fp-breakpoint-xl: #{$fp-breakpoint-xl};
+}

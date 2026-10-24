@@ -1,0 +1,26 @@
+{
+	"name": "@mine-monopoly/admin",
+	"private": true,
+	"version": "0.0.0",
+	"type": "module",
+	"scripts": {
+		"dev": "vite --host",
+		"build": "vite build",
+		"preview": "vite preview"
+	},
+	"dependencies": {
+		"@antv/g2": "^5.4.8",
+		"@codemirror/lang-javascript": "^6.2.2",
+		"codemirror": "^6.0.1",
+		"meshline": "^3.1.6",
+		"monaco-editor": "^0.50.0"
+	},
+	"devDependencies": {
+		"@mine-monopoly/types": "workspace:*",
+		"@mine-monopoly/utils": "workspace:*",
+		"cross-env": "^7.0.3",
+		"increase-memory-limit": "^1.0.7",
+		"unplugin-auto-import": "^0.18.3",
+		"unplugin-vue-components": "^0.27.4"
+	}
+}

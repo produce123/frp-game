@@ -1,0 +1,47 @@
+<script setup lang="ts">
+import { computed } from "vue";
+import PlayerCard from "@src/views/game/components/player-card.vue";
+import { useGameData } from "@src/store/game";
+
+const gameInfoStore = useGameData();
+
+const _currentRound = computed(() => gameInfoStore.currentRound);
+const _currentMultiplier = computed(() => gameInfoStore.currentMultiplier);
+</script>
+
+<template>
+	<div class="round-info">
+		<span class="round">第{{ _currentRound }}回合</span>
+		<span class="multiplier">当前倍率：{{ _currentMultiplier }}倍</span>
+	</div>
+</template>
+
+<style scoped lang="scss">
+.round-info {
+	color: var(--fp-color-text-white);
+	background-color: var(--fp-color-secondary);
+	text-shadow: var(--fp-text-shadow);
+	display: flex;
+	justify-content: space-around;
+	align-items: center;
+	padding: 0.4rem 1.2rem;
+	border: 0.4rem solid rgba($color: #ffffff, $alpha: 0.5);
+	border-top: 0;
+	border-radius: 0 0 1rem 1rem;
+
+	position: absolute;
+	top: 0;
+	left: 50%;
+	transform: translateX(-50%);
+	z-index: var(--z-ui);
+
+	& > .round {
+		font-size: 1.5rem;
+		margin-right: 2rem;
+	}
+
+	& > .multiplier {
+		font-size: 1rem;
+	}
+}
+</style>

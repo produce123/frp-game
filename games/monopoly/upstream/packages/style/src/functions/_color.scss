@@ -1,0 +1,19 @@
+// =============================================================================
+// 颜色处理函数
+// =============================================================================
+
+@import '../variables/colors';
+
+// 获取颜色变体
+@function fp-color-variant($color, $variant: 'base') {
+  @if $variant == 'hover' {
+    @return mix($fp-color-white, $color, 20%);
+  } @else if $variant == 'active' {
+    @return mix($fp-color-black, $color, 10%);
+  } @else if $variant == 'light' {
+    @return mix($fp-color-white, $color, 50%);
+  } @else if $variant == 'lighter' {
+    @return mix($fp-color-white, $color, 90%);
+  }
+  @return $color;
+}

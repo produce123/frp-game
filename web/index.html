@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>网页游戏平台</title>
+    <meta name="description" content="登录后进入游戏列表：三个网页小游戏，跟好友一起玩。" />
+    <meta name="theme-color" content="#14161a" />
+    <link rel="stylesheet" href="/shared/ui/ui.css" />
+    <link rel="stylesheet" href="/assets/css/style.css" />
+  </head>
+  <body>
+    <!-- ============================ 登录 / 注册 ============================ -->
+    <!--
+      ⚠️ 这一整块（#screen-auth）是**独立的整页**，未登录的人只看得到它，
+      看不到下面的三栏。用户明确说过这块不要动。
+    -->
+    <div class="screen is-active" id="screen-auth">
+      <div class="auth-card">
+        <h1 class="brand"><span aria-hidden="true">🎮</span> 网页游戏平台</h1>
+        <p class="muted">先登录，再玩游戏。三个小游戏，可以拉好友一起。</p>
+
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" id="tab-login" type="button" role="tab">登录</button>
+          <button class="tab" id="tab-register" type="button" role="tab">注册</button>
+        </div>
+
+        <!-- 登录 -->
+        <form class="pane is-active" id="form-login" autocomplete="on">
+          <label class="field">
+            <span>玩家 ID</span>
+            <input
+              id="login-id"
+              name="username"
+              autocomplete="username"
+              spellcheck="false"
+              autocapitalize="characters"
+              placeholder="例如 K7M2QF3"
+            />
+          </label>
+          <label class="field">
+            <span>密码</span>
+            <input id="login-password" type="password" autocomplete="current-password" />
+          </label>
+          <button class="btn btn-primary" type="submit">登录</button>
+        </form>
+
+        <!-- 注册 -->
+        <form class="pane" id="form-register" autocomplete="on">
+          <label class="field">
+            <span>起一个名字（<strong>1–10 个字符</strong>，可以是中文 / emoji）</span>
+            <input
+              id="register-name"
+              maxlength="20"
+              spellcheck="false"
+              placeholder="例如 刀马江湖"
+            />
+          </label>
+          <label class="field">
+            <span>密码（至少 6 位）</span>
+            <input id="register-password" type="password" autocomplete="new-password" />
+          </label>
+          <label class="field">
+            <span>再输一次密码</span>
+            <input id="register-password2" type="password" autocomplete="new-password" />
+          </label>
+          <button class="btn btn-primary" type="submit">注册并领取 ID</button>
+          <p class="hint">
+            本站没有邮箱和手机号，<strong>密码忘了就找不回来</strong>，ID 和好友会一起丢。
+            所以注册后会让你把 ID 抄下来，密码也请记牢。
+          </p>
+        </form>
+      </div>
+    </div>
+
+    <!-- ============================ 平台主界面 ============================ -->
+    <!--
+      平台主界面是**底部三栏**（用户逐条确认过的形态，2026-10）：
+
+          顶栏一行身份（你：X · ID Y）
+          中间是当前栏目的内容
+          底部一条只用图标的切换栏（🎮 游戏 ｜ 👥 好友 ｜ ⚙️ 设置）
+
+      为什么做成三栏：好友面板和游戏列表原来上下挤在同一页里，手机上要滚很久；
+      而好友和设置不是每次都要看的东西，各住一栏更清爽。
+
+      ⚠️ 切换是**这个网页内部**的栏目切换（web/assets/js/app.js 的 showColumn），
+        **绝不跳转网页** —— 跳转要重新连一次 WebSocket，用户会先看到一个"正在连接服务器…"。
+        动画只有淡入淡出，**没有横向滑动**（用户明确否掉了滑动，嫌晃眼）。
+      ⚠️ 邀请横幅（shared/ui/room.js 画的 `.frp-invite-card`）是 `position: fixed` 钉在
+        屏幕顶部的，所以三栏都看得见它，搬栏目没影响它。
+    -->
+    <div class="screen" id="screen-app">
+      <header class="site-header">
+        <div class="container header-inner">
+          <!-- 顶栏精简成一行（用户要求）：原来那两颗 ID / 登出 按钮都搬去「设置」栏了。
+               头像也放进来（用户要求头像贯穿平台各处）。 -->
+          <span class="me-avatar frp-avatar is-me" id="me-avatar" aria-hidden="true"></span>
+          <span class="me-line" id="me-line">你：— · ID —</span>
+        </div>
+      </header>
+
+      <main class="container app-main">
+        <div class="tab-panels" id="tab-panels">
+          <!-- ---------------------------- 游戏（最左，默认） ---------------------------- -->
+          <section
+            class="tab-panel is-active"
+            id="panel-games"
+            role="tabpanel"
+            aria-labelledby="tab-games"
+          >
+            <div class="panel">
+              <div class="panel-head">
+                <h2 id="games-title">游戏</h2>
+                <span class="pill" id="games-count">0 个</span>
+              </div>
+
+              <!-- 搜索 + 人数筛选（同一行）：右边那颗圆钮点开人数选项。 -->
+              <div class="games-toolbar">
+                <input
+                  class="game-search"
+                  id="game-search"
+                  type="search"
+                  autocomplete="off"
+                  spellcheck="false"
+                  enterkeyhint="search"
+                  placeholder="搜索游戏（名字 / 标签 / 人数）"
+                  aria-label="搜索游戏"
+                />
+                <button
+                  class="game-filter-btn"
+                  id="game-filter"
+                  type="button"
+                  aria-label="按人数筛选"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  aria-controls="game-filter-pop"
+                  title="按人数筛选"
+                >筛</button>
+              </div>
+              <div class="game-filter-pop" id="game-filter-pop" hidden>
+                <div class="game-filter-chips" id="game-filter-chips"></div>
+              </div>
+
+              <div class="games-layout">
+                <div class="game-grid" id="game-grid"></div>
+                <!-- A–Z 字母索引：只把有游戏的字母做成按钮（高度 ≥44px），
+                     没游戏的字母留成灰色小字，保持“字母表是完整的”。 -->
+                <nav class="letter-rail" id="game-letters" aria-label="游戏字母索引"></nav>
+              </div>
+            </div>
+          </section>
+
+          <!-- ---------------------------- 好友（中间） ---------------------------- -->
+          <!-- 整块好友面板原样搬过来，元素 id 一个没改（用例靠 id 找元素）。 -->
+          <section
+            class="tab-panel"
+            id="panel-friends"
+            role="tabpanel"
+            aria-labelledby="tab-friends"
+          >
+            <div class="panel">
+              <div class="panel-head">
+                <h2 id="friends-title">好友</h2>
+                <span class="pill" id="friends-count">0 人在线</span>
+              </div>
+
+              <form class="friend-add" id="form-friend-add">
+                <input
+                  id="friend-id"
+                  spellcheck="false"
+                  autocapitalize="characters"
+                  placeholder="输入对方的玩家 ID"
+                />
+                <button class="btn" type="submit">加好友</button>
+              </form>
+
+              <!-- 别人发给我的好友申请。**没有待处理申请时整块隐藏**（连标题一起，不留空标题）。 -->
+              <section class="friend-group" id="friend-incoming" hidden aria-labelledby="friend-incoming-title">
+                <h3 class="friend-group-title" id="friend-incoming-title">新的好友申请</h3>
+                <ul class="friend-list" id="friend-incoming-list"></ul>
+              </section>
+
+              <!-- 我发出去、还没被处理的申请。同样没有时整块隐藏。 -->
+              <section class="friend-group" id="friend-outgoing" hidden aria-labelledby="friend-outgoing-title">
+                <h3 class="friend-group-title" id="friend-outgoing-title">我发出的申请</h3>
+                <ul class="friend-list" id="friend-outgoing-list"></ul>
+              </section>
+
+              <ul class="friend-list" id="friend-list"></ul>
+              <p class="empty" id="friend-empty">
+                还没有好友。把上面的 ID 框填上对方的 ID，发一条申请，等对方同意就加上了。
+              </p>
+            </div>
+          </section>
+
+          <!-- ---------------------------- 设置（最右） ---------------------------- -->
+          <section
+            class="tab-panel"
+            id="panel-settings"
+            role="tabpanel"
+            aria-labelledby="tab-settings"
+          >
+            <div class="panel">
+              <div class="panel-head">
+                <h2 id="settings-title">设置</h2>
+              </div>
+
+              <!--
+                音效 / 特效两个开关是**按钮**（role="switch"），不是勾选框。
+                为什么：平台的机械体检按"真实点击目标任一边 ≥44px"量，原生勾选框只有十几像素高，
+                套一层 label 在平台首页又量不准；按钮天然能做成 44px，键盘和读屏也都认。
+                状态由 app.js 从 FrpUI.prefs 读出来写回 aria-checked 和「开/关」两个字 ——
+                **这里不存状态**（平台只有一份偏好，见 shared/ui/ui.js 的 FrpUI.prefs）。
+              -->
+              <div class="setting-row">
+                <span class="setting-label" id="label-sound">音效</span>
+                <button
+                  class="switch"
+                  id="switch-sound"
+                  type="button"
+                  role="switch"
+                  aria-checked="true"
+                  aria-labelledby="label-sound"
+                  title="音效开关（平台和三个游戏共用这一份设置）"
+                >开</button>
+              </div>
+              <div class="setting-row">
+                <span class="setting-label" id="label-fx">特效</span>
+                <button
+                  class="switch"
+                  id="switch-fx"
+                  type="button"
+                  role="switch"
+                  aria-checked="true"
+                  aria-labelledby="label-fx"
+                  title="特效开关（关掉后栏目切换不再淡入淡出，游戏里的演出也立刻演完）"
+                >开</button>
+              </div>
+              <p class="hint">
+                这两项是<strong>整个平台</strong>一份设置：这里关了，三个游戏里也是关的。
+              </p>
+
+              <div class="setting-block">
+                <span class="setting-label" id="label-identity">身份与复制 ID</span>
+                <div class="identity">
+                  <span class="identity-avatar frp-avatar is-me" id="set-avatar" aria-hidden="true"></span>
+                  <span class="identity-name" id="set-name">—</span>
+                  <button class="pill pill-id" id="me-id" type="button" title="点一下复制你的 ID">
+                    ID <code>—</code>
+                  </button>
+                </div>
+                <div class="avatar-actions">
+                  <button class="btn btn-small" id="rename-me" type="button">改名字</button>
+                  <button class="btn btn-small" id="avatar-pick" type="button">上传头像</button>
+                  <button class="btn btn-small btn-ghost" id="avatar-reset" type="button">恢复默认</button>
+                  <input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+                </div>
+                <p class="hint">名字可以改、可以重复，ID 不会 —— 加好友认的是 ID。头像会显示在平台、房间、三个游戏和无名杀里。</p>
+              </div>
+
+              <!--
+                连接状态：**只在没连上的时候出现**（顶栏那条"正在连接服务器…"搬过来的，
+                行为没改：连上了整行藏掉，因为"已连接"平时没有价值）。
+                两处 display 都由 app.js 的 renderConnStatus 切；HTML 里先写好 display:none，
+                免得脚本还没跑起来就闪一条"正在连接服务器…"。
+              -->
+              <div class="setting-row" id="row-conn" style="display: none">
+                <span class="setting-label">连接状态</span>
+                <span class="pill" id="conn-status" style="display: none">正在连接服务器…</span>
+              </div>
+
+              <button class="btn btn-wide" id="btn-logout" type="button">登出</button>
+            </div>
+
+            <!--
+              「关于我」卡片：原来页脚那句话（由你自己的电脑 + SakuraFrp 隧道托管）搬进这里，
+              页脚随之删掉 —— 页脚现在会被底部那条切换栏压住，留着也是看不见的死像素。
+              ⚠️ 外链必须带 `rel="noopener"`：不带的话新开的那个页面能通过 window.opener
+                反过来操作我们这个页面（这是浏览器的老规矩，别省）。
+            -->
+            <div class="panel about-card">
+              <h2 id="about-title">关于我</h2>
+              <p class="muted">由你自己的电脑 + SakuraFrp 隧道托管</p>
+              <a
+                class="btn about-link"
+                id="link-home"
+                href="https://home.prodhub.me"
+                target="_blank"
+                rel="noopener"
+              >我的个人主页</a>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!--
+        底部切换栏：**只用图标，不放文字**（用户要求）——
+        每个图标带 title（鼠标悬停看得见）和 aria-label（读屏念得出来），
+        选中那个高亮 + 稍微放大、没选中的稍暗。
+        「好友」上面那颗小红点带数字：有**待处理的好友申请**时出现，
+        用户进过好友栏就消失（见 app.js 的 renderFriendBadge）。
+      -->
+      <nav class="tabbar" id="tabbar" role="tablist" aria-label="平台栏目">
+        <button
+          class="tabbar-btn is-active"
+          id="tab-games"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="panel-games"
+          title="游戏"
+          aria-label="游戏"
+        >
+          <span class="tabbar-icon" aria-hidden="true">🎮</span>
+        </button>
+        <button
+          class="tabbar-btn"
+          id="tab-friends"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-friends"
+          title="好友"
+          aria-label="好友"
+        >
+          <span class="tabbar-icon" aria-hidden="true">👥</span>
+          <span class="tabbar-badge" id="friend-badge" hidden>0</span>
+        </button>
+        <button
+          class="tabbar-btn"
+          id="tab-settings"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="panel-settings"
+          title="设置"
+          aria-label="设置"
+        >
+          <span class="tabbar-icon" aria-hidden="true">⚙️</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- ===================== 注册成功后必须看到的 ID ===================== -->
+    <div class="modal" id="modal-id" hidden>
+      <div class="modal-card">
+        <h2>这是你的玩家 ID</h2>
+        <p class="muted">
+          好友要靠它加你。<strong>请现在就抄下来</strong>（或点一下复制）。
+          我们没法帮你找回它。
+        </p>
+        <button class="id-big" id="new-id" type="button">—</button>
+        <p class="hint">名字可以重复，ID 是唯一的，而且不能改。</p>
+        <button class="btn btn-primary" id="btn-id-done" type="button">我抄好了，进入平台</button>
+      </div>
+    </div>
+
+    <!--
+      加载顺序很重要，别调换：
+        1. protocol.mjs 是 module，天然 defer
+        2. 后面几个是经典脚本，加 defer 后与 module 一起按文档顺序执行
+      所以 app.js 能拿到 window.FrpProtocol。详见 shared/protocol.mjs 顶部注释。
+      ⚠️ 共用脚本的顺序是 docs/GAME-SPEC.md 定死的：
+         protocol → net → ui → anim → react → room，别插队。
+    -->
+    <script type="module" src="/shared/protocol.mjs"></script>
+    <!-- 音频 URL 去扩展名，防 IDM 自动抓取；必须排在游戏/音频脚本之前。 -->
+    <script defer src="/shared/ui/no-idm.js"></script>
+    <script defer src="/shared/net/net.js"></script>
+    <script defer src="/shared/ui/ui.js"></script>
+    <!-- anim.js：设置栏那个「特效」开关要调 FrpAnim.setEnabled()（关掉＝演出一步 0ms）。 -->
+    <script defer src="/shared/ui/anim.js"></script>
+    <!-- react.js：必须在 room.js **之前** —— room.js 画座位列表时会直接用 `FrpReact`
+         （平台首页自己不画头像，但顺序一旦破了，将来在这里加个头像就会"控制台 undefined"）。 -->
+    <script defer src="/shared/ui/react.js"></script>
+    <!-- room.js 必须有：平台首页要靠它弹「谁邀请你玩哪个游戏」的横幅。
+         ⚠️ 少了它不会报错，只是邀请横幅永远不出现（app.js 里有 window.FrpRoom 判断兜底），
+          所以漏掉很难发现 —— 改这里的时候别删。房间本身画在各自的游戏页面里。 -->
+    <script defer src="/shared/ui/room.js"></script>
+    <script defer src="/assets/js/games.js"></script>
+    <script defer src="/assets/js/app.js"></script>
+  </body>
+</html>

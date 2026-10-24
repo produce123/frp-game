@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0a0c0f" />
+    <meta name="description" content="Shell Gambit — 恶魔轮盘聚会版：霰弹枪、7 种道具，2–4 人的胆量与运气较量。" />
+    <title>Shell Gambit · 恶魔轮盘聚会版</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230a0c0f'/><circle cx='16' cy='16' r='7' fill='none' stroke='%23e5484d' stroke-width='3'/><circle cx='16' cy='16' r='2.5' fill='%23e5484d'/></svg>"
+    />
+    <link rel="stylesheet" href="/shared/ui/ui.css" />
+    <link rel="stylesheet" href="css/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ================= 首页 ================= -->
+      <section class="screen is-active" id="screen-home">
+        <div class="home-wrap">
+          <h1 class="logo">SHELL<span>GAMBIT</span></h1>
+          <p class="logo-sub">恶魔轮盘 · 聚会版 · 2–4 人</p>
+
+          <!-- 名字与 ID 来自平台账号，游戏里不再问名字（GAME-SPEC 第 6 节） -->
+          <p class="me-line">
+            你是 <b id="home-name">…</b>
+            <button class="ghost-btn me-id" id="home-id" type="button" title="点一下复制你的玩家 ID">ID …</button>
+          </p>
+
+          <nav class="menu">
+            <button class="menu-btn" data-go="ai" type="button">
+              <b>人机对局</b><small>单人也能玩，AI 会出牌、会记仇</small>
+            </button>
+            <button class="menu-btn" data-go="online" type="button">
+              <b>在线对局</b><small>建房或输入房间号，和好友一起玩</small>
+            </button>
+            <button class="menu-btn" data-go="rules" type="button">
+              <b>游戏规则</b><small>基础玩法与 7 种道具说明</small>
+            </button>
+          </nav>
+
+          <div class="home-settings">
+            <button class="ghost-btn" id="toggle-sound" type="button">🔊 音效：开</button>
+            <button class="ghost-btn" id="toggle-fx" type="button">✨ 特效：开</button>
+          </div>
+          <p class="foot-note">服务器权威裁决 · 隐藏信息（弹序、手牌、放大镜）不出现在任何报文里</p>
+        </div>
+      </section>
+
+      <!-- ================= 人机对局：选择人数 ================= -->
+      <section class="screen" id="screen-ai">
+        <header class="bar">
+          <button class="icon-btn" data-back="home" type="button" aria-label="返回">←</button>
+          <h2>人机对局</h2>
+          <span class="bar-pad"></span>
+        </header>
+        <div class="pad">
+          <p class="hint">选择本局人数（你自己 + AI）</p>
+          <div class="count-grid" id="ai-counts">
+            <button class="count-btn" data-players="2" type="button"><b>2</b><small>1 个 AI</small></button>
+            <button class="count-btn" data-players="3" type="button"><b>3</b><small>2 个 AI</small></button>
+            <button class="count-btn" data-players="4" type="button"><b>4</b><small>3 个 AI</small></button>
+          </div>
+          <p class="hint">对手是电脑，全部在你自己的设备上跑，不占服务器、断网也能玩。</p>
+        </div>
+      </section>
+
+      <!-- ================= 在线对局：房间（外壳由 FrpRoom 画） ================= -->
+      <section class="screen" id="screen-online">
+        <header class="bar">
+          <button class="icon-btn" data-back="home" type="button" aria-label="返回">←</button>
+          <h2>在线对局</h2>
+          <span class="bar-pad"></span>
+        </header>
+        <div class="pad online-pad">
+          <div id="online-panel"></div>
+        </div>
+      </section>
+
+      <!-- ================= 对局（单机与联机共用，牌桌由 js/ui/board.js 画） ================= -->
+      <section class="screen" id="screen-game"></section>
+
+      <!-- ================= 规则 ================= -->
+      <section class="screen" id="screen-rules">
+        <header class="bar">
+          <button class="icon-btn" data-back="home" type="button" aria-label="返回">←</button>
+          <h2>游戏规则</h2>
+          <span class="bar-pad"></span>
+        </header>
+        <div class="pad rules-pad" id="rules-body"></div>
+      </section>
+    </div>
+
+    <!-- 动画层：枪口火光、伤害数字、飞行动画 -->
+    <div id="fx-layer" aria-hidden="true"></div>
+    <!-- 弹窗 -->
+    <div id="modal-layer" hidden></div>
+
+    <!--
+      平台资源用绝对路径（游戏页固定挂在 /games/shell-gambit/），自己的资源用相对路径。
+      加载顺序别调换：protocol.mjs 是 module（天然 defer），后面几个经典脚本也加 defer，
+      两者的执行顺序就和文档里写的一致 —— 详见 shared/protocol.mjs 顶部注释。
+
+      ⚠️ `anim.js`（逐条演出队列）与 `react.js`（头像互动 + 语义圆环）必须在 room.js
+      **之前**：room.js 在脚本加载时就把 `window.FrpReact` 抓进了闭包
+      （`var React = root.FrpReact`），晚一步它永远是 undefined ——
+      房间成员那一排头像就没有"点头像扔鸡蛋"，而且**不会有任何报错**。
+      ⚠️ 本作的 `js/ui/audio.js` 是 **ES Module**（`export const sfx`），由 js/main.js
+      那条 module 链 import 进来。**不能**在这里再挂一条经典脚本：
+      浏览器会当场报 "Unexpected token 'export'"，而体检要求控制台零报错。
+    -->
+    <script type="module" src="/shared/protocol.mjs"></script>
+    <script defer src="/shared/net/net.js"></script>
+    <script defer src="/shared/ui/ui.js"></script>
+    <script defer src="/shared/ui/anim.js"></script>
+    <script defer src="/shared/ui/react.js"></script>
+    <script defer src="/shared/ui/room.js"></script>
+    <script defer src="/shared/ui/no-idm.js"></script>
+    <script defer src="/shared/ui/fullscreen.js"></script>
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

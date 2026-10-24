@@ -1,0 +1,206 @@
+import { describe, expect, it } from 'vitest'
+import { chooseDiscardIndex, decideClaim, decideRobKong, decideTurn, makeTurnView } from './ai'
+import type { AITurnView } from './ai'
+import type { GamePlayer, Meld, TileType } from '../contracts/types'
+import { DEFAULT_RULESET } from '../rules/ruleset'
+
+function view(hand: TileType[], melds: Meld[] = [], exposedMelds = 0, kongBloom = false): AITurnView {
+  return { hand, melds, exposedMelds, kongBloom }
+}
+
+describe('decideTurn 自摸胡', () => {
+  it('牌型可胡时返回 win', () => {
+    // 14 张：m1 刻 + m2m3m4 顺 + p4p5p6 顺 + s7 刻 + east 对
+    const hand: TileType[] = ['m1', 'm1', 'm1', 'm2', 'm3', 'm4', 'p4', 'p5', 'p6', 's7', 's7', 's7', 'east', 'east']
+    expect(decideTurn(view(hand))).toEqual({ kind: 'win' })
+  })
+
+  it('白板（癞子）可当任意牌参与胡牌', () => {
+    // 14 张：m1 刻 + m2m3white(白板代 m4) 顺 + p4p5p6 顺 + s7 刻 + east 对
+    const hand: TileType[] = ['m1', 'm1', 'm1', 'm2', 'm3', 'white', 'p4', 'p5', 'p6', 's7', 's7', 's7', 'east', 'east']
+    expect(decideTurn(view(hand))).toEqual({ kind: 'win' })
+  })
+})
+
+describe('decideTurn 补杠', () => {
+  it('已碰且有第四张在手时返回 added-kong', () => {
+    const melds: Meld[] = [{ type: 'peng', tile: 'east', from: 1, tiles: ['east', 'east', 'east'] }]
+    const hand: TileType[] = ['east', 'm1', 'm2']
+    expect(decideTurn(view(hand, melds, 1))).toEqual({ kind: 'added-kong', meldIndex: 0 })
+  })
+})
+
+describe('decideTurn 暗杠', () => {
+  it('手牌有 4 张相同牌时返回 concealed-kong', () => {
+    const hand: TileType[] = ['s7', 's7', 's7', 's7', 'm1', 'm2', 'm3', 'p4', 'p5', 'east', 'east']
+    expect(decideTurn(view(hand))).toEqual({ kind: 'concealed-kong', tile: 's7' })
+  })
+})
+
+describe('decideTurn 弃牌', () => {
+  it('无胡/无杠时返回 discard 且索引在合法范围', () => {
+    const hand: TileType[] = ['m1', 'p4', 'p5', 'p6', 'east', 's2', 's2', 's9', 's9', 'white', 'white']
+    const decision = decideTurn(view(hand))
+    expect(decision.kind).toBe('discard')
+    if (decision.kind === 'discard') {
+      expect(decision.handIndex).toBeGreaterThanOrEqual(0)
+      expect(decision.handIndex).toBeLessThan(hand.length)
+    }
+  })
+})
+
+describe('chooseDiscardIndex 弃牌启发式', () => {
+  it('开局手牌有白板时仍先打普通孤张字牌，不拆对子', () => {
+    const hand: TileType[] = [
+      'm2', 'm2', 'm5', 'm5', 'm7', 'p2', 'p3', 'p4', 'p7', 's8',
+      'west', 'green', 'white', 'white',
+    ]
+    const index = chooseDiscardIndex(hand, () => 0, 0, DEFAULT_RULESET, { wallCount: 79, visibleTiles: hand })
+    expect(['west', 'green']).toContain(hand[index])
+  })
+
+  it('优先打掉无对无靠的孤张', () => {
+    // east 是唯一孤张，其余 m1m2m3 成顺、p5p5 成对
+    const hand: TileType[] = ['m1', 'm2', 'm3', 'p5', 'p5', 'east']
+    const index = chooseDiscardIndex(hand, () => 0)
+    expect(hand[index]).toBe('east')
+  })
+
+  it('癞子白板保手，优先打其它孤张', () => {
+    const hand: TileType[] = ['white', 's9', 's9', 'm7']
+    const index = chooseDiscardIndex(hand, () => 0)
+    expect(hand[index]).toBe('m7')
+  })
+
+  it('对子与靠张越多越靠后打', () => {
+    // m1m2m3 成顺（靠张多）、p5p5 成对，孤张 north 先打
+    const hand: TileType[] = ['m1', 'm2', 'm3', 'p5', 'p5', 'north']
+    const index = chooseDiscardIndex(hand, () => 0)
+    expect(hand[index]).toBe('north')
+  })
+
+  it('已听牌时优先保留听口（不打听牌所需的关键张）', () => {
+    // 13 张：m1m2m3 + p4p5p6 + s7s8s9 + east 对 + 孤张 north
+    // 打出 north 后听 east（单骑/对倒）；打出 east 会破坏听口。
+    const hand: TileType[] = ['m1', 'm2', 'm3', 'p4', 'p5', 'p6', 's7', 's8', 's9', 'east', 'east', 'north', 'white']
+    const index = chooseDiscardIndex(hand, () => 0, 0)
+    expect(hand[index]).toBe('north')
+  })
+
+  it('同向听时选择实际有效进张更多的舍牌', () => {
+    const hand: TileType[] = [
+      'm1', 'm2', 'm3', 'p1', 'p2', 'p3', 's1', 's2', 's3',
+      'east', 'east', 'south', 'west', 'north',
+    ]
+    const visibleTiles: TileType[] = [...hand, 'south', 'south', 'south']
+    const index = chooseDiscardIndex(hand, () => 0, 0, DEFAULT_RULESET, { visibleTiles })
+    expect(hand[index]).toBe('south')
+  })
+
+  it('回放三处本可听牌的手牌在早巡和中巡都不再漏听', () => {
+    const fixtures: Array<{ hand: TileType[]; exposedMelds: number }> = [
+      {
+        // 3/window/62：原 AI 出 4 筒仍一向听；打 5 条可听。
+        hand: ['m6', 'm6', 'm6', 'p5', 'p6', 's3', 's3', 's5', 's5', 's6', 'west', 'west', 'white', 'p4'],
+        exposedMelds: 0,
+      },
+      {
+        // 3/window/66：原 AI 出 6 筒仍一向听；打 5 条可听。
+        hand: ['m6', 'm6', 'm6', 'p5', 'p6', 's3', 's3', 's5', 's5', 's6', 'west', 'west', 'white', 's3'],
+        exposedMelds: 0,
+      },
+      {
+        // 6/window/24：已有一组副露，原 AI 出 7 万仍一向听；打 6 万可听。
+        hand: ['m5', 'm6', 'm6', 'm7', 'p3', 'p3', 'p6', 'p6', 's2', 's2', 'white'],
+        exposedMelds: 1,
+      },
+    ]
+    for (const { hand, exposedMelds } of fixtures) {
+      for (const wallCount of [80, 40]) {
+        const index = chooseDiscardIndex(hand, () => 0, exposedMelds, DEFAULT_RULESET, { wallCount, visibleTiles: hand })
+        const after = hand.filter((_, candidateIndex) => candidateIndex !== index)
+        expect(DEFAULT_RULESET.win.waitingTiles(after, exposedMelds).length).toBeGreaterThan(0)
+        expect(hand[index]).not.toBe('white')
+      }
+    }
+  })
+})
+
+describe('decideClaim 吃碰杠响应', () => {
+  it('canGang 为真时选择 gang', () => {
+    expect(decideClaim({ hand: ['east', 'east', 'east', 'm1'], canGang: true })).toBe('gang')
+  })
+
+  it('三张同牌可大明杠时不会碰后把第 3 张原样打回', () => {
+    const hand: TileType[] = [
+      'east', 'east', 'east',
+      'm1', 'm2', 'm3', 'p1', 'p2', 'p3', 's1', 's2', 's3', 'north',
+    ]
+    expect(decideClaim({
+      hand, canGang: true, tile: 'east', exposedMelds: 0,
+      visibleTiles: [...hand, 'east'],
+    })).toBe('gang')
+  })
+
+  it('canGang 为假且无 tile 信息时默认 peng（向后兼容）', () => {
+    expect(decideClaim({ hand: ['east', 'east', 'm1'], canGang: false })).toBe('peng')
+  })
+
+  it('碰后听口更优时选择 peng', () => {
+    // 现状：无听口（13 张怎么打都没听）；碰 east 后打出 north → 单骑 north 听任意（白板癞子）→ 更优
+    const hand: TileType[] = ['m1', 'm2', 'm3', 'p4', 'p5', 'p6', 's7', 's8', 's9', 'east', 'east', 'north', 'white']
+    const decision = decideClaim({ hand, canGang: false, tile: 'east', exposedMelds: 0 })
+    expect(decision).toBe('peng')
+  })
+
+  it('碰后听口未提升时 pass', () => {
+    // 现状与碰后都无听口（散手），碰 east 不接近胡牌 → pass
+    const hand: TileType[] = ['east', 'east', 'm1', 'm2', 'm3', 'p4', 'p5', 'p6', 's7', 's8', 'north', 'south', 'west']
+    const decision = decideClaim({ hand, canGang: false, tile: 'east', exposedMelds: 0 })
+    expect(decision).toBe('pass')
+  })
+})
+
+describe('decideTurn 杠决策评估', () => {
+  it('已听牌时放弃暗杠（避免拆散成形手牌）', () => {
+    // 含 4 张 east 可暗杠，但剩余手牌已接近听牌
+    const hand: TileType[] = ['east', 'east', 'east', 'east', 'm2', 'm3', 'm4', 'p1', 'p2', 'p3', 's1', 's2', 's3', 'north']
+    const decision = decideTurn(view(hand))
+    expect(decision.kind).not.toBe('concealed-kong')
+  })
+
+  it('未听牌时仍暗杠', () => {
+    const hand: TileType[] = ['s7', 's7', 's7', 's7', 'm1', 'm2', 'm3', 'p4', 'p5', 'east', 'east']
+    const decision = decideTurn(view(hand))
+    expect(decision).toEqual({ kind: 'concealed-kong', tile: 's7' })
+  })
+
+  it('已听牌时放弃补杠', () => {
+    const melds: Meld[] = [{ type: 'peng', tile: 'east', from: 1, tiles: ['east', 'east', 'east'] }]
+    const hand: TileType[] = ['east', 'm2', 'm3', 'm4', 'p1', 'p2', 'p3', 's1', 's2', 's3', 'north']
+    const decision = decideTurn(view(hand, melds, 1))
+    expect(decision.kind).not.toBe('added-kong')
+  })
+})
+
+describe('decideRobKong 抢杠', () => {
+  it('当前 AI 能抢必抢', () => {
+    expect(decideRobKong({ hand: ['east', 'east', 'm1', 'm2'], exposedMelds: 1, tile: 'east', from: 2 })).toBe('win')
+  })
+})
+
+// 确保快照构造与游戏侧一致，避免后续修改把 AI 视图悄悄改掉。
+describe('makeTurnView 快照构造', () => {
+  it('只暴露手牌与副露，不含分数等无关字段', () => {
+    const player: GamePlayer = {
+      name: 'AI', avatar: '', score: 1000, seat: 1,
+      hand: ['m1', 'm2'], discards: [], melds: [], redCount: 0, drawnTileIndex: -1,
+    }
+    expect(makeTurnView(player, 0, true)).toEqual({
+      hand: ['m1', 'm2'],
+      melds: [],
+      exposedMelds: 0,
+      kongBloom: true,
+    })
+  })
+})

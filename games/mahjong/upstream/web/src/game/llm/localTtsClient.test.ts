@@ -1,0 +1,203 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { registerLlmAudioPlayer, resetLlmAudioBusForTests } from '../core/presentation/llmAudioBus'
+import type { LlmProviderPreset } from './config'
+import { isPlatformTtsHost, LocalTtsClient, resolveLocalTtsBaseUrl, resolveLocalTtsVoiceKey } from './localTtsClient'
+
+function preset(overrides: Partial<LlmProviderPreset> = {}): LlmProviderPreset {
+  return {
+    id: 'p1', name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: 'sk', model: 'deepseek-v4-flash', style: '稳健', timeoutMs: 8000,
+    ...overrides,
+  }
+}
+
+afterEach(() => {
+  resetLlmAudioBusForTests()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+describe('LocalTtsClient', () => {
+  it('leaving during synthesis does not negatively cache the same line for a new game',async()=>{
+    const player=vi.fn(async()=>true)
+    registerLlmAudioPlayer(player)
+    const fetcher=vi.fn()
+      .mockImplementationOnce((_url,init)=>new Promise(resolve=>init.signal.addEventListener('abort',()=>resolve({ok:false}),{once:true})))
+      .mockResolvedValue({ok:true,json:async()=>({audioUrl:`/api/local-tts/audio/${'a'.repeat(64)}.mp3`})})
+    const client=new LocalTtsClient('',fetcher),controller=new AbortController()
+    const first=client.speak(0,'先稳住。','deepseek','稳健','normal',{signal:controller.signal})
+    controller.abort()
+    expect(await first).toBe(false)
+    expect(await client.speak(0,'先稳住。','deepseek','稳健')).toBe(true)
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect(player).toHaveBeenCalledOnce()
+  })
+  it('按模型自动映射网关白名单音色，也允许预置显式覆盖', () => {
+    expect(resolveLocalTtsVoiceKey(preset())).toBe('deepseek')
+    const mappings = [
+      ['qwen', 'qwen3.7-plus'], ['kimi', 'kimi-k2.6'], ['doubao', 'doubao-1.5-pro'],
+      ['minimax', 'MiniMax-Text-01'], ['openai', 'gpt-5.6-luna'],
+      ['glm', 'z-ai/glm-5.3-flash'], ['claude', 'claude-sonnet-4-20250514'],
+    ] as const
+    mappings.forEach(([providerType, model]) => {
+      expect(resolveLocalTtsVoiceKey(preset({
+        providerType, baseUrl: 'https://proxy.example/v1', model,
+      }))).toBe(providerType === 'openai' ? 'gpt' : providerType)
+    })
+    expect(resolveLocalTtsVoiceKey(preset({
+      providerType: 'custom', baseUrl: 'https://proxy.example/v1', model: 'z-ai/glm-5.3-flash',
+    }))).toBe('glm')
+    expect(resolveLocalTtsVoiceKey(preset({
+      providerType: 'custom', baseUrl: 'https://proxy.example/v1', model: 'anthropic/claude-sonnet-4',
+    }))).toBe('claude')
+    expect(resolveLocalTtsVoiceKey(preset({
+      providerType: 'custom', baseUrl: 'https://proxy.example/v1', model: 'mystery', avatarFolder: 'claude',
+    }))).toBe('claude')
+    expect(resolveLocalTtsVoiceKey(preset({ ttsVoiceKey: 'relay_gpt' }))).toBe('relay_gpt')
+    expect(resolveLocalTtsVoiceKey(preset({ ttsVoiceKey: 'default' }))).toBe('default')
+  })
+
+  it('本机两分支统一走同源代理，平台新域名走生产网关，旧域名已弃用', () => {
+    vi.stubGlobal('location', { hostname: '127.0.0.1' })
+    expect(resolveLocalTtsBaseUrl()).toBe('')
+    // 2026-09-14 用户决定彻底弃用旧域名：它不再被当作平台域（回到同源 → 线上会 404）。
+    vi.stubGlobal('location', { hostname: 'room.lumigrav.space' })
+    expect(resolveLocalTtsBaseUrl()).toBe('')
+    // 平台换域名到 gamesvibe.app 后，旧代码只认 lumigrav.space →
+    // 同源 /api/local-tts/synthesize 404 → LLM/llmAnime 主题静默没有语音。
+    vi.stubGlobal('location', { hostname: 'gamesvibe.app' })
+    expect(resolveLocalTtsBaseUrl()).toBe('https://www.bestguo.top:58000')
+    vi.stubGlobal('location', { hostname: 'play.gamesvibe.app' })
+    expect(resolveLocalTtsBaseUrl()).toBe('https://www.bestguo.top:58000')
+    vi.stubGlobal('location', { hostname: 'lianhuaguangdongmahjong.guoguo-labs.online' })
+    expect(resolveLocalTtsBaseUrl()).toBe('')
+    expect(isPlatformTtsHost('gamesvibe.app')).toBe(true)
+    expect(isPlatformTtsHost('notgamesvibe.app')).toBe(false)
+    expect(isPlatformTtsHost('lumigrav.space')).toBe(false)
+  })
+
+  it('同源基址 404（平台域名换掉但代码没跟上）时自动回退到网关，并记住可用基址', async () => {
+    const player = vi.fn(async () => true)
+    registerLlmAudioPlayer(player)
+    const audioPath = `/api/local-tts/audio/${'c'.repeat(64)}.mp3`
+    const seen: string[] = []
+    const fetcher = vi.fn(async (url: string) => {
+      seen.push(url)
+      if (url.startsWith('/api/local-tts')) return { ok: false, status: 404 }
+      return { ok: true, json: async () => ({ audioUrl: audioPath }) }
+    })
+    const client = new LocalTtsClient('', fetcher as never)
+    expect(await client.speak(0, '这局我先走了。', 'deepseek', '稳健')).toBe(true)
+    expect(seen).toEqual([
+      '/api/local-tts/synthesize',
+      'https://www.bestguo.top:58000/api/local-tts/synthesize',
+    ])
+    // 第二次直接命中网关，不再白撞一次 404。
+    expect(await client.speak(0, '稳住。', 'deepseek', '稳健')).toBe(true)
+    expect(seen[2]).toBe('https://www.bestguo.top:58000/api/local-tts/synthesize')
+    expect(seen).toHaveLength(3)
+  })
+
+  it('resolveAudioUrl 只合成不播放，供一炮多响组播取地址', async () => {
+    const player = vi.fn(async () => true)
+    registerLlmAudioPlayer(player)
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ audioUrl: `/api/local-tts/audio/${'b'.repeat(64)}.mp3` }) })
+    const client = new LocalTtsClient('', fetcher)
+    // 并发解析同一句（多个赢家同时准备）合并为一次合成，且不进入播放总线。
+    const [first, second] = await Promise.all([
+      client.resolveAudioUrl('胡。', 'deepseek', '稳健'),
+      client.resolveAudioUrl('胡。', 'deepseek', '稳健'),
+    ])
+    expect(first).toBe(`/api/local-tts/audio/${'b'.repeat(64)}.mp3`)
+    expect(second).toBe(first)
+    expect(fetcher).toHaveBeenCalledTimes(1)
+    expect(player).not.toHaveBeenCalled()
+  })
+
+  it('合并相同合成请求，并把每个座位的音频交给共享播放总线', async () => {
+    const key = 'a'.repeat(64)
+    const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => new Response(JSON.stringify({
+      cacheKey: key,
+      audioUrl: `/api/local-tts/audio/${key}.mp3`,
+      cached: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const played: Array<{ url: string; seat: number; messageId: number }> = []
+    registerLlmAudioPlayer((url, seat, messageId) => { played.push({ url, seat, messageId }) })
+    const client = new LocalTtsClient('https://tts.example.com', fetchMock as typeof fetch)
+
+    const result = await Promise.all([
+      client.speak(1, '  稳住，先打这张。 ', 'deepseek', '稳健'),
+      client.speak(2, '稳住，先打这张。', 'deepseek', '稳健'),
+    ])
+
+    expect(result).toEqual([true, true])
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const requestInit = fetchMock.mock.calls[0]?.[1]
+    expect(JSON.parse(String(requestInit?.body))).toEqual({
+      text: '稳住,先打这张。', voiceKey: 'deepseek', style: '稳健', cacheIdentity: '',
+    })
+    expect(played).toEqual([
+      { url: `https://tts.example.com/api/local-tts/audio/${key}.mp3`, seat: 1, messageId: 1 },
+      { url: `https://tts.example.com/api/local-tts/audio/${key}.mp3`, seat: 2, messageId: 2 },
+    ])
+  })
+
+  it('以 Window/globalThis 作为 this 调用原生风格 fetch', async () => {
+    const key = 'b'.repeat(64)
+    const fetchMock = vi.fn(function (this: unknown) {
+      if (this !== globalThis) throw new TypeError('Illegal invocation')
+      return Promise.resolve(new Response(JSON.stringify({
+        cacheKey: key,
+        audioUrl: `/api/local-tts/audio/${key}.mp3`,
+        cached: false,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    })
+    registerLlmAudioPlayer(() => {})
+    const client = new LocalTtsClient('', fetchMock as typeof fetch)
+
+    await expect(client.speak(1, '绑定测试', 'deepseek', '稳健')).resolves.toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('播放器未注册或静音时不请求 TTS 网关', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ audioUrl: '/api/local-tts/audio/invalid.mp3' })))
+    const client = new LocalTtsClient('', fetchMock as typeof fetch)
+
+    expect(await client.speak(1, '测试', 'deepseek', '稳健')).toBe(false)
+    registerLlmAudioPlayer(() => {}, () => false)
+    expect(await client.speak(1, '测试', 'deepseek', '稳健')).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('播放器可用但网关响应非法时静默失败', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ audioUrl: 'https://evil/a.mp3' })))
+    const client = new LocalTtsClient('', fetchMock as typeof fetch)
+
+    registerLlmAudioPlayer(() => {})
+    expect(await client.speak(1, '测试', 'deepseek', '稳健')).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('业务 cache identity 进入真实请求，过期事件在合成后不进入播放队列', async () => {
+    const key = 'b'.repeat(64)
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      cacheKey: key,
+      audioUrl: `/api/local-tts/audio/${key}.mp3`,
+      cached: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    const player = vi.fn()
+    registerLlmAudioPlayer(player)
+    const client = new LocalTtsClient('', fetchMock as typeof fetch)
+
+    await expect(client.speak(0, '固定文案', 'deepseek', '稳健', 'important', {
+      cacheIdentity: 'llm-anime-cache-v2',
+      isCurrent: () => false,
+    })).resolves.toBe(false)
+
+    const request = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(JSON.parse(String(request[1].body))).toMatchObject({
+      cacheIdentity: 'llm-anime-cache-v2',
+    })
+    expect(player).not.toHaveBeenCalled()
+  })
+})

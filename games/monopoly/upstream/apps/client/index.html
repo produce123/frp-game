@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<link rel="icon" type="image/x-icon" href="/logo.ico" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0, viewport-fit=cover" />
+		<title>MineMonopoly</title>
+		<style>
+			#fatal-error {
+				display: none;
+				position: fixed; inset: 0;
+				background: #1a1a2e;
+				color: #e0e0e0;
+				font-family: monospace;
+				padding: 24px;
+				overflow-y: auto;
+				z-index: 99999;
+			}
+			#fatal-error h2 {
+				color: #ff6b6b;
+				margin: 0 0 16px;
+				font-size: 20px;
+			}
+			#fatal-error .error-type {
+				color: #ffd93d;
+				font-weight: bold;
+			}
+			#fatal-error pre {
+				background: #16213e;
+				padding: 12px;
+				border-radius: 6px;
+				border-left: 3px solid #ff6b6b;
+				white-space: pre-wrap;
+				word-break: break-all;
+				font-size: 13px;
+				line-height: 1.5;
+			}
+		</style>
+	</head>
+	<body>
+		<div id="app"></div>
+		<div id="fatal-error">
+			<h2>⚠ 应用启动失败</h2>
+			<p><span class="error-type"></span></p>
+			<pre></pre>
+		</div>
+		<script>
+			(function() {
+				var el = document.getElementById('fatal-error');
+				if (!el) return;
+
+				function showError(type, msg) {
+					// 应用已启动 → 运行时错误，仅输出日志，不显示致命面板
+					if (window.__APP_STARTED__) {
+						console.error('[Fatal Error Panel suppressed] ' + type + ': ' + msg);
+						return;
+					}
+					// 应用尚未启动 → 真正的启动失败，显示面板
+					var app = document.getElementById('app');
+					if (app) app.style.display = 'none';
+					el.style.display = 'block';
+					var typeEl = el.querySelector('.error-type');
+					var preEl = el.querySelector('pre');
+					if (typeEl) typeEl.textContent = type;
+					if (preEl) preEl.textContent = msg || 'Unknown error';
+				}
+
+				window.onerror = function(msg, src, line, col, err) {
+					var text = (err && err.stack) ? err.stack : (msg + '\n  at ' + src + ':' + line + ':' + col);
+					showError('JS Error', text);
+				};
+
+				window.addEventListener('unhandledrejection', function(e) {
+					var reason = e.reason;
+					var text = (reason && reason.stack) ? reason.stack : String(reason);
+					showError('Unhandled Promise Rejection', text);
+				});
+			})();
+		</script>
+		<script type="module" src="/src/main.ts"></script>
+	</body>
+</html>

@@ -1,0 +1,429 @@
+/*
+ * 共用 UI 组件样式。
+ *
+ * 全部颜色/尺寸走 CSS 变量，兜底值是中性的深色。页面只要在自己的 CSS 里写
+ *   :root { --ui-accent: #ffb020; --ui-radius: 14px; }
+ * 就能把组件换成自己的风格 —— 这就是 "组件统一、风格各自保留" 的落地方式。
+ */
+
+.frp-toasts {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 9999;
+  width: min(92vw, 420px);
+  pointer-events: none;
+}
+
+.frp-toast {
+  pointer-events: auto;
+  cursor: pointer;
+  padding: 11px 15px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  color: var(--ui-text, #f2f3f5);
+  border: 1px solid var(--ui-border, #3a3d45);
+  border-left: 3px solid var(--ui-accent, #6aa9ff);
+  font-size: 14px;
+  line-height: 1.5;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transform: translateY(10px);
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  word-break: break-word;
+}
+
+.frp-toast.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.frp-toast-ok {
+  border-left-color: var(--ui-ok, #46c07a);
+}
+
+.frp-toast-error {
+  border-left-color: var(--ui-danger, #ff6b6b);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frp-toast {
+    transition: none;
+    transform: none;
+  }
+}
+
+/* ==========================================================================
+   房间界面（room.js 画的那些）—— 三个游戏长得一样的那部分
+   ========================================================================== */
+
+.frp-room-idle,
+.frp-room-waiting,
+.frp-room-playing {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.frp-room-or {
+  margin: 0;
+  text-align: center;
+  color: var(--ui-muted, #9aa0ae);
+  font-size: 13px;
+}
+
+.frp-room-joinform { display: flex; gap: 8px; }
+.frp-room-joinform .frp-input { flex: 1; min-width: 0; }
+.frp-room-joinform .frp-btn { flex: none; min-width: 84px; }
+
+/* ---------- 输入与按钮（共用，游戏也能用） ---------- */
+
+.frp-input {
+  min-height: 48px;
+  padding: 0 12px;
+  border-radius: var(--ui-radius, 12px);
+  border: 1px solid var(--ui-border, #3a3d45);
+  background: var(--ui-surface, #23252b);
+  color: var(--ui-text, #f2f3f5);
+  /* 不能小于 16px：否则 iOS Safari 聚焦时会自动放大整个页面 */
+  font-size: 16px;
+  font-family: inherit;
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+.frp-input::placeholder { letter-spacing: 0; color: var(--ui-muted, #9aa0ae); }
+.frp-input:focus { outline: 2px solid var(--ui-accent, #6aa9ff); outline-offset: 1px; }
+
+.frp-btn {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: var(--ui-radius, 12px);
+  border: 1px solid var(--ui-border, #3a3d45);
+  background: var(--ui-surface, #23252b);
+  color: var(--ui-text, #f2f3f5);
+  font-size: 15px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.frp-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.frp-btn-primary {
+  background: var(--ui-accent, #6aa9ff);
+  border-color: var(--ui-accent, #6aa9ff);
+  color: var(--ui-accent-text, #0d1117);
+  font-weight: 600;
+}
+.frp-btn-ghost { background: transparent; color: var(--ui-muted, #9aa0ae); }
+.frp-btn-wide { width: 100%; }
+
+/* ---------- 房号 ---------- */
+
+.frp-room-code {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  border: 1px solid var(--ui-border, #3a3d45);
+}
+.frp-room-code-label { font-size: 13px; color: var(--ui-muted, #9aa0ae); }
+.frp-room-code-value {
+  border: 0;
+  background: transparent;
+  color: var(--ui-accent, #6aa9ff);
+  font-family: inherit;
+  cursor: pointer;
+  padding: 0 6px;
+  min-height: 44px;
+}
+.frp-room-code-value code {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+.frp-room-code-hint { font-size: 12px; color: var(--ui-muted, #9aa0ae); margin-left: auto; }
+
+/* ---------- 成员 ---------- */
+
+.frp-room-members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.frp-room-member {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  border: 1px solid var(--ui-border, #3a3d45);
+  flex-wrap: wrap;
+}
+.frp-room-member-name { font-weight: 600; font-size: 16px; }
+.frp-room-member-id {
+  font-size: 12px;
+  color: var(--ui-muted, #9aa0ae);
+  margin-right: auto;
+}
+.frp-room-member-state { font-size: 12.5px; color: var(--ui-muted, #9aa0ae); }
+.frp-room-member.is-online .frp-room-member-state { color: var(--ui-ok, #46c07a); }
+
+.frp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4a4f5c;
+  flex: none;
+}
+.frp-room-member.is-online .frp-dot {
+  background: var(--ui-ok, #46c07a);
+  box-shadow: 0 0 0 3px rgba(70, 192, 122, 0.16);
+}
+
+/* ---------- 头像与圆环（三个游戏统一口径） ----------
+
+   圆环颜色是**语义**，不是装饰，所以这里刻意**不用** CSS 变量：
+   自己=蓝、其他真人=橙、人机=灰 —— 用户点名要求三个游戏一致，
+   谁都不许在自己的 style.css 里改掉它（见 shared/ui/react.js 的 ringClass）。
+
+   头像里的字默认是名字前两位（人机仍是单字），所以在小圆里也不会撑爆；
+   上传过头像的人显示图片（`.frp-avatar-img`），图片没加载出来时文字兜底。 */
+
+.frp-avatar {
+  --frp-avatar-size: 44px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--frp-avatar-size);
+  height: var(--frp-avatar-size);
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--ui-surface, #23252b);
+  border: 2.5px solid #8b93a3;          /* 兜底＝灰，和"不知道是谁"一个意思 */
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.12s ease;
+}
+.frp-avatar:active { transform: scale(0.94); }
+.frp-avatar-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* 有图时文字只当"图片加载失败"的兜底，不叠在图上 */
+.frp-avatar.has-img .frp-avatar-face { display: none; }
+.frp-avatar-face {
+  font-size: calc(var(--frp-avatar-size) * 0.46);
+  line-height: 1;
+  font-weight: 700;
+  color: var(--ui-text, #f2f3f5);
+  pointer-events: none;
+}
+/* 自己：蓝 */
+.frp-avatar.is-me {
+  border-color: #4a9dff;
+  box-shadow: 0 0 0 3px rgba(74, 157, 255, 0.18);
+}
+/* 其他真人：橙 */
+.frp-avatar.is-human { border-color: #ff9f43; }
+/* 人机：灰（并且是虚线圈 —— 颜色之外再加一层形状，色盲也分得清） */
+.frp-avatar.is-bot {
+  border-color: #8b93a3;
+  border-style: dashed;
+  color: #8b93a3;
+}
+.frp-avatar.is-bot .frp-avatar-face { color: #b9c0cc; }
+
+/*
+ * 房间座位那一行里的头像。
+ *
+ * ⚠️ 这里**不能**写成"圆 40px + 外面套一层 44px 的热区"：`data-frp-avatar` 长在圆自己身上，
+ * 而 `shared/ui/react.js` 是靠 `closest('[data-frp-avatar]')` 找点击目标的 ——
+ * 也就是说**真正被打中的是那个圆**，外面那层壳再大也没用（实测只有 40px，低于 44px 硬指标）。
+ * 所以圆本身就得是 44px。（刀马的改造者发现了这个；现在平台体检
+ * 的 44px 体检也把 `[data-frp-avatar]` 扫进去了，再退回去会当场报错。）
+ */
+.frp-room-member .frp-avatar { --frp-avatar-size: 44px; }
+.frp-room-member .frp-room-avatar-hit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* ---------- 互动：菜单 / 飞行 / 碎裂 ---------- */
+
+.frp-react-menu {
+  position: fixed;
+  z-index: 9998;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  min-width: 190px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  border: 1px solid var(--ui-border, #3a3d45);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
+}
+.frp-react-menu-title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  color: var(--ui-muted, #9aa0ae);
+}
+.frp-react-menu-actions { display: flex; flex-direction: column; gap: 6px; }
+.frp-react-btn { justify-content: center; }
+.frp-react-cancel { color: var(--ui-muted, #9aa0ae); }
+
+/*
+ * 「锁定式」互动的图标高亮（设计文档 §9.6）：游戏顶栏的 🥚 / 🌸 上加
+ * `data-frp-arm="egg" | "flower"`，`FrpReact.arm()` 会自己挂 `.is-armed`。
+ * ⚠️ 只有高亮样式在这里，**动效/音效/手感全在 react.js 里** —— 三个游戏不用各写一份。
+ * 高亮做成"底色 + 发光环 + 亮边框"三件事叠在一起：光靠颜色深浅在手机上分不出来。
+ */
+[data-frp-arm].is-armed {
+  background: rgba(106, 169, 255, 0.22);
+  border-color: var(--ui-accent, #6aa9ff);
+  box-shadow: 0 0 0 2px rgba(106, 169, 255, 0.35), 0 4px 14px rgba(106, 169, 255, 0.28);
+  color: var(--ui-accent, #6aa9ff);
+}
+[data-frp-arm]:not(.is-armed) {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.frp-fx-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 9997;
+  pointer-events: none;
+  overflow: hidden;
+}
+.frp-fx-projectile {
+  position: absolute;
+  font-size: 30px;
+  line-height: 1;
+  will-change: transform;
+  transform: translate(-50%, -50%);
+}
+.frp-fx-burst {
+  position: absolute;
+  font-size: 40px;
+  line-height: 1;
+  will-change: transform, opacity;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.5));
+}
+.frp-fx-burst.is-egg { font-size: 46px; }
+.frp-fx-burst.is-flower { font-size: 44px; }
+
+/* 人机座位的标记（成员列表里那个「人机」小标签） */
+.frp-room-tag-bot {
+  background: rgba(139, 147, 163, 0.18);
+  color: #b9c0cc;
+}
+
+.frp-room-tag {
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(106, 169, 255, 0.16);
+  color: var(--ui-accent, #6aa9ff);
+}
+.frp-room-tag-me { background: rgba(70, 192, 122, 0.16); color: var(--ui-ok, #46c07a); }
+
+/* ---------- 提示文字 ---------- */
+
+.frp-room-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ui-muted, #9aa0ae);
+}
+
+/* ---------- 邀请好友 ---------- */
+
+.frp-room-invite { display: flex; flex-direction: column; gap: 8px; }
+.frp-room-friends {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  border: 1px solid var(--ui-border, #3a3d45);
+}
+.frp-room-friend {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.frp-check { width: 22px; height: 22px; flex: none; accent-color: var(--ui-accent, #6aa9ff); }
+.frp-room-friend-name { font-weight: 600; }
+.frp-room-friend-id { font-size: 12px; color: var(--ui-muted, #9aa0ae); margin-left: auto; }
+.frp-room-friend-actions { display: flex; gap: 8px; margin-top: 4px; }
+.frp-room-friend-actions .frp-btn { flex: 1; }
+
+/* ---------- 底部操作 ---------- */
+
+.frp-room-actions { display: flex; gap: 8px; align-items: center; }
+.frp-room-actions .frp-btn { flex: 1; }
+.frp-room-wait-hint { flex: 1; font-size: 13px; color: var(--ui-muted, #9aa0ae); }
+
+/* ---------- 对局中的顶栏 ---------- */
+
+.frp-room-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ui-muted, #9aa0ae);
+}
+.frp-room-bar-code { letter-spacing: 0.1em; }
+.frp-room-bar-spacer { flex: 1; }
+
+/* ---------- 邀请弹窗 ---------- */
+
+.frp-invite-card {
+  position: fixed;
+  left: 50%;
+  top: calc(14px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 9998;
+  width: min(92vw, 420px);
+  padding: 14px;
+  border-radius: var(--ui-radius, 12px);
+  background: var(--ui-surface, #23252b);
+  border: 1px solid var(--ui-accent, #6aa9ff);
+  color: var(--ui-text, #f2f3f5);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.frp-invite-text { font-size: 14.5px; line-height: 1.5; }
+.frp-invite-actions { display: flex; gap: 8px; }
+.frp-invite-actions .frp-btn { flex: 1; }

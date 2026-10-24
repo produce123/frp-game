@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<title>游戏进程控制台</title>
+		<style>
+			:root {
+				--bg: #1e1e2e;
+				--surface: #282840;
+				--border: #3a3a5c;
+				--text: #cdd6f4;
+				--text-dim: #7f849c;
+				--accent: #89b4fa;
+				--green: #a6e3a1;
+				--red: #f38ba8;
+				--yellow: #f9e2af;
+				--orange: #fab387;
+			}
+			* {
+				margin: 0;
+				padding: 0;
+				box-sizing: border-box;
+			}
+			body {
+				font-family: "Segoe UI", system-ui, sans-serif;
+				font-size: 12px;
+				background: var(--bg);
+				color: var(--text);
+				overflow: hidden;
+				height: 100vh;
+				display: flex;
+				flex-direction: column;
+			}
+			.toolbar {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+				padding: 6px 12px;
+				background: var(--surface);
+				border-bottom: 1px solid var(--border);
+				flex-shrink: 0;
+			}
+			.toolbar .title {
+				font-size: 13px;
+				font-weight: 600;
+				color: var(--accent);
+				margin-right: 8px;
+			}
+			.toolbar button {
+				background: var(--accent);
+				color: #111;
+				border: none;
+				padding: 4px 10px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 11px;
+				font-weight: 600;
+			}
+			.toolbar button:hover {
+				opacity: 0.85;
+			}
+			.toolbar button.active {
+				background: var(--green);
+			}
+			.toolbar .status {
+				margin-left: auto;
+				font-size: 11px;
+				color: var(--text-dim);
+			}
+			.toolbar .status.ok {
+				color: var(--green);
+			}
+			.toolbar .status.err {
+				color: var(--red);
+			}
+			.tabs {
+				display: flex;
+				background: var(--surface);
+				border-bottom: 1px solid var(--border);
+				flex-shrink: 0;
+				overflow-x: auto;
+			}
+			.tab {
+				padding: 6px 14px;
+				cursor: pointer;
+				color: var(--text-dim);
+				border-bottom: 2px solid transparent;
+				white-space: nowrap;
+				user-select: none;
+			}
+			.tab:hover {
+				color: var(--text);
+			}
+			.tab.active {
+				color: var(--accent);
+				border-bottom-color: var(--accent);
+			}
+			.content {
+				flex: 1;
+				overflow: auto;
+				padding: 10px;
+			}
+			.key {
+				color: var(--accent);
+			}
+			.val {
+				color: var(--green);
+			}
+			.num {
+				color: var(--orange);
+			}
+			.bool-true {
+				color: var(--green);
+			}
+			.bool-false {
+				color: var(--red);
+			}
+			.null {
+				color: var(--text-dim);
+				font-style: italic;
+			}
+			.text-dim {
+				color: var(--text-dim);
+			}
+			/* Cards container */
+			.cards-container {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+				gap: 10px;
+				padding: 4px;
+			}
+			/* Data card */
+			.data-card {
+				background: var(--surface);
+				border: 1px solid var(--border);
+				border-radius: 6px;
+				overflow: hidden;
+			}
+			.data-card .card-header {
+				background: rgba(137, 180, 250, 0.1);
+				padding: 6px 10px;
+				border-bottom: 1px solid var(--border);
+			}
+			.data-card .card-title {
+				font-weight: 600;
+				color: var(--accent);
+				font-size: 13px;
+			}
+			.data-card .card-body {
+				padding: 8px;
+				font-size: 11px;
+			}
+			/* Field display */
+			.field {
+				padding: 2px 0;
+				line-height: 1.4;
+				word-break: break-word;
+			}
+			.field-key {
+				color: var(--accent);
+				font-weight: 500;
+			}
+			.field-group {
+				padding: 2px 0;
+				border-left: 2px solid var(--border);
+				margin-left: 4px;
+			}
+			.field-group > span:first-child {
+				font-weight: 500;
+			}
+			/* Toggle trigger */
+			.toggle-trigger {
+				cursor: pointer;
+				user-select: none;
+				display: flex;
+				align-items: center;
+				gap: 4px;
+				padding: 2px 4px;
+				border-radius: 3px;
+				transition: background 0.15s;
+			}
+			.toggle-trigger:hover {
+				background: rgba(137, 180, 250, 0.1);
+			}
+			.arrow {
+				color: var(--text-dim);
+				font-size: 10px;
+				transition: transform 0.15s;
+				display: inline-block;
+				min-width: 10px;
+			}
+			.arrow.expanded {
+				transform: rotate(90deg);
+			}
+			.nested {
+				padding: 2px 0;
+			}
+			.nested.hidden {
+				display: none;
+			}
+			.nested-item {
+				padding-left: 12px;
+			}
+			table {
+				width: 100%;
+				border-collapse: collapse;
+			}
+			th,
+			td {
+				text-align: left;
+				padding: 4px 8px;
+				border-bottom: 1px solid var(--border);
+				max-width: 300px;
+				overflow: hidden;
+				text-overflow: ellipsis;
+				white-space: nowrap;
+			}
+			th {
+				color: var(--text-dim);
+				font-weight: 600;
+				background: var(--surface);
+				position: sticky;
+				top: 0;
+			}
+			tr:hover {
+				background: rgba(137, 180, 250, 0.06);
+			}
+			.raw-json {
+				white-space: pre-wrap;
+				word-break: break-all;
+				font-family: "Cascadia Code", "Fira Code", monospace;
+				font-size: 11px;
+				line-height: 1.5;
+			}
+			.overview-grid {
+				display: grid;
+				grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+				gap: 8px;
+			}
+			.overview-card {
+				background: var(--surface);
+				border-radius: 6px;
+				padding: 10px;
+				border: 1px solid var(--border);
+			}
+			.overview-card .label {
+				color: var(--text-dim);
+				font-size: 11px;
+			}
+			.overview-card .value {
+				font-size: 16px;
+				font-weight: 600;
+				margin-top: 2px;
+			}
+			.section-title {
+				font-size: 13px;
+				font-weight: 600;
+				color: var(--accent);
+				margin: 12px 0 6px 0;
+				padding-bottom: 4px;
+				border-bottom: 1px solid var(--border);
+			}
+			.search-bar {
+				padding: 4px 8px;
+				background: var(--surface);
+				border-bottom: 1px solid var(--border);
+				flex-shrink: 0;
+				display: none;
+			}
+			.search-bar input {
+				width: 100%;
+				background: var(--bg);
+				border: 1px solid var(--border);
+				color: var(--text);
+				padding: 4px 8px;
+				border-radius: 3px;
+				font-size: 11px;
+			}
+			.search-bar.visible {
+				display: block;
+			}
+			/* GM Control 表单样式 */
+			.gm-section {
+				margin-bottom: 16px;
+				padding: 12px;
+				background: var(--surface);
+				border: 1px solid var(--border);
+				border-radius: 6px;
+			}
+			.gm-section-title {
+				font-size: 12px;
+				font-weight: 600;
+				color: var(--accent);
+				margin-bottom: 8px;
+			}
+			.gm-form-row {
+				display: flex;
+				gap: 8px;
+				align-items: center;
+				margin-bottom: 8px;
+			}
+			.gm-form-row label {
+				color: var(--text-dim);
+				font-size: 11px;
+				min-width: 60px;
+			}
+			.gm-select, .gm-input {
+				flex: 1;
+				background: var(--bg);
+				border: 1px solid var(--border);
+				color: var(--text);
+				padding: 4px 8px;
+				border-radius: 3px;
+				font-size: 11px;
+			}
+			.gm-btn {
+				background: var(--accent);
+				color: #111;
+				border: none;
+				padding: 4px 10px;
+				border-radius: 4px;
+				cursor: pointer;
+				font-size: 11px;
+				font-weight: 600;
+			}
+			.gm-btn:hover {
+				opacity: 0.85;
+			}
+			.gm-btn:disabled {
+				opacity: 0.5;
+				cursor: not-allowed;
+			}
+			.gm-quick-btns {
+				display: flex;
+				gap: 4px;
+				flex-wrap: wrap;
+			}
+			.gm-quick-btn {
+				padding: 3px 8px;
+				font-size: 10px;
+			}
+			.gm-log {
+				max-height: 150px;
+				overflow-y: auto;
+				background: var(--bg);
+				border: 1px solid var(--border);
+				border-radius: 4px;
+				padding: 8px;
+				font-family: "Cascadia Code", "Fira Code", monospace;
+				font-size: 10px;
+			}
+			.gm-log-entry {
+				padding: 2px 0;
+				border-bottom: 1px solid var(--border);
+			}
+			.gm-log-entry:last-child {
+				border-bottom: none;
+			}
+			.gm-log-success {
+				color: var(--green);
+			}
+			.gm-log-error {
+				color: var(--red);
+			}
+			.gm-log-time {
+				color: var(--text-dim);
+			}
+		</style>
+	</head>
+	<body>
+		<div class="toolbar">
+			<span class="title">游戏进程控制台</span>
+			<button id="refreshBtn">刷新</button>
+			<button id="autoBtn">自动: OFF</button>
+			<span class="status" id="status">未连接</span>
+			<button id="closeBtn" style="margin-left: 8px; background: var(--red); padding: 4px 10px">X</button>
+		</div>
+		<div class="tabs">
+			<div class="tab active" data-tab="overview">概览</div>
+			<div class="tab" data-tab="players">玩家</div>
+			<div class="tab" data-tab="properties">地产</div>
+			<div class="tab" data-tab="events">事件</div>
+			<div class="tab" data-tab="logs">日志</div>
+			<div class="tab" data-tab="raw">原始</div>
+			<div class="tab" data-tab="gm">GM 控制</div>
+		</div>
+		<div class="search-bar" id="searchBar">
+			<input type="text" id="searchInput" placeholder="搜索..." />
+		</div>
+		<div class="content" id="content"></div>
+		<script src="inspector.js"></script>
+	</body>
+</html>

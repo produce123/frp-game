@@ -1,0 +1,1630 @@
+/* ==========================================================================
+   Shell Gambit — 暗色极简聚会风样式
+   目标：干净、暗系、手机与电脑自适应、按钮够大适合聚会快速点按
+   动画只用 transform / opacity（GPU 友好），保证不卡顿
+   ========================================================================== */
+
+:root {
+  --bg: #0a0c0f;
+  --bg-soft: #101419;
+  --panel: #14181e;
+  --panel-2: #1b2027;
+  --panel-3: #222932;
+  --line: #262d36;
+  --line-soft: #1e242b;
+  --text: #e9eef4;
+  --text-dim: #9aa7b5;
+  --text-mute: #6b7683;
+  --live: #e5484d;
+  --live-dim: #7d2226;
+  --blank: #4b9fff;
+  --blank-dim: #1f4a7d;
+  --gold: #d9a441;
+  --ok: #3fb950;
+  --danger: #e5484d;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-lg: 20px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --tap: 48px;
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Noto Sans SC", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  /* 顶部一点极淡的光晕，避免纯黑发闷 */
+  background-image: radial-gradient(120% 70% at 50% -10%, #161c24 0%, var(--bg) 60%);
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+/* ------------------------------ 屏幕切换 ------------------------------ */
+
+#app {
+  position: relative;
+  height: 100%;
+  height: 100dvh;
+  width: 100%;
+}
+
+.screen {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  padding-top: var(--safe-t);
+  padding-bottom: var(--safe-b);
+}
+
+.screen.is-active {
+  display: flex;
+  animation: screen-in 0.22s ease-out;
+}
+
+@keyframes screen-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ------------------------------ 首页 ------------------------------ */
+
+.home-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  text-align: center;
+}
+
+.logo {
+  margin: 0;
+  /* 手机上标题必须整整齐齐待在一行里：用 vw 缩放并留出足够余量 */
+  font-size: clamp(26px, 9.4vw, 60px);
+  letter-spacing: 0.1em;
+  /* letter-spacing 会在最后一个字后面也加一份，补回来才不会右边多一截 */
+  margin-right: -0.1em;
+  max-width: 100%;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.logo span {
+  color: var(--live);
+}
+
+.logo-sub {
+  margin: 6px 0 30px;
+  color: var(--text-mute);
+  letter-spacing: 0.22em;
+  font-size: 12px;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(360px, 100%);
+}
+
+.menu-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+  text-align: left;
+}
+
+.menu-btn b {
+  font-size: 18px;
+  letter-spacing: 0.04em;
+}
+
+.menu-btn small {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
+.menu-btn:active {
+  transform: scale(0.975);
+  background: var(--panel-2);
+  border-color: var(--live-dim);
+}
+
+@media (hover: hover) {
+  .menu-btn:hover {
+    border-color: #39424e;
+    background: var(--panel-2);
+  }
+}
+
+.foot-note {
+  margin-top: 26px;
+  color: var(--text-mute);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+}
+
+/* 音效 / 特效开关 */
+.home-settings {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.home-settings .ghost-btn {
+  height: 40px;
+  font-size: 12.5px;
+  padding: 0 12px;
+}
+
+/* ------------------------------ 通用顶栏 ------------------------------ */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: rgba(10, 12, 15, 0.9);
+  backdrop-filter: blur(8px);
+  flex: 0 0 auto;
+}
+
+.bar h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  flex: 1;
+  text-align: center;
+  letter-spacing: 0.05em;
+}
+
+.bar-pad {
+  width: 40px;
+}
+
+.icon-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--text-dim);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.icon-btn:active {
+  background: var(--panel-3);
+}
+
+.icon-btn.tiny {
+  width: 34px;
+  height: 34px;
+  font-size: 15px;
+}
+
+/* ------------------------------ 内容容器 ------------------------------ */
+
+.pad {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, 100%);
+  margin: 0 auto;
+}
+
+.hint {
+  color: var(--text-mute);
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.hint strong {
+  color: var(--text-dim);
+}
+
+/* ------------------------------ 输入 ------------------------------ */
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  height: var(--tap);
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 17px;
+  outline: none;
+  transition: border-color 0.14s ease;
+}
+
+.text-input:focus {
+  border-color: var(--blank);
+}
+
+.text-input::placeholder {
+  color: var(--text-mute);
+}
+
+.field-label {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.name-row,
+.join-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.suggest {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.suggest button {
+  min-width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  font-size: 18px;
+}
+
+.suggest button:active {
+  background: var(--panel-3);
+}
+
+/* ------------------------------ 头像 ------------------------------ */
+
+/*
+ * 圆环的颜色是**语义**，不是装饰：自己＝蓝、其他真人＝橙、人机＝灰。
+ * 类名问平台要（`FrpReact.ringClass(id, isBot)` → `.frp-avatar.is-me|is-human|is-bot`），
+ * 配色写在 `shared/ui/ui.css` 里 —— 用户点名要求三个游戏一致，
+ * 所以本文件**不许**在这里另定那三种颜色（改了就是"这个不像亲生的"）。
+ *
+ * 这里只负责尺寸与内容（52px ≥ 44px 的硬指标），以及下面那条底色。
+ */
+.avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 600;
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  color: var(--text);
+  user-select: none;
+  position: relative;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+
+.avatar-lg {
+  width: 64px;
+  height: 64px;
+  font-size: 28px;
+}
+
+/* 传过头像的人：图片盖住整个圆，底下的名字只当加载失败的兜底 */
+.avatar.has-img { color: transparent; }
+
+/*
+ * `data-color` 原来画的是**边框**（四色轮换，纯装饰）。
+ * 边框改归语义色之后，它降级成**底色** ——
+ * 保留"每个人有一点自己的颜色"，又不会把"谁是电脑"这条信息盖掉。
+ * （背景的半透明色压在同一层上，谁也不会盖住谁。）
+ */
+.avatar[data-color="0"] { background: rgba(75, 159, 255, 0.16); }
+.avatar[data-color="1"] { background: rgba(217, 164, 65, 0.16); }
+.avatar[data-color="2"] { background: rgba(63, 185, 80, 0.16); }
+.avatar[data-color="3"] { background: rgba(176, 107, 255, 0.16); }
+
+/* ------------------------------ 按钮 ------------------------------ */
+
+.primary-btn {
+  height: var(--tap);
+  border-radius: var(--radius-sm);
+  background: var(--live);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0 20px;
+  transition: transform 0.1s ease, filter 0.12s ease;
+}
+
+.primary-btn:active:not(:disabled) {
+  transform: scale(0.975);
+  filter: brightness(1.1);
+}
+
+.primary-btn.compact {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.ghost-btn {
+  height: 42px;
+  padding: 0 14px;
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.ghost-btn:active {
+  background: var(--panel-3);
+}
+
+.link-btn {
+  color: var(--blank);
+  font-size: 13px;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line-soft);
+}
+
+/* ------------------------------ 人数选择 ------------------------------ */
+
+.count-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+/* 4 个选项时用 4 列（在线准备界面里"补几个电脑"是 0/1/2/3 四档）。
+   360px 窄屏实测过：4 列时每个方块 61px 见方，仍然 ≥44px 且不横向溢出。 */
+.count-grid.cols-4 {
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.count-btn {
+  aspect-ratio: 1 / 1;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: transform 0.1s ease, border-color 0.12s ease;
+}
+
+/* 选中态：只有在线准备界面会用到（单机点一下就直接开局了，没有"选中"这回事）。
+   本作的强调色是 --live（红），和牌桌上的实弹同一套语言。 */
+.count-btn.is-on {
+  border-color: var(--live);
+  background: rgba(229, 72, 77, 0.14);
+}
+
+.count-grid.cols-4 .count-btn b {
+  font-size: 26px;
+}
+
+.count-grid.cols-4 .count-btn small {
+  font-size: 10px;
+}
+
+.count-btn b {
+  font-size: 34px;
+  font-weight: 700;
+}
+
+.count-btn small {
+  color: var(--text-mute);
+  font-size: 12px;
+}
+
+.count-btn:active {
+  transform: scale(0.96);
+  border-color: var(--live);
+}
+
+.me-strip {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.me-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.room-input {
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ------------------------------ 大厅 ------------------------------ */
+
+.lobby-pad {
+  gap: 16px;
+}
+
+.lobby-tip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  font-size: 13px;
+  color: var(--text-mute);
+}
+
+.lobby-tip b {
+  font-size: 20px;
+  letter-spacing: 0.22em;
+  color: var(--gold);
+}
+
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.roster li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  position: relative;
+  transition: border-color 0.14s ease;
+}
+
+.roster li.is-me {
+  border-color: var(--blank-dim);
+}
+
+.roster .who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.roster .who b {
+  font-size: 16px;
+}
+
+.roster .tag {
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.roster .tag.ai {
+  color: var(--gold);
+}
+
+.roster .tag.host {
+  color: var(--ok);
+}
+
+.roster .throw {
+  display: flex;
+  gap: 6px;
+}
+
+.throw-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 20px;
+  display: grid;
+  place-items: center;
+}
+
+.throw-btn:active {
+  transform: scale(0.9);
+}
+
+.lobby-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.net-line {
+  font-size: 11px;
+  color: var(--text-mute);
+  line-height: 1.7;
+  word-break: break-all;
+}
+
+/* ------------------------------ 对局 ------------------------------ */
+
+#screen-game {
+  background-image: radial-gradient(100% 50% at 50% 0%, #151a21 0%, var(--bg) 70%);
+}
+
+.hud {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: 0 0 auto;
+}
+
+.hud-left,
+.hud-right {
+  flex: 0 0 auto;
+}
+
+.hud-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 头像可点击（点头像即可互动） */
+.avatar.is-clickable {
+  cursor: pointer;
+}
+
+.avatar.is-clickable:active {
+  transform: scale(0.92);
+}
+
+/* 互动选择面板 */
+.react-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.react-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+}
+
+.react-row .avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 17px;
+}
+
+.react-row .who-name {
+  flex: 1;
+  text-align: left;
+  font-size: 14px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-round {
+  font-size: 12px;
+  color: var(--text-mute);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.hud-round b {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.hud-mag {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  white-space: nowrap;
+}
+
+.chip i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  display: block;
+}
+
+.chip b {
+  font-size: 14px;
+}
+
+.chip-live {
+  color: var(--live);
+}
+
+.chip-blank {
+  color: var(--blank);
+}
+
+.chip-saw {
+  color: var(--gold);
+  border-color: #4a3a1a;
+  animation: saw-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes saw-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* 座位区 */
+
+.table {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+  gap: 10px;
+}
+
+.seats {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  align-content: start;
+  overflow-y: auto;
+}
+
+@media (min-width: 720px) {
+  .seats {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+}
+
+.seat {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 8px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  transition: border-color 0.2s ease, transform 0.2s ease, opacity 0.3s ease;
+}
+
+.seat.is-turn {
+  border-color: var(--gold);
+  box-shadow: 0 0 0 1px rgba(217, 164, 65, 0.35), 0 0 24px rgba(217, 164, 65, 0.12);
+}
+
+.seat.is-me {
+  background: var(--panel-2);
+}
+
+.seat.is-dead {
+  opacity: 0.42;
+  filter: grayscale(0.8);
+}
+
+.seat.is-targetable {
+  cursor: pointer;
+}
+
+.seat.is-targetable::after {
+  content: "选择目标";
+  position: absolute;
+  inset: 0;
+  border-radius: var(--radius);
+  background: rgba(229, 72, 77, 0.14);
+  border: 1px dashed var(--live);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  color: #ffd7d8;
+  letter-spacing: 0.1em;
+}
+
+.seat .seat-seat {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  font-size: 10px;
+  color: var(--text-mute);
+  letter-spacing: 0.08em;
+}
+
+.seat .seat-name {
+  font-size: 13px;
+  color: var(--text-dim);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seat .hp {
+  display: flex;
+  gap: 3px;
+}
+
+.seat .hp i {
+  width: 7px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--live);
+  display: block;
+  transition: background 0.2s ease, opacity 0.2s ease;
+}
+
+.seat .hp i.off {
+  background: #2c333c;
+}
+
+.seat .seat-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-mute);
+}
+
+.seat .badge {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--panel-3);
+  color: var(--text-dim);
+}
+
+.seat .badge.cuffed {
+  background: #3a2a12;
+  color: var(--gold);
+}
+
+.seat.is-hit {
+  animation: seat-hit 0.4s ease-out;
+}
+
+@keyframes seat-hit {
+  0% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  45% { transform: translateX(5px); }
+  70% { transform: translateX(-3px); }
+  100% { transform: translateX(0); }
+}
+
+.seat.is-thinking .avatar::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: var(--gold);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 事件流 */
+
+.feed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  overflow: hidden;
+  /* 关键：收起时把最新的一条顶在右边。以前是从左边开始排，
+     条目一多，最新的几条就被 overflow:hidden 裁掉 —— 手机上根本看不到刚发生了什么。 */
+  justify-content: flex-end;
+  font-size: 12px;
+  color: var(--text-mute);
+}
+
+/* 收起状态：只留最新一条，省地方 */
+.feed-box:not(.is-open) .feed-item:not(:last-child) {
+  display: none;
+}
+
+/* 展开状态：竖排、可滚动、最新在最下面 */
+.feed-box.is-open .feed {
+  height: auto;
+  max-height: min(40vh, 300px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  padding-right: 2px;
+}
+
+.feed-box.is-open .feed-item {
+  white-space: normal;
+  line-height: 1.45;
+}
+
+.feed-box {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.feed-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 11px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  color: var(--text-mute);
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.feed-toggle:hover { color: var(--text); border-color: var(--line); }
+
+.feed-chevron {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid currentColor;
+  transition: transform 0.2s ease;
+}
+
+.feed-box.is-open .feed-chevron { transform: rotate(180deg); }
+
+.feed-item {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  white-space: nowrap;
+  animation: feed-in 0.25s ease-out;
+}
+
+.feed-item.live { color: #ffc9ca; border-color: var(--live-dim); }
+.feed-item.blank { color: #c6e0ff; border-color: var(--blank-dim); }
+.feed-item.item { color: #ffe1ac; border-color: #4a3a1a; }
+
+@keyframes feed-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* 中央横幅 */
+
+.banner {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  font-size: clamp(22px, 7vw, 40px);
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-align: center;
+  opacity: 0;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.banner.show {
+  animation: banner-pop 1s ease-out;
+}
+
+@keyframes banner-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.7); }
+  18% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+}
+
+/* 操作区 */
+
+.controls {
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line-soft);
+  background: rgba(10, 12, 15, 0.92);
+  backdrop-filter: blur(10px);
+  padding: 10px 12px calc(10px + var(--safe-b));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hand {
+  display: flex;
+  gap: 8px;
+  min-height: 76px;
+  align-items: stretch;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.hand-empty {
+  color: var(--text-mute);
+  font-size: 12px;
+  align-self: center;
+}
+
+.card {
+  flex: 0 0 auto;
+  width: 66px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 4px;
+  transition: transform 0.12s ease, border-color 0.14s ease;
+  position: relative;
+}
+
+.card svg {
+  width: 26px;
+  height: 26px;
+}
+
+.card span {
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.card:active:not(:disabled) {
+  transform: translateY(-3px);
+  border-color: var(--gold);
+}
+
+.card:disabled {
+  opacity: 0.32;
+}
+
+.card.is-picked {
+  border-color: var(--gold);
+  transform: translateY(-4px);
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.act-btn {
+  flex: 1 1 auto;
+  min-width: 96px;
+  min-height: 52px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 14px;
+  transition: transform 0.1s ease, background 0.14s ease, border-color 0.14s ease;
+}
+
+.act-btn:active:not(:disabled) {
+  transform: scale(0.97);
+  background: var(--panel-3);
+}
+
+.act-btn.self {
+  border-color: var(--blank-dim);
+  color: #cfe6ff;
+}
+
+.act-btn.shoot {
+  border-color: var(--live-dim);
+  color: #ffd2d3;
+}
+
+.act-btn.cancel {
+  flex: 0 0 auto;
+  min-width: 80px;
+  color: var(--text-mute);
+}
+
+.turn-hint {
+  font-size: 12px;
+  color: var(--text-mute);
+  text-align: center;
+  min-height: 16px;
+  letter-spacing: 0.04em;
+}
+
+.turn-hint.is-mine {
+  color: var(--gold);
+}
+
+/* ------------------------------ 规则 ------------------------------ */
+
+.rules-pad h3 {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--gold);
+  letter-spacing: 0.05em;
+}
+
+.rules-pad p,
+.rules-pad li {
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.75;
+}
+
+.rules-pad ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.rules-pad .item-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.rules-pad .item-row svg {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--gold);
+}
+
+.rules-pad .item-row b {
+  color: var(--text);
+  font-size: 13.5px;
+}
+
+/* ------------------------------ 特效层 ------------------------------ */
+
+#fx-layer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  overflow: hidden;
+}
+
+.fx-projectile {
+  position: fixed;
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
+  font-size: 26px;
+  line-height: 30px;
+  text-align: center;
+  will-change: transform, opacity;
+}
+
+.fx-burst {
+  position: fixed;
+  width: 60px;
+  height: 60px;
+  margin: -30px 0 0 -30px;
+  border-radius: 50%;
+  will-change: transform, opacity;
+}
+
+.fx-burst.flower {
+  background: radial-gradient(circle, rgba(255, 150, 200, 0.95) 0%, rgba(255, 150, 200, 0) 70%);
+}
+
+.fx-burst.egg {
+  background: radial-gradient(circle, rgba(255, 235, 150, 0.95) 0%, rgba(255, 235, 150, 0) 70%);
+}
+
+.fx-damage {
+  position: fixed;
+  font-size: 26px;
+  font-weight: 800;
+  color: var(--live);
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+  will-change: transform, opacity;
+}
+
+.fx-muzzle {
+  position: fixed;
+  width: 90px;
+  height: 90px;
+  margin: -45px 0 0 -45px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 220, 140, 0.95) 0%, rgba(255, 120, 60, 0.35) 45%, rgba(255, 90, 40, 0) 72%);
+  will-change: transform, opacity;
+}
+
+#app.shake {
+  animation: app-shake 0.34s ease-out;
+}
+
+@keyframes app-shake {
+  0% { transform: translate(0, 0); }
+  18% { transform: translate(-7px, 4px); }
+  38% { transform: translate(6px, -3px); }
+  58% { transform: translate(-4px, 2px); }
+  78% { transform: translate(3px, -1px); }
+  100% { transform: translate(0, 0); }
+}
+
+/* ------------------------------ 提示条 ------------------------------ */
+
+#toast-layer {
+  position: fixed;
+  left: 50%;
+  bottom: calc(18px + var(--safe-b));
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  pointer-events: none;
+  width: min(420px, calc(100% - 24px));
+}
+
+.toast {
+  padding: 10px 16px;
+  border-radius: 999px;
+  background: rgba(28, 34, 42, 0.96);
+  border: 1px solid var(--line);
+  color: var(--text);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+  animation: toast-in 0.2s ease-out;
+  text-align: center;
+}
+
+.toast.error {
+  border-color: var(--danger);
+  color: #ffd2d3;
+}
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.toast.leaving {
+  animation: toast-out 0.25s ease-in forwards;
+}
+
+@keyframes toast-out {
+  to { opacity: 0; transform: translateY(8px); }
+}
+
+/* ------------------------------ 弹窗 ------------------------------ */
+
+#modal-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(5, 7, 9, 0.78);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  backdrop-filter: blur(4px);
+}
+
+#modal-layer[hidden] {
+  display: none;
+}
+
+.modal {
+  width: min(420px, 100%);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  text-align: center;
+  animation: modal-in 0.22s ease-out;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.94); }
+  to { opacity: 1; transform: none; }
+}
+
+.modal h3 {
+  margin: 0;
+  font-size: 20px;
+  letter-spacing: 0.06em;
+}
+
+.modal p {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+
+.modal .modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.modal .modal-actions button {
+  flex: 1;
+}
+
+.modal .winner-name {
+  font-size: 30px;
+  font-weight: 800;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ==========================================================================
+   接入平台之后追加的部分
+   —— 上面全部是原项目自己的样式，一行没改；下面这些是"搬进来"才需要的东西。
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 把共用组件（shared/ui/ui.css 画的那些）染成自己的风格
+      变量清单见 shared/ui/ui.css —— 只覆盖变量，不覆盖组件结构，
+      这样房号、成员、邀请这些外壳在三个游戏里长得一样，配色仍是自己的。
+   -------------------------------------------------------------------------- */
+
+:root {
+  --ui-accent: #e5484d;          /* 主色：本作的"实弹红" */
+  --ui-accent-text: #1a0507;     /* 主色按钮上的文字 */
+  --ui-radius: 14px;             /* 与自己的 --radius 对齐 */
+  --ui-surface: #14181e;         /* 面板底色 */
+  --ui-text: #e9eef4;
+  --ui-muted: #9aa7b5;
+  --ui-border: #262d36;
+  --ui-ok: #3fb950;
+  --ui-danger: #e5484d;
+}
+
+/* 共用组件的字体跟随本作（默认兜底是 system-ui，粗细会不一样） */
+.frp-btn,
+.frp-input,
+.frp-toast {
+  font-family: var(--font);
+}
+
+/* --------------------------------------------------------------------------
+   1b. 点击区域的硬指标（GAME-SPEC 第 7 节：≥44px，主按钮 48px）
+   原项目里这几个按钮是 34–42px —— 它的验收标准是 48px，
+   但有几处漏网（`.icon-btn` 在 vw 媒体查询里、`.ghost-btn` 是 42px），
+   在 360px 视口下真的低于 44px。这里统一压到 48px。
+   ⚠️ 不要改上面那几行 —— 那是原项目的视觉稿，改了就说不清谁动过什么。
+   -------------------------------------------------------------------------- */
+
+.ghost-btn {
+  height: auto;
+  min-height: 48px;
+}
+
+.home-settings .ghost-btn {
+  height: auto;
+  min-height: 48px;
+}
+
+.icon-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.icon-btn.tiny {
+  width: 48px;
+  height: 48px;
+}
+
+/* 顶部 HUD 本来就只有 38px 高，按钮一放大就会把它撑开 —— 跟着一起加高 */
+.hud {
+  min-height: 48px;
+}
+
+/* 「对局记录」的展开条：原项目是 30px，太薄了，手机上容易点空。
+   加高到 44px（文字仍在小号那一档，视觉上不会变笨重）。 */
+.feed-toggle {
+  min-height: 44px;
+}
+
+/* 上面那条同样的道理，只是换成平台组件：房间号是可以点一下复制的按钮，
+   ui.css 给的是 44px —— 在 360px 视口换算下来会落到 43.xxpx，实测过不了 ≥44px。
+   平时写 `44px` 就是 44，这里是被窄屏媒体查询里的缩放带下去的。 */
+.frp-room-code-value {
+  min-height: 48px;
+}
+
+/* --------------------------------------------------------------------------
+   2. 首页上的"你是谁"（名字与 ID 来自平台账号，游戏里没有输入框）
+   -------------------------------------------------------------------------- */
+
+.me-line {
+  margin: 2px 0 6px;
+  font-size: 13px;
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.me-line b {
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* ID 长按/点一下复制；高度给足 44px，手机上才点得准 */
+.me-id {
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+/* --------------------------------------------------------------------------
+   3. 在线对局的容器（房间外壳由 /shared/ui/room.js 画）
+   -------------------------------------------------------------------------- */
+
+.online-pad {
+  /* FrpRoom 画出来的成员/好友列表可能比屏幕高，这里允许纵向滚动 */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 屏幕上原来没有 .pad 的顶栏高度差，对局屏是整屏，所以单独给在线屏留边距 */
+#screen-online .pad {
+  padding-bottom: calc(20px + var(--safe-b));
+}
+
+/* --------------------------------------------------------------------------
+   4. 在线准备界面里游戏自己的设置区（`.frp-room-setup`）
+   ⚠️ 本作**准备区一个设置项都没有**了：原来那个"补几个电脑"的 0/1/2/3 选择器
+      随 `aiFill` 整条通路一起作废（人机改成"房间的座位"，由平台外壳的
+      「＋ 添加人机」加，见 games/shell-gambit/AGENTS.md §4.3）——
+      `js/ui/app.js` 的 mount() 里既没有 `options` 也没有 `renderSetup`。
+      这条规则留着是**无害的占位**（没有任何元素带这个类名，实测
+      `document.querySelector('#screen-online .frp-room-setup') === null`，
+      见 tests/browser.e2e.mjs 第 4b 节）。要复用平台画的那个框时才用得上它。
+   -------------------------------------------------------------------------- */
+
+.frp-room-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* --------------------------------------------------------------------------
+   5. 单机对局里"电脑在想什么"的提示条
+      只在本地人机模式出现：联机时 AI 跑在服务器上，玩家看不到它的决策理由。
+   -------------------------------------------------------------------------- */
+
+.ai-hint {
+  position: absolute;
+  left: 50%;
+  bottom: calc(150px + var(--safe-b));
+  transform: translateX(-50%) translateY(6px);
+  max-width: calc(100% - 32px);
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(20, 24, 30, 0.92);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+  z-index: 5;
+}
+
+.ai-hint.is-on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+/* --------------------------------------------------------------------------
+   6. 对局屏本体：单机与联机共用（js/ui/board.js 画进去）
+      .screen 已经是 flex column，所以牌桌直接顶满即可。
+      窄屏（360px）时让 .table 能纵向滚动，否则座位一多就会溢出屏幕。
+   -------------------------------------------------------------------------- */
+
+#screen-game {
+  overflow: hidden;
+}
+
+#screen-game .table {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+#screen-game .controls {
+  flex: none;
+}
+
+/* 窄屏兜底：手指点得到的仍然要 ≥44px，且不许横向溢出 */
+@media (max-width: 400px) {
+  #screen-game .hud {
+    gap: 4px;
+  }
+
+  #screen-game .seats {
+    gap: 6px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   7. 演出期间锁输入（docs/DECISIONS.md D10、GAME-SPEC 第 4 节）
+
+   【为什么】服务端那一帧早就把回合推进过了，而画面上一次 act 带回来的好几步
+   还要 450–700ms 一步一步演完。不锁的话玩家能"看着动画连着操作" ——
+   看到的画面和真实局面错位（用户反馈的原话：还没演完操作权就又回到用户层了）。
+
+   【谁给的类名】演出队列（/shared/ui/anim.js）在没排空时给 `<body>` 挂
+   `frp-anim-busy`，排空后摘掉。这里只接这个类名，不自己造状态。
+
+   【灰哪些】只灰"会发 room.act 的动作控件"（这一版共有两处）：
+     · `.actions .act-btn` —— 开枪 / 二次选目标（手铐、肾上腺素偷到的手铐）
+     · `.hand .card`       —— 出道具（含"先点开、再选目标"那一步）
+   ⚠️ **不许**把房间级按钮（开始 / 离开 / 邀请 / 加人机，那些在平台外壳里）
+      或者对局内菜单（☰ 离开对局）、对局记录展开条一起灰掉 —— 它们和演出无关。
+   ⚠️ 这只是**视觉与命中测试**那一半；真正拦住消息的是 js/ui/board.js 的 doAction()
+      与 js/ui/app.js 的 submitAction() 里的 `animBusy()` 判断（DOM 的 el.click()
+      不受 pointer-events 影响，只有 JS 那道闸拦得住它）。
+   -------------------------------------------------------------------------- */
+
+body.frp-anim-busy #screen-game .actions .act-btn,
+body.frp-anim-busy #screen-game .hand .card {
+  opacity: 0.45;
+  pointer-events: none;
+  /* 变灰的同时去掉按下的位移，免得看起来"还能按" */
+  transform: none;
+}

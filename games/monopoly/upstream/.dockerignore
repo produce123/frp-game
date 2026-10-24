@@ -1,0 +1,31 @@
+# Dependencies (pnpm install handles this)
+**/node_modules
+
+# Client apps (not needed for server build)
+apps/client
+apps/map-editor
+
+# Packages not needed by server
+packages/components
+
+# Build artifacts
+**/dist
+**/output
+
+# IDE & Editor
+.idea
+.vscode
+
+# Version control
+.git
+.gitignore
+
+# Docker files
+docker/
+
+# Worktrees
+.worktrees
+
+# Misc
+*.md
+*.log

@@ -1,0 +1,4 @@
+(async (context, gameProcess) => {
+	//通知玩家回合
+	gameProcess.roundTurnNotify(context.currentRoundPlayer.id);
+}) as GameEventFunction<PlayerRoundStartContext>;

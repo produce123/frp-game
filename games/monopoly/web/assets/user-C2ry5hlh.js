@@ -1,0 +1,1 @@
+import{a as o}from"./index-DGaz9bsi.js";import"./vue-vendor-CG2TSQIk.js";import"./three-vendor-NIihX5yT.js";import"./ui-common-Cb0TRzNQ.js";import"./fa-vendor-BCDCyDo7.js";import"./gsap-vendor-BYK9QQEs.js";async function r(r){return(await o.get("/user/info",{data:{token:r}})).data}export{r as getUserByToken};

@@ -1,0 +1,342 @@
+import { nextTick } from 'vue'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { AUDIO_PREFERENCES_STORAGE_KEY, useAudio } from './useAudio'
+import { dispatchLocalLlmAudio, playLlmAudioGroup, resetLlmAudioBusForTests } from './llmAudioBus'
+
+class MockAudio {
+  static instances: MockAudio[] = []
+
+  src: string
+  preload = ''
+  loop = false
+  volume = 1
+  currentTime = 0
+  duration = 4
+  readonly pause = vi.fn()
+  readonly play = vi.fn(async () => {})
+  private listeners = new Map<string, Array<() => void>>()
+
+  constructor(src = '') {
+    this.src = src
+    MockAudio.instances.push(this)
+  }
+
+  load() {}
+
+  cloneNode() {
+    return new MockAudio(this.src)
+  }
+
+  addEventListener(type: string, listener: () => void) {
+    const listeners = this.listeners.get(type) ?? []
+    listeners.push(listener)
+    this.listeners.set(type, listeners)
+  }
+
+  emit(type: string) {
+    for (const listener of this.listeners.get(type) ?? []) listener()
+  }
+}
+
+beforeEach(() => {
+  MockAudio.instances = []
+  vi.stubGlobal('Audio', MockAudio)
+  const testWindow = Object.assign(new EventTarget(), {
+    location: { href: 'http://localhost:5173/' },
+    setTimeout: globalThis.setTimeout,
+    clearTimeout: globalThis.clearTimeout,
+  })
+  vi.stubGlobal('window', testWindow)
+  // 音效预加载与本测试无关；保持请求 pending，避免创建数十个模板 Audio。
+  vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>(() => {})))
+  const stored = new Map<string, string>()
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => stored.set(key, value),
+  })
+  vi.spyOn(console, 'warn').mockImplementation(() => {})
+})
+
+afterEach(() => {
+  vi.useRealTimers()
+  resetLlmAudioBusForTests()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+describe('useAudio LLM 语音播放', () => {
+  it('一炮多响组播：多条语音同时创建互不打断，全部结束后 resolve，静音时直接拒绝', async () => {
+    const audio = useAudio()
+    const before = MockAudio.instances.length
+    const done = playLlmAudioGroup([
+      { url: `/api/local-tts/audio/${'a'.repeat(64)}.mp3`, seat: 1 },
+      { url: `/api/local-tts/audio/${'b'.repeat(64)}.mp3`, seat: 2 },
+    ])
+    const group = MockAudio.instances.slice(before)
+    expect(group).toHaveLength(2)
+    expect(group.every(a => (a.play as ReturnType<typeof vi.fn>).mock.calls.length === 1)).toBe(true)
+    // 两条并发各自结束，不互相取消
+    group[0].emit('ended')
+    expect(group[1].pause).not.toHaveBeenCalled()
+    group[1].emit('ended')
+    expect(await done).toBe(true)
+    audio.effectsOn.value = false
+    expect(await playLlmAudioGroup([{ url: `/api/local-tts/audio/${'c'.repeat(64)}.mp3`, seat: 3 }])).toBe(false)
+  })
+
+  it('cancels only the requested utterance and keeps another queued seat playable', async () => {
+    const audio = useAudio(), abort = new AbortController()
+    const firstUrl = `/api/local-tts/audio/${'e'.repeat(64)}.mp3`, secondUrl = `/api/local-tts/audio/${'f'.repeat(64)}.mp3`
+    const first = audio.playLocalLlmAudioUntilMidpoint(firstUrl, 1, 1, 'important', { signal: abort.signal, waitForCompletion: true })
+    const second = audio.playLocalLlmAudioUntilMidpoint(secondUrl, 2, 2, 'important', { waitForCompletion: true })
+    abort.abort()
+    await expect(first).resolves.toBe(false)
+    expect(MockAudio.instances.find(a => a.src === firstUrl)!.pause).toHaveBeenCalledOnce()
+    const next = MockAudio.instances.find(a => a.src === secondUrl)!
+    expect(next.play).toHaveBeenCalledOnce()
+    next.emit('playing'); next.emit('ended')
+    await expect(second).resolves.toBe(true)
+  })
+  it('单机语音在 playing 时显示气泡，并到实际播放中点才放行动作', async () => {
+    const audio = useAudio()
+    const started = vi.fn()
+    const url = `/api/local-tts/audio/${'b'.repeat(64)}.mp3`
+    let settled = false
+    const midpoint = audio.playLocalLlmAudioUntilMidpoint(url, 2, 1, 'normal', { onStarted: started })
+      .then((value) => { settled = true; return value })
+    const voice = MockAudio.instances.find((item) => item.src === url)!
+
+    expect(started).not.toHaveBeenCalled()
+    voice.emit('playing')
+    expect(started).toHaveBeenCalledOnce()
+    expect(settled).toBe(false)
+
+    voice.currentTime = 1.9
+    voice.emit('timeupdate')
+    expect(settled).toBe(false)
+    voice.currentTime = 2
+    voice.emit('timeupdate')
+    await expect(midpoint).resolves.toBe(true)
+    voice.emit('ended')
+  })
+
+  it('单机语音串行播放但不丢弃，后一动作等待自己的新台词中点', async () => {
+    const audio = useAudio()
+    const firstUrl = `/api/local-tts/audio/${'c'.repeat(64)}.mp3`
+    const secondUrl = `/api/local-tts/audio/${'d'.repeat(64)}.mp3`
+    const firstMidpoint = audio.playLocalLlmAudioUntilMidpoint(firstUrl, 1, 1)
+    const secondMidpoint = audio.playLocalLlmAudioUntilMidpoint(secondUrl, 2, 2)
+    const first = MockAudio.instances.find((item) => item.src === firstUrl)!
+
+    expect(MockAudio.instances.some((item) => item.src === secondUrl)).toBe(false)
+    first.emit('playing')
+    first.currentTime = 2
+    first.emit('timeupdate')
+    await expect(firstMidpoint).resolves.toBe(true)
+    first.emit('ended')
+
+    const second = MockAudio.instances.find((item) => item.src === secondUrl)!
+    expect(second).toBeDefined()
+    second.emit('playing')
+    second.currentTime = 2
+    second.emit('timeupdate')
+    await expect(secondMidpoint).resolves.toBe(true)
+    second.emit('ended')
+  })
+
+  it('已开播普通台词播完后再播放 important，动作仍在中点放行', async () => {
+    const audio = useAudio()
+    const normalUrl = `/api/local-tts/audio/${'1'.repeat(64)}.mp3`
+    const actionUrl = `/api/local-tts/audio/${'2'.repeat(64)}.mp3`
+    const normal = audio.playLocalLlmAudioUntilMidpoint(normalUrl, 1, 1, 'normal')
+    const normalAudio = MockAudio.instances.find((item) => item.src === normalUrl)!
+    normalAudio.emit('playing')
+
+    const action = audio.playLocalLlmAudioUntilMidpoint(actionUrl, 2, 2, 'important')
+    expect(MockAudio.instances.some(a=>a.src===actionUrl)).toBe(false)
+    normalAudio.currentTime=2;normalAudio.emit('timeupdate')
+    await expect(normal).resolves.toBe(true)
+    expect(normalAudio.pause).not.toHaveBeenCalled()
+    expect(MockAudio.instances.some(a=>a.src===actionUrl)).toBe(false)
+    normalAudio.emit('ended')
+    const actionAudio = MockAudio.instances.find((item) => item.src === actionUrl)!
+    expect(actionAudio.play).toHaveBeenCalledOnce()
+    actionAudio.emit('playing')
+    actionAudio.currentTime = 2
+    actionAudio.emit('timeupdate')
+    await expect(action).resolves.toBe(true)
+    actionAudio.emit('ended')
+  })
+
+  it('晚开播不挤占朗读时间，到中点继续动作并自然播完',async()=>{
+    vi.useFakeTimers();window.setTimeout=globalThis.setTimeout;window.clearTimeout=globalThis.clearTimeout
+    const audio=useAudio(),url=`/api/local-tts/audio/${'4'.repeat(64)}.mp3`
+    const pending=audio.playLocalLlmAudioUntilMidpoint(url,1,1)
+    const voice=MockAudio.instances.find(a=>a.src===url)!
+    voice.duration=8
+    await vi.advanceTimersByTimeAsync(9000);voice.emit('playing')
+    await vi.advanceTimersByTimeAsync(3000);voice.currentTime=3;voice.emit('timeupdate')
+    expect(voice.pause).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1000);voice.currentTime=4;voice.emit('timeupdate')
+    await expect(pending).resolves.toBe(true)
+    expect(voice.pause).not.toHaveBeenCalled()
+    voice.currentTime=8;voice.emit('ended')
+  })
+
+  it('持续有播放进度的长台词不被固定12秒截断',async()=>{
+    vi.useFakeTimers();window.setTimeout=globalThis.setTimeout;window.clearTimeout=globalThis.clearTimeout
+    const audio=useAudio(),url=`/api/local-tts/audio/${'5'.repeat(64)}.mp3`
+    const pending=audio.playLocalLlmAudioUntilMidpoint(url,1,1,'normal',{waitForCompletion:true})
+    const voice=MockAudio.instances.find(a=>a.src===url)!
+    voice.duration=30;voice.emit('playing')
+    for(let second=2;second<=30;second+=2){
+      await vi.advanceTimersByTimeAsync(2000);voice.currentTime=second;voice.emit('timeupdate')
+      expect(voice.pause).not.toHaveBeenCalled()
+    }
+    voice.emit('ended');await expect(pending).resolves.toBe(true)
+  })
+
+  it('开播后长时间没有进度仍结束故障音频并放行队列',async()=>{
+    vi.useFakeTimers();window.setTimeout=globalThis.setTimeout;window.clearTimeout=globalThis.clearTimeout
+    const audio=useAudio(),url=`/api/local-tts/audio/${'6'.repeat(64)}.mp3`,nextUrl=`/api/local-tts/audio/${'7'.repeat(64)}.mp3`
+    const stalled=audio.playLocalLlmAudioUntilMidpoint(url,1,1)
+    const next=audio.playLocalLlmAudioUntilMidpoint(nextUrl,2,2)
+    const voice=MockAudio.instances.find(a=>a.src===url)!
+    voice.emit('playing');await vi.advanceTimersByTimeAsync(12_000)
+    await expect(stalled).resolves.toBe(false);expect(voice.pause).toHaveBeenCalledOnce()
+    const following=MockAudio.instances.find(a=>a.src===nextUrl)!
+    following.emit('playing');following.emit('ended');await expect(next).resolves.toBe(true)
+  })
+
+  it('事件级 isCurrent 失效只终止自己的播放', async () => {
+    const audio = useAudio()
+    const url = `/api/local-tts/audio/${'3'.repeat(64)}.mp3`
+    let current = true
+    const playback = audio.playLocalLlmAudioUntilMidpoint(url, 1, 3, 'important', {
+      isCurrent: () => current,
+    })
+    const voice = MockAudio.instances.find((item) => item.src === url)!
+    voice.emit('playing')
+    current = false
+    voice.emit('timeupdate')
+
+    await expect(playback).resolves.toBe(false)
+    expect(voice.pause).toHaveBeenCalledOnce()
+  })
+
+  it('赛后感言必须等整句播放结束才放行下一位或结算', async () => {
+    const audio = useAudio()
+    const url = `/api/local-tts/audio/${'e'.repeat(64)}.mp3`
+    let settled = false
+    const completed = audio.playLocalLlmAudioUntilMidpoint(url, 1, 1, 'important', {
+      waitForCompletion: true,
+    }).then((value) => { settled = true; return value })
+    const voice = MockAudio.instances.find((item) => item.src === url)!
+
+    voice.emit('playing')
+    voice.currentTime = 2
+    voice.emit('timeupdate')
+    expect(settled).toBe(false)
+    voice.emit('ended')
+    await expect(completed).resolves.toBe(true)
+  })
+
+  it('普通吐槽播放期间丢弃后来普通语音，不再积压到下一圈，且不压低 BGM', () => {
+    const audio = useAudio()
+    const bgm = MockAudio.instances[0]
+    expect(bgm.volume).toBe(0.32)
+
+    const firstUrl = `/api/local-tts/audio/${'a'.repeat(64)}.mp3`
+    expect(dispatchLocalLlmAudio(firstUrl, 1, 1)).toBe(true)
+    const first = MockAudio.instances.find((item) => item.src === firstUrl)!
+    expect(first.volume).toBe(1)
+    // 语音期间 BGM 恒定：忽高忽低会影响对局节奏（2026-09-11 用户决定取消 ducking）。
+    expect(bgm.volume).toBe(0.32)
+
+    audio.playLlmAudio('/api/tts/audio/second.mp3', 2, 2)
+    expect(MockAudio.instances.some((item) => item.src.endsWith('/second.mp3'))).toBe(false)
+    first.emit('ended')
+    expect(bgm.volume).toBe(0.32)
+  })
+
+  it('关键胜利语音打断普通吐槽，BGM 全程不变', () => {
+    const audio = useAudio()
+    const bgm = MockAudio.instances[0]
+    const firstUrl = `/api/local-tts/audio/${'a'.repeat(64)}.mp3`
+    dispatchLocalLlmAudio(firstUrl, 1, 1)
+    const first = MockAudio.instances.find((item) => item.src === firstUrl)!
+
+    audio.playLlmAudio('/api/tts/audio/win.mp3', 2, 2, 'important')
+
+    expect(first.pause).toHaveBeenCalledOnce()
+    const win = MockAudio.instances.find((item) => item.src.endsWith('/win.mp3'))!
+    expect(win.play).toHaveBeenCalledOnce()
+    expect(bgm.volume).toBe(0.32)
+    win.emit('ended')
+    expect(bgm.volume).toBe(0.32)
+  })
+})
+
+describe('useAudio preferences', () => {
+  it('restores and persists the global, BGM, and effects switches independently', async () => {
+    localStorage.setItem(AUDIO_PREFERENCES_STORAGE_KEY, JSON.stringify({
+      soundOn: false,
+      bgmOn: true,
+      effectsOn: false,
+    }))
+    const audio = useAudio()
+
+    expect(audio.soundOn.value).toBe(false)
+    expect(audio.bgmOn.value).toBe(true)
+    expect(audio.effectsOn.value).toBe(false)
+
+    audio.soundOn.value = true
+    audio.bgmOn.value = false
+    audio.effectsOn.value = true
+    await nextTick()
+
+    expect(JSON.parse(localStorage.getItem(AUDIO_PREFERENCES_STORAGE_KEY)!)).toEqual({
+      soundOn: true,
+      bgmOn: false,
+      effectsOn: true,
+    })
+  })
+
+  it('keeps effects playable while BGM is disabled', async () => {
+    const audio = useAudio()
+    const bgm = MockAudio.instances[0]
+
+    audio.bgmOn.value = false
+    await nextTick()
+    expect(bgm.pause).toHaveBeenCalled()
+
+    const effect = audio.playEffect('click.mp3') as unknown as MockAudio
+    expect(effect).not.toBeNull()
+    expect(effect.play).toHaveBeenCalledOnce()
+  })
+
+  it('blocks effects and voices without muting BGM when only effects are disabled', async () => {
+    const audio = useAudio()
+    const bgm = MockAudio.instances[0]
+
+    audio.effectsOn.value = false
+    await nextTick()
+
+    expect(audio.playEffect('click.mp3')).toBeNull()
+    audio.playLlmAudio('/api/tts/audio/blocked.mp3', 1, 1)
+    expect(MockAudio.instances.some((item) => item.src.endsWith('/blocked.mp3'))).toBe(false)
+    expect(bgm.pause).not.toHaveBeenCalled()
+  })
+
+  it('uses the global switch as a master gate without changing child preferences', async () => {
+    const audio = useAudio()
+    audio.soundOn.value = false
+    await nextTick()
+
+    expect(audio.bgmOn.value).toBe(true)
+    expect(audio.effectsOn.value).toBe(true)
+    expect(audio.playEffect('click.mp3')).toBeNull()
+    await audio.startBgm()
+    expect(MockAudio.instances[0].play).not.toHaveBeenCalled()
+  })
+})

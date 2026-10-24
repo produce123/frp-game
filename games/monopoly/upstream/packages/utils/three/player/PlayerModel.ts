@@ -1,0 +1,103 @@
+import * as THREE from "three";
+import { GIFTexture } from "./libs/three-gif-texture";
+
+export class PlayerModel {
+	public model: THREE.Group = new THREE.Group();
+	// 改为 public 或者提供 getter，以便外部访问
+	public bodyMesh: THREE.Mesh | undefined;
+
+	constructor() {}
+
+	public async load(url: string, fileType: string) {
+		this.model = await loadRoleModel(url, fileType);
+		// 类型断言为 Mesh，方便后续操作
+		this.bodyMesh = this.model.getObjectByName("RoleBody") as THREE.Mesh;
+		return this.model;
+	}
+
+	public update(camera: THREE.Camera) {
+		if (!this.bodyMesh) return;
+
+		const targetPos = new THREE.Vector3();
+		camera.getWorldPosition(targetPos);
+
+		// lookAt 只负责旋转，它不会影响 scale，所以翻转后依然能正确盯着相机
+		this.bodyMesh.lookAt(targetPos);
+	}
+
+	/**
+	 * 俯视棋盘模式：立绘固定平铺在地面上。
+	 * 此时相机在正上方，继续 lookAt 会让立绘随相机平移绕 Y 轴转动，
+	 * 因此改为固定朝向——法线朝上（正对相机），贴图上方指向屏幕上方（-Z）。
+	 */
+	public updateTopDown() {
+		if (!this.bodyMesh) return;
+		this.bodyMesh.rotation.set(-Math.PI / 2, 0, 0);
+	}
+}
+
+async function loadRoleModel(url: string, fileType: string): Promise<THREE.Group> {
+	let texture: THREE.Texture;
+	if (fileType.includes("gif")) {
+		texture = await new Promise((resolve) => {
+			new GIFTexture(url, "autoDraw", (map: THREE.Texture) => resolve(map));
+		});
+		texture.repeat.set(1, 1);
+	} else {
+		const textureLoader = new THREE.TextureLoader();
+		texture = await textureLoader.loadAsync(url);
+		texture.repeat.set(1, 1);
+	}
+	texture.colorSpace = THREE.SRGBColorSpace;
+
+	const group = new THREE.Group();
+
+	// --- 1. 角色主体 ---
+	const planeMaterial = new THREE.MeshBasicMaterial({
+		map: texture,
+		transparent: true,
+		side: THREE.DoubleSide,
+		alphaTest: 0.5,
+	});
+	const planeGeometry = new THREE.PlaneGeometry(1, 1);
+	const planeMesh = new THREE.Mesh(planeGeometry, planeMaterial);
+
+	planeMesh.name = "RoleBody"; // <--- 关键：命名
+	planeMesh.position.y = 0.5;
+
+	group.add(planeMesh);
+
+	// --- 2. 阴影 (使用纯代码生成的圆) ---
+	const shadowGeometry = new THREE.CircleGeometry(0.35, 32);
+	const shadowMaterial = new THREE.MeshBasicMaterial({
+		color: 0x000000,
+		transparent: true,
+		opacity: 0.3,
+		side: THREE.DoubleSide,
+		depthWrite: false,
+	});
+
+	const shadowMesh = new THREE.Mesh(shadowGeometry, shadowMaterial);
+	shadowMesh.name = "Shadow";
+	shadowMesh.rotation.x = -Math.PI / 2;
+	shadowMesh.position.y = 0.02;
+
+	group.add(shadowMesh);
+
+	// --- 3. 缩放逻辑 ---
+	const box = new THREE.Box3().setFromObject(group);
+	const size = new THREE.Vector3();
+	box.getSize(size);
+	const maxSide = Math.max(size.x, size.y, size.z);
+	const scale = 1 / maxSide;
+	group.scale.set(scale, scale, scale);
+
+	// --- 4. 居中逻辑 ---
+	const center = new THREE.Vector3();
+	box.getCenter(center).multiplyScalar(scale);
+	group.position.x = -center.x;
+	group.position.z = -center.z;
+	// 保持 Y = 0 不动
+
+	return group;
+}

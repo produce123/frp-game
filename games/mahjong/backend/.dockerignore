@@ -1,0 +1,16 @@
+# 构建上下文精简：只带 pyproject.toml + app/
+.venv
+.git
+.pytest_cache
+__pycache__
+**/__pycache__
+*.pyc
+data/
+docs/
+scripts/
+tests/
+*.db
+.env
+.env.*
+config/tts.yml
+config/secrets/

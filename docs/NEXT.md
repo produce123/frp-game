@@ -1,0 +1,107 @@
+# 当前进度与下一步
+
+> 读完根目录 `AGENTS.md` 再读本文件。这里只留**现在还成立**的结论（约 200 行以内）。
+> 历史过程不要往这里堆 —— 追加到 `docs/HISTORY.md`，按标题跳着查。
+
+## 一句话现状
+
+Windows 本机一个 Node 进程（零依赖）+ 一条隧道，提供平台账号/好友/房间，
+以及 8 个游戏：三个自建小游戏 + 无名杀（三国杀）/ 狼人杀 / 斗地主 / 大富翁 / 莲花广麻。
+五个缝合项目的账号、昵称、头像、好友、邀请全部复用平台那一套；好友列表能看到
+「正在玩」并直接进入。手机端四个横屏大项目都有伪横屏外壳 + 可选全屏。
+
+2026-11 这一轮（用户要求）：
+**全屏按钮进全屏后隐藏**、伪横屏外壳点全屏锁真横屏；**所有游戏统一新窗口打开**；
+首页加搜索框 + 人数筛选 + A–Z 字母表 + 按首字母排序；三国杀换图标；介绍压到 ≤35 字；
+文档瘦身，新增 `DEPLOY.md`（给 AI 看的部署步骤）、英文 `README.en.md`，仓库发布到 GitHub。
+
+## 入口（地址随隧道变，**不写死在本仓库**）
+
+| 路径 | 是什么 |
+| --- | --- |
+| `/` | 平台首页（登录 / 游戏 / 好友 / 设置） |
+| `/games/blade-steed/`、`/games/cannon-goblin/`、`/games/shell-gambit/` | 三个自建小游戏 |
+| `/noname/` | 原版无名杀（需登录；手机 `/play/noname`） |
+| `/werewolf/` | 狼人杀（4–18 人，房主自定义角色；`?join` / `/werewolf/join?number=`） |
+| `/ddz/` | 斗地主（固定 3 真人；牌桌是上游 Godot 网页版） |
+| `/games/monopoly/` | 大富翁（上游 3D 客户端 + `/monopoly-relay`） |
+| `/mahjong/` | 莲花广麻（上游 Vue3 + Python 后端；`?join=房号`） |
+| `/play/<game>` | 四个伪横屏手机外壳（电脑打开自动回真页面） |
+
+本机：`http://127.0.0.1:7891/`。公网地址由用户在自己的隧道面板管理，**不要写进代码/文档**。
+隧道排障只看 `data/server.log` 的 `[来访]` 行；细节见 `docs/TUNNEL.md`。
+
+## 这一轮已完成（2026-11）
+
+- 全屏：`shared/ui/fullscreen.js` 进全屏后**整颗按钮隐藏**（手机返回键退出）；
+  四个 `<game>-frame.html` 的 body 加 `data-frp-fullscreen="landscape"`，
+  点全屏时 `requestFullscreen + screen.orientation.lock('landscape')`，退全屏解锁。
+- 新窗口：`web/assets/js/app.js` 的 `openGame()` 统一 `window.open(..., '_blank', 'noopener')`
+  —— 首页卡片、好友「进入」、邀请「接受」全部新标签页。
+- 首页：搜索框 + 圆形人数筛选（全部 / 1 / 2 / 3 / 4 / 5+）；
+  游戏按 `letter`（拼音首字母）分组排序；最右一列完整 A–Z（有游戏的字母可点跳转）；
+  每个游戏的介绍 ≤35 字；三国杀图标从 🀄 换成 🎴。
+- 测试：`tests/browser.smoke.mjs` 增加介绍字数 / 字母表 / 搜索 / 人数筛选断言；
+  `tests/fullscreen.browser.mjs` 增加"全屏时按钮消失""外壳锁横屏"断言；
+  `tools/cdp.mjs` 新增 `page.waitForNewPage()`，受影响用例改为真实点击后切新标签页。
+- 文档：`AGENTS.md` / `docs/NEXT.md` 瘦身；新增 `DEPLOY.md`、`README.en.md`；
+  README 重写（面向用户 + 部署 + 上游 + 禁止商用）；隧道地址/密钥已从仓库清掉。
+- 防 IDM：`shared/ui/no-idm.js` 把音频 URL 去掉扩展名，`server/http.mjs` 映射回真实文件；
+  麻将一次访问被 IDM 抓走 2000+ 个音效的问题已修（见 D45）。
+
+## 下一步（按优先级）
+
+1. **真机验收这次改动**：手机点全屏 → 是否真横屏、按钮是否消失、返回键能否退出；
+   首页搜索/筛选/字母表在 375px 宽下是否顺手；三个平台游戏 + 五个上游是否都开新窗口。
+2. **真机跨网络打一局**（两台不同网络）：平台游戏、狼人杀、斗地主、大富翁、莲花广麻各挑一个。
+   重点看弱网延迟、手机性能、以及"有人中途退出"时的表现。
+3. **公网被隧道「访问认证」挡着时**（请求根本没到本机、`data/server.log` 零来访）：
+   只有用户能处理 —— 把访问密码发给同学，或在面板关掉认证。
+4. **待用户拍板的旧问题**（不阻塞）：
+   - 刀马猜拳阶段的倒计时缓冲：A 提到 4.5 秒（推荐）/ B 保持 2 秒。
+   - `Net.send` 在 socket 未 OPEN 时静默失败：是否加一句「还没连上，稍等」提示。
+   - 大炮轰小鬼落子音 / 刀马出拳 `pick` 音留不留。
+5. **可选**：无名杀存档上云（现在只在浏览器 IndexedDB）；斗地主战绩/倒计时；大富翁观战。
+6. **无名杀更新**：`node tools/noname-update.mjs`（约 10 分钟，自动重打 6 个补丁）；
+   更新后跑 `node tools/check-noname.mjs`。上游源码不进 git。
+
+## 已确认过的决定（不要再问）
+
+- 加好友需对方同意；三个小游戏不存战绩；平台在线房支持 1 人 + 人机（斗地主例外：3 个真人）；
+  互动不限次数；**联机动画逐个演完、不给跳过、不做本地预演**；**不做聊天**；
+  名字 1–10 个字符、全平台显示头像；`/noname/` `/werewolf/` `/ddz/` `/monopoly/` `/mahjong/`
+  都**必须登录平台**；好友的房免密码；斗地主不做人机/中途加入/观战/倒计时。
+- **首页所有游戏统一新窗口打开**；手机端全屏可选手动、全屏时按钮隐藏；
+  伪横屏外壳点全屏锁真横屏（2026-11 新增，见 D44）；音频 URL 去扩展名防 IDM（D45）。
+
+## 实测记下来的环境事实（别再重新试一遍）
+
+- 本机 Node **v24.18.1**，有 `node:sqlite`、`crypto.scrypt`、`randomUUID`。
+  **没有** WebSocket 服务端 API（只有客户端 `WebSocket`），所以 `server/ws.mjs` 是手写的。
+- `node --test tests/` 会报 `Cannot find module`，要写 `node --test "tests/*.test.mjs"`。
+- 系统时钟看起来快（显示 2026 年），写日期断言时别依赖真实时间。
+- 注册的名字必须是**一个字符**（`shared/protocol.mjs` 的 `validateName` 已放宽到 1–10，但旧用例仍是一个字）。
+- `tools/cdp.mjs` 的 `page.eval` 会把字符串当**函数体**包起来，表达式要自己写 `return`。
+  `page.eval` 读不到经典脚本顶层 `let`（`gameState` 等），要用裸标识符。
+- 伪横屏量尺寸用 `getBoundingClientRect()` 换算旋转坐标，⛔ 别用 `offsetWidth/offsetHeight`。
+- 平台资源路径 `/shared/...`，游戏页面 `/games/<slug>/`；`server/http.mjs` 的目录请求会补 `index.html`。
+  斗地主是例外：页面在 `/ddz/`，`/games/ddz/**` 主动 404；`/ddz` 必须 301 到 `/ddz/`。
+- 狼人杀前端是 Next.js 静态导出：`cd games/werewolf/app && pnpm install && pnpm build`，
+  产物覆盖 `games/werewolf/dist/`（要提交）。房号是 6 位数字，**不能**过 `normalizeCode()`。
+- 大富翁改 UI 要 `pnpm build:web` 覆盖 `games/monopoly/web/`；地图在 `maps/`（5 张公开 `.mmmap`）。
+- 莲花广麻：Python 3.11+，`backend/.venv`；内部端口 8123，公网仍只走 7891 反代。
+- 斗地主：改 `godot/` 必须重新导出 `games/ddz/table/`；`.wasm` 走 gzip + ETag。
+- `data/` 与 `frpc/**/*.local.ini` 已 gitignore；**绝不提交**数据库、隧道密钥、真实公网地址。
+
+## 已知的小毛病 / 覆盖缺口（诚实记录）
+
+- **真手机**没验过这次的横屏锁定（iOS Safari 不支持 Fullscreen API，按钮本来就不显示；
+  Android Chrome 的 `screen.orientation.lock` 需要全屏态）。
+- 斗地主的 Godot wasm 在真手机（尤其 iOS）没验过；牌桌像素没人肉眼校过。
+- 大富翁 / 莲花广麻只验到无头 Chrome 的两人流程，真机 3D 性能没测。
+- 平台首页自己要等一次 `/api/me` 才画名字（刻意的，`tests/login-race.browser.mjs` 钉着）。
+- 刀马猜拳阶段最坏只剩标称 10 秒里的约 7.8 秒（用例钉了 ≥75% 地板）。
+- 大炮轰小鬼普通难度会长时间原地打转（上游 AI 的既有脾性）；`checkWinCondition()`
+  只检查大炮被堵死，不检查小鬼被堵死（上游原样）。
+- 无名杀首屏是全站最重的一页；已做 gzip + 10 分钟缓存，别再为它改上游代码。
+- **别人正在写的文件，跑出来的结果不当结论**：报告里要写明 mid-write 快照，最终以改动者自报 + 复核为准。

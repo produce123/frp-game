@@ -1,0 +1,26 @@
+; SakuraFrp frpc 配置模板 —— HTTP 通道（脱敏，当前已停用，仅存档）
+;
+; ⚠️ 真正在跑的配置**不是这个文件**：SakuraFrp 启动器启动时自己生成一份喂给 frpc.exe。
+;    改隧道请去启动器界面（隧道 → 编辑），在这里改不会生效。见 ../README.md
+;
+; 重新启用之前，先读 ../../docs/TUNNEL.md 的坑二（隧道名不能复用：删掉重建同名隧道，
+; 节点上会残留旧代理，访客只会拿到 503）和坑三（Cloudflare 加密模式必须匹配隧道类型）。
+;
+; 硬约束：本机服务端只监听 127.0.0.1:7891（明文 HTTP），所以 local_port 必须是 7891。
+
+[common]
+user = <你的 SakuraFrp 访问密钥>
+
+sakura_mode = true
+login_fail_exit = false
+
+; 2026-10-20 用的是日本2 节点的 server_addr
+server_addr = <节点域名>
+server_port = 8088
+
+[gameweb]
+# id = <隧道 ID>
+type = http
+local_ip = 127.0.0.1
+local_port = 7891
+custom_domains = <你的域名>

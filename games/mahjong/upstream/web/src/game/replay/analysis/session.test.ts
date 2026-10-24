@@ -1,0 +1,192 @@
+import { describe, expect, it } from 'vitest'
+import { createAnalysisSession, reconcileAnalysisWithReplay } from './session'
+import { createAnalysisMemoryStorage } from './storage'
+import { fingerprintOf } from './codec'
+import type { AnalysisBlockPart } from './codec'
+import type { AnalysisDecision, AnalysisConfigRecord } from './types'
+
+// 分析会话（§3.1、§9.2、§9.3）：
+// 每场一个新录制器但引擎只持稳定代理、场末落库并回收悬空分析区、关闭时零成本。
+
+function setup(options: { enabled?: boolean; storage?: ReturnType<typeof createAnalysisMemoryStorage> | null } = {}) {
+  const storage = options.storage === undefined ? createAnalysisMemoryStorage() : options.storage
+  const session = createAnalysisSession({
+    enabled: options.enabled ?? true,
+    storage,
+    now: () => 1_700_000_000_000,
+    monotonic: () => 1_000,
+    createId: (() => { let n = 0; return () => `match-${++n}` })(),
+  })
+  return { session, storage }
+}
+
+const config = {
+  rulesetId: 'lotus-blood-flow', rules: { rounds: 4 }, rulesVersion: 'lotus-blood-flow-v1',
+  aiConfig: { bigHandRoute: true }, aiStrategy: 'source-v2',
+  // 座位控制词表：human / local-ai / llm（与"选择来源"词表是两套，别混用）
+  seatControl: ['human', 'llm', 'llm', 'local-ai'] as const,
+}
+
+describe('分析录制会话', () => {
+  // §9.2：开关是**活值**（UI 上的复选框随时可切），作用点是下一场 start()，不需要刷新页面。
+  it('开关可以随时切换：关着时不建录制器，打开后下一场开始录，且代理恒存在', async () => {
+    let on = false
+    const storage = createAnalysisMemoryStorage()
+    const session = createAnalysisSession({
+      enabled: () => on, storage, now: () => 1_700_000_000_000, monotonic: () => 1_000,
+      createId: (() => { let n = 0; return () => `match-${++n}` })(),
+    })
+    // 代理恒存在（调用方不需要判空），但"在录"为假时不建场、不写任何东西
+    expect(session.port, '代理必须存在，开关才有意义').toBeTruthy()
+    expect(session.enabled()).toBe(false)
+    expect(session.port.enabled, '开关关闭时不应处于"在录"状态').toBe(false)
+    expect(session.start({ ...config, seatControl: [...config.seatControl] })).toBe('')
+    expect(session.active()).toBe(false)
+    session.port.reproduction({ roundIndex: 1, available: true })
+    expect((await storage.read('match-1')).parts).toEqual([])
+
+    // 打开开关：下一场立刻开始录（同一个代理、同一个会话对象）
+    on = true
+    expect(session.enabled()).toBe(true)
+    const matchId = session.start({ ...config, seatControl: [...config.seatControl] })
+    expect(matchId).toBe('match-1')
+    expect(session.active()).toBe(true)
+    expect(session.port.enabled, '已开录后代理报告"在录"').toBe(true)
+    session.port.reproduction({ roundIndex: 1, available: true })
+    await session.finish()
+    const read = await storage.read(matchId)
+    expect(read.parts.some(part => part.tag === 'reproduction'), '打开后这一场要真的记下来').toBe(true)
+
+    // 关闭开关：下一场不再开始（这一场已经收尾）
+    on = false
+    expect(session.port.enabled, '关闭后不再处于"在录"状态（调用方据此停发私有数据）').toBe(false)
+    expect(session.start({ ...config, seatControl: [...config.seatControl] })).toBe('')
+    expect(session.active()).toBe(false)
+  })
+
+  // 回归：引擎侧"中途退出"走的是 `port.finish()`。此前它只结束录制器、不清会话 target，
+  // 于是 `session.active()` 一直是真 —— App 的守卫会跳过下一场的 start()，新对局的记录挂到上一场名下。
+  it('代理 finish() 结束整场：会话不再是 active，下一场换新 matchId', async () => {
+    const { session, storage } = setup()
+    const first = session.start({ ...config, seatControl: [...config.seatControl] })
+    session.port!.noteGap({ scope: 'match', reason: 'match-aborted' })
+    session.port!.windowOpened({
+      windowId: 'w1', seat: 0, windowKind: 'draw-turn', roundIndex: 1, authorityEpoch: 'e1', stateVersion: 1,
+      state: { id: 's1', legalActions: [{ id: 'w1/0', kind: 'discard' }] },
+    })
+    const finished = await session.port!.finish()
+    expect(finished.status, '中途退出必须如实标成不完整').toBe('partial')
+    expect(session.active(), '代理 finish 之后不应还是 active').toBe(false)
+    const aborted = await storage.read(first)
+    expect(aborted.parts.length, '已录到的数据必须刷进去，不能静默丢').toBeGreaterThan(0)
+    expect(aborted.meta?.status).toBe('partial')
+    expect(aborted.meta?.gaps.map(gap => gap.reason)).toContain('match-aborted')
+
+    // 下一场是新的场次 id，且不会再往上一场追加
+    const second = session.start({ ...config, seatControl: [...config.seatControl] })
+    expect(second).not.toBe(first)
+    await session.finish()
+    const afterSecond = await storage.read(first)
+    expect(afterSecond.meta?.gaps.filter(gap => gap.reason === 'match-aborted').length, '上一场不再被追加').toBe(1)
+    expect(second).toBe('match-2')
+  })
+
+  it('开一场会写入配置（含规则/AI 指纹），决策落到该场名下', async () => {
+    const { session, storage } = setup()
+    const matchId = session.start({ ...config, seatControl: [...config.seatControl] })
+    expect(matchId).toBe('match-1')
+    expect(session.matchId()).toBe('match-1')
+    expect(session.active()).toBe(true)
+
+    session.port!.windowOpened({
+      windowId: 'w1', seat: 1, windowKind: 'draw-turn', roundIndex: 1, authorityEpoch: 'e1', stateVersion: 1,
+      state: { id: 's1', legalActions: [{ id: 'w1/0', kind: 'discard' }] },
+    })
+    session.port!.candidates({ windowId: 'w1', seat: 1, legalActions: [{ id: 'w1/0', kind: 'discard' }], candidates: [] })
+    session.port!.chosen({ windowId: 'w1', seat: 1, legalActionId: 'w1/0', source: 'local-strategy' })
+    const finished = await session.finish()
+    expect(finished).toMatchObject({ matchId: 'match-1', status: 'complete' })
+
+    const read = await storage.read('match-1')
+    expect(read.complete).toBe(true)
+    const configs = read.parts.filter((part: AnalysisBlockPart) => part.tag === 'config').map((part) => part.value as AnalysisConfigRecord)
+    expect(configs).toHaveLength(1)
+    expect(configs[0]).toMatchObject({
+      rulesVersion: 'lotus-blood-flow-v1', seatControl: ['human', 'llm', 'llm', 'local-ai'],
+      rulesFingerprint: fingerprintOf(config.rules), aiFingerprint: fingerprintOf(config.aiConfig),
+    })
+    const decisions = read.parts.filter((part: AnalysisBlockPart) => part.tag === 'decision').map((part) => part.value as AnalysisDecision)
+    expect(decisions.at(-1)).toMatchObject({ matchId: 'match-1', source: 'local-strategy', windowId: 'w1' })
+  })
+
+  it('换场只换内部目标：旧场的记录不会混进新场', async () => {
+    const { session, storage } = setup()
+    session.start({ ...config, seatControl: [...config.seatControl] })
+    session.port!.windowOpened({ windowId: 'wA', seat: 0, windowKind: 'draw-turn', roundIndex: 1, authorityEpoch: 'e1', stateVersion: 1, state: { id: 'sA' } })
+    await session.finish()
+
+    const second = session.start({ ...config, seatControl: [...config.seatControl] })
+    expect(second).toBe('match-2')
+    session.port!.windowOpened({ windowId: 'wB', seat: 0, windowKind: 'draw-turn', roundIndex: 1, authorityEpoch: 'e2', stateVersion: 1, state: { id: 'sB' } })
+    await session.finish()
+
+    const first = await storage.read('match-1')
+    const next = await storage.read('match-2')
+    expect(first.parts.some((part: AnalysisBlockPart) => part.tag === 'decisionState' && (part.value as { id: string }).id === 'sA')).toBe(true)
+    expect(first.parts.some((part: AnalysisBlockPart) => JSON.stringify(part.value).includes('wB'))).toBe(false)
+    expect(next.parts.some((part: AnalysisBlockPart) => (part.value as { id?: string }).id === 'sB')).toBe(true)
+  })
+
+  it('场末收尾后代理仍在但不误写新场（收尾之后迟到回执安全空转）', async () => {
+    const { session, storage } = setup()
+    session.start({ ...config, seatControl: [...config.seatControl] })
+    session.port!.windowOpened({ windowId: 'w1', seat: 0, windowKind: 'draw-turn', roundIndex: 1, authorityEpoch: 'e1', stateVersion: 1, state: { id: 's1' } })
+    const first = await session.finish()
+    // 收尾之后再调用（例如迟到的回执）：不应写入任何场次
+    session.port!.receipt({ windowId: 'w1', seat: 0, status: 'executed' })
+    await session.port!.flush()
+    expect(session.active()).toBe(false)
+    const again = await session.finish()
+    expect(again.bytes).toBe(0)
+    expect(again.status).toBe(first.status)
+    const usage = await storage.usage()
+    expect(usage.matches).toBe(1)
+  })
+
+  it('分析关闭时：不产生任何写入；代理仍在但报告"没在录"（§9.2、§10.7）', async () => {
+    const storage = createAnalysisMemoryStorage()
+    const session = createAnalysisSession({ enabled: false, storage })
+    // 代理恒存在（开关是活值），"是否在录"看 port.enabled —— 调用方据此停发私有数据
+    expect(session.enabled()).toBe(false)
+    expect(session.port.enabled).toBe(false)
+    expect(session.active()).toBe(false)
+    expect(session.start({ ...config, seatControl: [...config.seatControl] })).toBe('')
+    session.port.reproduction({ roundIndex: 1, available: true })
+    session.port.noteGap({ scope: 'match', reason: 'should-be-ignored' })
+    const finished = await session.finish()
+    expect(finished).toMatchObject({ status: 'disabled', bytes: 0 })
+    expect(await storage.usage()).toEqual({ bytes: 0, matches: 0 })
+  })
+
+  it('配置指纹对内容敏感：同一配置恒等，改一个字段就变', () => {
+    expect(fingerprintOf({ a: 1, b: [1, 2] })).toBe(fingerprintOf({ a: 1, b: [1, 2] }))
+    expect(fingerprintOf({ a: 1 })).not.toBe(fingerprintOf({ a: 2 }))
+  })
+
+  it('按展示回放清单回收悬空分析区（§9.2）', async () => {
+    const { session, storage } = setup()
+    session.start({ ...config, seatControl: [...config.seatControl] })
+    const kept = session.matchId()
+    await session.finish()
+    session.start({ ...config, seatControl: [...config.seatControl] })
+    const dangling = session.matchId()
+    await session.finish()
+
+    const removed = await reconcileAnalysisWithReplay(storage, [kept])
+    expect(removed).toEqual([dangling])
+    expect(await storage.status(kept)).toBe('complete')
+    expect(await storage.status(dangling)).toBe('disabled')
+    // 没有存储时安全空转
+    expect(await reconcileAnalysisWithReplay(null, [])).toEqual([])
+  })
+})

@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+// Product format for .mmmap files. Field numbers intentionally differ from source GameMap schema.
+message ProductMap {
+  string mapId = 5;
+  string payload = 8;
+  repeated ResourceItem resources = 3;
+  string serverMapId = 9;
+}
+
+// Combined resource item (replaces separate ModelItem and ImageItem from source schema).
+message ResourceItem {
+  string rid = 2;
+  string label = 6;
+  string ext = 7;
+  bytes blob = 4;
+}

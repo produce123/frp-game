@@ -1,0 +1,19 @@
+// =============================================================================
+// 样式变量入口 - 使用 @mine-monopoly/style 统一样式包
+// =============================================================================
+
+@use '@mine-monopoly/style/variables' as fp;
+@use '@mine-monopoly/style/mixins' as fp-mixins;
+
+// 导出 mixins 供全局使用
+@mixin felt-patch($bg-color: var(--fp-color-bg-light), $stitch-color: var(--fp-stitch-color-light), $offset: 0.4rem) {
+  @include fp-mixins.fp-felt-patch($bg-color, $stitch-color, $offset);
+}
+
+@mixin felt-cutout {
+  @include fp-mixins.fp-felt-cutout;
+}
+
+@mixin inner-stitch($color: var(--fp-stitch-color-light), $offset: 0.25rem) {
+  @include fp-mixins.fp-inner-stitch($color, $offset);
+}

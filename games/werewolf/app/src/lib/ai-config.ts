@@ -1,0 +1,49 @@
+/**
+ * AI 模型配置参数
+ * 用于统一管理不同场景下的模型温度（Temperature）和其他参数
+ */
+
+export const AI_TEMPERATURE = {
+  // 严谨模式：用于数据提取、总结历史
+  // 要求绝对的准确性和格式依从性
+  STRICT: 0.1,
+
+  // 逻辑模式：用于推理、分析、技能决策
+  // 需要一定的灵活性来模拟人类思考，但核心逻辑不能崩坏
+  LOGIC: 0.4,
+
+  // 平衡模式：默认值
+  BALANCED: 0.7,
+
+  // 创意模式：用于发言、对话、遗言
+  // 鼓励多样化的表达、语气词、情绪宣泄，模拟真人说话的“不完美感”
+  // 取 1.0（模型默认值）：保留表达生动度，同时避免更高温度带来的立场漂移/前后矛盾
+  CREATIVE: 1.0,
+
+  // 狂野模式：用于角色生成、脑洞大开的场景
+  // 追求极度的多样性和意想不到的结果
+  WILD: 1.2,
+} as const;
+
+// 针对特定游戏行为的推荐配置
+export const GAME_TEMPERATURE = {
+  // 基础角色档案需要多样性。
+  CHARACTER_GENERATION: AI_TEMPERATURE.WILD,
+
+  // 完整 persona 必须保持 JSON 结构稳定；人物差异已由基础档案和字段约束提供。
+  CHARACTER_PERSONA: AI_TEMPERATURE.BALANCED,
+
+  // 游戏总结
+  SUMMARY: AI_TEMPERATURE.STRICT,
+
+  // 玩家发言 (用户最关心的部分)
+  SPEECH: AI_TEMPERATURE.CREATIVE,
+  
+  // 玩家行动 (投票、技能)
+  // 稍微提高一点点(0.4)，让“蠢萌”或“冲动”角色的行为有概率出现，
+  // 但主要还是依靠 Prompt 中的逻辑来驱动
+  ACTION: AI_TEMPERATURE.LOGIC,
+
+  // Badge signup is an early-game "meta" decision; allow more variety.
+  BADGE_SIGNUP: AI_TEMPERATURE.BALANCED,
+} as const;

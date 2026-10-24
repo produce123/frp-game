@@ -1,0 +1,23 @@
+@font-face {
+	font-family: "TitleFont";
+	src: url("./TitleFont.ttf");
+	font-weight: normal;
+	font-style: normal;
+}
+/*
+@font-face {
+  font-family: 'ContentFont';
+  src: url('./ContentFont.ttf');
+  font-weight: normal;
+  font-style: normal;
+} */
+
+/* ContentFont 由 main.ts 根据平台动态加载 */
+
+/* 子集字体，专用于机会卡纹理渲染，避免全量字体导致 html-to-image 过慢 */
+@font-face {
+	font-family: "ContentFontLite";
+	src: url("./ContentFont.woff2") format("woff2");
+	font-style: normal;
+	font-weight: normal;
+}

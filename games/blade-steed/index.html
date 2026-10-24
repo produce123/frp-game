@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1116" />
+    <meta name="description" content="刀马 BladeSteed — 2–4 人武侠猜拳：赢的人才能买刀买马、出城进城、砍一刀。" />
+    <title>刀马 BladeSteed · 2–4 人猜拳对战</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>⚔️</text></svg>" />
+    <!--
+      加载顺序照抄平台首页（web/index.html）底部，别调换：
+        1. protocol.mjs 是 module，天然 defer，先把 window.FrpProtocol 挂上
+        2. net.js / ui.js / anim.js / react.js / room.js 是经典脚本，加 defer 后
+           与 module 一起按文档顺序执行
+        3. 最后才是本游戏的模块入口（module 也天然 defer，排在它们后面）
+      shared/ui/anim.js 是**演出队列**（服务端一次推来好几步时逐条演完，见 js/ui/board.js）、
+      shared/ui/react.js 是**头像互动 + 圆环配色**（扔鸡蛋/鲜花，见 js/ui/map.js 的
+      data-frp-avatar），两个都必须在本游戏的模块之前执行。
+      shared/ui/room.js 就是共用的房间界面（房号 / 成员 / 人机座位 / 邀请 / 开始 / 离开），
+      本游戏**不自己写一套房间界面**。视觉风格靠 css/style.css 覆盖 --ui-* 变量。
+    -->
+    <link rel="stylesheet" href="/shared/ui/ui.css" />
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <!-- ============================ 首页 ============================ -->
+      <section class="screen is-active" id="screen-home">
+        <div class="home-hero">
+          <h1 class="logo">刀马</h1>
+          <p class="logo-sub">BladeSteed · 武侠猜拳 · 2–4 人</p>
+        </div>
+
+        <p class="me-line" id="me-line">正在确认身份…</p>
+
+        <nav class="home-menu">
+          <button class="big-btn primary" id="btn-go-local" type="button">
+            <span class="big-btn-title">人机对局</span>
+            <span class="big-btn-sub" id="btn-go-local-sub">单人也能玩 · 可选 2 / 3 / 4 人局</span>
+          </button>
+          <button class="big-btn" id="btn-go-online" type="button">
+            <span class="big-btn-title">在线对局</span>
+            <span class="big-btn-sub" id="btn-go-online-sub">6 位房间号 · 一个人也能补个电脑开局</span>
+          </button>
+          <button class="big-btn" id="btn-go-rules" type="button">
+            <span class="big-btn-title">游戏规则</span>
+            <span class="big-btn-sub">一条一条写清楚</span>
+          </button>
+        </nav>
+
+        <p class="hint login-hint" id="login-hint" hidden>
+          还没登录：<a href="/">回平台首页登录</a>（名字和 ID 都来自账号，游戏里不再问名字）
+        </p>
+
+        <div class="toggles">
+          <button class="toggle" id="toggle-sound" type="button" aria-pressed="true">🔊 音效</button>
+          <button class="toggle" id="toggle-fx" type="button" aria-pressed="true">✨ 特效</button>
+        </div>
+      </section>
+
+      <!-- ============================ 人机设置 ============================ -->
+      <section class="screen" id="screen-local">
+        <div class="page-head">
+          <button class="icon-btn back" type="button" data-back="screen-home" aria-label="返回">‹</button>
+          <h2>人机对局</h2>
+        </div>
+        <div class="card">
+          <p class="field-label">本局人数</p>
+          <div class="seg" id="local-size">
+            <button class="seg-btn" type="button" data-size="2">2 人</button>
+            <button class="seg-btn" type="button" data-size="3">3 人</button>
+            <button class="seg-btn is-on" type="button" data-size="4">4 人</button>
+          </div>
+          <p class="hint" id="local-hint">除你之外的 3 个席位由 AI 补齐。</p>
+          <p class="hint">AI 与你看到的完全一样（同一份裁剪过的视图），所以它不会针对你，也不会放水。</p>
+          <button class="big-btn primary" id="btn-local-start" type="button">
+            <span class="big-btn-title">开始对局</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- ============================ 在线 / 房间 / 联机对局 ============================
+           这三件事在平台上是一屏：房间号 / 成员 / 邀请 / 开始 / 离开由 FrpRoom 画，
+           本游戏只往里塞两块内容 —— 设置区（renderSetup）和牌桌（renderGame）。 -->
+      <section class="screen" id="screen-online">
+        <div class="page-head">
+          <button class="icon-btn back" type="button" data-back="screen-home" aria-label="返回">‹</button>
+          <h2>在线对局</h2>
+        </div>
+        <div id="online-panel"></div>
+      </section>
+
+      <!-- ============================ 人机牌桌 ============================ -->
+      <section class="screen board" id="screen-board">
+        <div id="local-board"></div>
+      </section>
+
+      <!-- ============================ 规则 ============================ -->
+      <section class="screen" id="screen-rules">
+        <div class="page-head">
+          <button class="icon-btn back" type="button" data-back="screen-home" aria-label="返回">‹</button>
+          <h2>游戏规则</h2>
+        </div>
+
+        <div class="card rules">
+          <h3>人数与胜负</h3>
+          <ul>
+            <li>支持 <b>2 / 3 / 4 人</b>，开局随机分配座位号。</li>
+            <li>每人固定 <b>10 点血</b>，血量 ≤ 0 立刻出局。</li>
+            <li>最后活着的人获胜；结束后房主可以再来一局。</li>
+          </ul>
+        </div>
+
+        <div class="card rules">
+          <h3>位置</h3>
+          <ul>
+            <li>世界上只有两种位置：<b>某人的城里</b> 和 <b>野外</b>。</li>
+            <li>开局时每个人都在<b>自己的城</b>里。</li>
+            <li>城是<b>永久</b>的：就算城主出局了，他的城依然可以被别人进入。</li>
+          </ul>
+        </div>
+
+        <div class="card rules">
+          <h3>装备</h3>
+          <ul>
+            <li>装备<b>永久有效</b>，只能在<b>城里</b>买（任何人的城都行）。</li>
+            <li>买刀 → 解锁【刀】：<b>1 点伤害</b>，城里、野外都能用。</li>
+            <li>买马 → 解锁【踹】：<b>3 点伤害</b>，要求双方在<b>同一座城</b>里，踹完把对方踢到野外。</li>
+            <li>买东西不花钱，但<b>要花一步行动</b>。</li>
+          </ul>
+        </div>
+
+        <div class="card rules">
+          <h3>每回合流程</h3>
+          <ul>
+            <li>全体同时猜拳，由服务器统计（别人的拳在揭晓前谁都看不到）。</li>
+            <li>恰好 1 个赢家 → 他获得 <b>2 步</b>行动。</li>
+            <li>多个赢家 → 每人 <b>1 步</b>，赢家之间再猜拳淘汰到唯一一人，由他<b>指定行动顺序</b>。</li>
+            <li>没有赢家 → 重新猜拳。</li>
+            <li><b>1 步 = 1 个操作</b>；2 步可以任意组合。也可以随时「结束行动」放弃剩余步数。</li>
+          </ul>
+        </div>
+
+        <div class="card rules">
+          <h3>可用操作</h3>
+          <ul>
+            <li>买刀：自己在城里，且还没买过。</li>
+            <li>买马：自己在城里，且还没买过。</li>
+            <li>出城：自己在城里。</li>
+            <li>进城：选一座城（自己的、别人的、出局者的都行）。</li>
+            <li>刀：有刀，且双方在同一位置。</li>
+            <li>踹：有马，且双方在同一座城里。</li>
+            <li>结束行动：随时。</li>
+          </ul>
+        </div>
+
+        <div class="card rules">
+          <h3>关于时限与掉线</h3>
+          <ul>
+            <li>猜拳限时 <b>10 秒</b>，超时系统随机代出；定顺序限时 15 秒；单步行动限时 60 秒，超时自动结束剩余步数。</li>
+            <li>掉线会保留座位 2 分钟，回来还是原来的座位。</li>
+            <li>离开房间就会判出局（剩下的人继续打）。</li>
+          </ul>
+        </div>
+      </section>
+    </div>
+
+    <!-- ===================== 对局菜单（只有人机对局用；联机由房间外壳提供 离开 / 再来一局） ===================== -->
+    <div class="sheet" id="board-menu" hidden>
+      <div class="sheet-inner">
+        <h3>对局菜单</h3>
+        <button class="sheet-btn" id="menu-restart" type="button">🔄 重新开局</button>
+        <button class="sheet-btn" id="menu-sound" type="button">🔊 音效：开</button>
+        <button class="sheet-btn" id="menu-fx" type="button">✨ 特效：开</button>
+        <button class="sheet-btn danger" id="menu-leave" type="button">🚪 退出对局</button>
+        <button class="sheet-btn" id="menu-close" type="button">取消</button>
+      </div>
+    </div>
+
+    <script type="module" src="/shared/protocol.mjs"></script>
+    <script defer src="/shared/net/net.js"></script>
+    <script defer src="/shared/ui/ui.js"></script>
+    <script defer src="/shared/ui/anim.js"></script>
+    <script defer src="/shared/ui/react.js"></script>
+    <script defer src="/shared/ui/room.js"></script>
+    <script defer src="/shared/ui/no-idm.js"></script>
+    <script defer src="/shared/ui/fullscreen.js"></script>
+    <script type="module" src="./js/ui/app.js"></script>
+  </body>
+</html>

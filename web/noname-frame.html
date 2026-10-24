@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>无名杀</title>
+<style>
+  /*
+   * 伪横屏外壳：手机浏览器是**竖**的，游戏内容**横**过来（手机横过来看的感觉）。
+   *
+   * 为什么不直接给游戏页加 rotate：
+   * 无名杀的布局是**按视口尺寸现算**的（window.innerWidth/innerHeight + 自己的缩放），
+   * 直接转整页的话它仍然按竖屏排版，转完只是"竖版内容歪着放"。
+   * 所以这里让它在**一个横过来的 iframe** 里跑 —— iframe 的视口就是横的，
+   * 它的排版、缩放、触摸坐标全都按横屏算，我们只负责把这块画面转 90° 摆满屏幕。
+   */
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  #rot {
+    position: fixed; left: 0; top: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #game {
+    display: block; border: 0; background: #000;
+  }
+  /* 竖屏时的"请横过来玩"提示：只在还没拿到横屏尺寸的一瞬间闪一下，避免黑屏 */
+  #hint {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #cfd6e4; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    text-align: center; padding: 24px;
+  }
+</style>
+</head>
+<!-- data-frp-fullscreen="landscape"：点全屏时进入真横屏（screen.orientation.lock） -->
+<body data-frp-fullscreen="landscape">
+<div id="rot"><iframe id="game" allow="fullscreen; autoplay; gamepad" allowfullscreen></iframe></div>
+<div id="hint">正在打开无名杀…</div>
+<script type="module">
+  const rot = document.getElementById('rot');
+  const game = document.getElementById('game');
+  const hint = document.getElementById('hint');
+
+  /*
+   * 好友从平台点「进入 / 观战」时会在地址上带 `?frpJoin=<无名杀房号>`。
+   * 这个参数必须**继续往 iframe 里带** —— 外壳页只是把它横过来，真正读房号的是
+   * 无名杀里的桥接脚本（web/noname-bridge.js）。
+   * ⚠️ 别把它丢掉：丢了的表现是"点好友的房间只进到无名杀大厅，没有自动进房"。
+   */
+  const joinCode = new URLSearchParams(location.search).get('frpJoin');
+  const joinSuffix = joinCode ? '?frpJoin=' + encodeURIComponent(joinCode) : '';
+  game.src = '/noname/' + joinSuffix;
+
+  /*
+   * 只在**手机/平板等粗指针设备**上转。
+   * 电脑浏览器（哪怕窗口是竖的、哪怕屏幕支持触摸）原样进游戏页 ——
+   * 桌面用户的鼠标坐标不该被转，地址栏也该是干净的 /noname/。
+   *
+   * ⚠️ 判据只用 `(pointer: coarse)`，**不要**用 navigator.maxTouchPoints：
+   * 带触摸屏的 Windows 笔记本 maxTouchPoints 是 10，会把自己当成手机。
+   */
+  const coarse = matchMedia('(pointer: coarse)').matches;
+
+  function layout() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    // 竖着拿手机 = 内容要转 90°；横着拿（或电脑）就铺满
+    const rotate = coarse && vh > vw;
+
+    if (rotate) {
+      // 逻辑视口 = 横过来的这一块（宽=屏高，高=屏宽）
+      const w = vh;
+      const h = vw;
+      game.style.width = w + 'px';
+      game.style.height = h + 'px';
+      rot.style.width = w + 'px';
+      rot.style.height = h + 'px';
+      // 顺时针转 90°，原点在左上角，再往右推一屏宽 → 正好铺满竖屏
+      rot.style.transform = `translate(${vw}px, 0) rotate(90deg)`;
+    } else {
+      game.style.width = vw + 'px';
+      game.style.height = vh + 'px';
+      rot.style.width = vw + 'px';
+      rot.style.height = vh + 'px';
+      rot.style.transform = '';
+    }
+    hint.style.display = 'none';
+  }
+
+  layout();
+  addEventListener('resize', layout);
+  addEventListener('orientationchange', () => setTimeout(layout, 120));
+  // 手机上地址栏收缩不触发 resize 的情况（iOS Safari），用 visualViewport 兜一层
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);
+
+  /*
+   * 电脑上没必要整这一套 iframe —— 直接回真页面，地址栏也是干净的 /noname/。
+   * 手机（粗指针）留在外壳里。
+   */
+  if (!coarse) location.replace('/noname/' + joinSuffix);
+</script>
+<script defer src="/shared/ui/fullscreen.js"></script>
+</body>
+</html>

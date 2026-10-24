@@ -1,0 +1,53 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"useDefineForClassFields": true,
+		"strict": true,
+		"jsx": "preserve",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"lib": [
+			"ESNext",
+			"DOM",
+			"DOM.Iterable"
+		],
+		"noEmit": true,
+		"typeRoots": [
+			"./node_modules/@types",
+			"../../node_modules/@types"
+		],
+		"paths": {
+			"@src/*": [
+				"./src/*"
+			],
+			"@mine-monopoly/types": [
+				"../../packages/types/index.ts"
+			],
+			"@mine-monopoly/types/*": [
+				"../../packages/types/*"
+			],
+			"@mine-monopoly/env": [
+				"../../packages/env/src/browser.ts"
+			],
+			"@mine-monopoly/ui": [
+				"../../packages/components/src/index.ts"
+			],
+			"@mine-monopoly/utils": [
+				"../../packages/utils/src/index.ts"
+			],
+			"@mine-monopoly/style": [
+				"../../packages/style/dist/types.d.ts"
+			]
+		}
+	},
+	"include": [
+		"src/**/*",
+		"electron/**/*",
+		"types/**/*",
+		"env/*.d.ts"
+	],
+	"exclude": [
+		"node_modules",
+		"**/*.test.ts"
+	]
+}

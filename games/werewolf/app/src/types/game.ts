@@ -1,0 +1,439 @@
+export type Role =
+  | "Villager"
+  | "Werewolf"
+  | "Seer"
+  | "Witch"
+  | "Hunter"
+  | "Guard"
+  | "Idiot"
+  | "WhiteWolfKing"
+  | "EvilKnight"
+  | "WolfKing"
+  | "WolfBeauty"
+  | "Knight"
+  | "Elder"
+  | "Gravekeeper";
+
+/** Check if a role belongs to the wolf team (used for seer checks, wolf actions, etc.) */
+export function isWolfRole(role: string | undefined): boolean {
+  return (
+    role === "Werewolf" ||
+    role === "WhiteWolfKing" ||
+    role === "EvilKnight" ||
+    role === "WolfKing" ||
+    role === "WolfBeauty"
+  );
+}
+
+export type DifficultyLevel = "easy" | "normal" | "hard";
+
+export type SpeechDirection = "clockwise" | "counterclockwise";
+
+export type DevPreset = "MILK_POISON_TEST" | "LAST_WORDS_TEST";
+
+export interface CustomCharacterData {
+  id: string;
+  display_name: string;
+  gender: "male" | "female" | "nonbinary";
+  age: number;
+  mbti: string;
+  basic_info?: string;
+  style_label?: string;
+  avatar_seed?: string;
+}
+
+export interface StartGameOptions {
+  fixedRoles?: Role[];
+  devPreset?: DevPreset;
+  difficulty?: DifficultyLevel;
+  playerCount?: number;
+  gameSessionId?: string;
+  isGenshinMode?: boolean;
+  isSpectatorMode?: boolean;
+  customCharacters?: CustomCharacterData[];
+  preferredRole?: Role;
+}
+
+export type Phase =
+  | "LOBBY"
+  | "SETUP"
+  | "NIGHT_START"
+  | "NIGHT_GUARD_ACTION"   // 守卫保护
+  | "NIGHT_WOLF_ACTION"    // 狼人出刀
+  | "NIGHT_WOLF_BEAUTY_ACTION" // 狼美人魅惑
+  | "NIGHT_WITCH_ACTION"   // 女巫用药
+  | "NIGHT_SEER_ACTION"    // 预言家查验
+  | "NIGHT_RESOLVE"
+  | "DAY_START"
+  | "DAY_BADGE_SIGNUP"     // 警徽竞选报名
+  | "DAY_BADGE_SPEECH"     // 警徽竞选发言
+  | "DAY_BADGE_ELECTION"   // 警徽评选
+  | "DAY_PK_SPEECH"        // PK发言
+  | "DAY_SPEECH"
+  | "DAY_LAST_WORDS"
+  | "DAY_VOTE"
+  | "DAY_RESOLVE"
+  | "BADGE_TRANSFER"        // 警长移交警徽
+  | "HUNTER_SHOOT"          // 猎人开枪
+  | "WHITE_WOLF_KING_BOOM"  // 白狼王自爆
+  | "GAME_END";
+
+export type Alignment = "village" | "wolf";
+
+ export interface GameScenario {
+   id: string;
+   title: string;
+   description: string;
+   rolesHint: string;
+ }
+
+export type ModelProvider = "zenmux" | "dashscope" | "tokendance" | "openai";
+
+export interface ModelRef {
+  provider: ModelProvider;
+  model: string;
+  /** Override call-time temperature for this model (e.g. some models only support 1) */
+  temperature?: number;
+  /** Override call-time reasoning/thinking for this model (e.g. some models must enable it) */
+  reasoning?: { enabled: boolean, exclude?: boolean, effort?: "minimal" | "low" | "medium" | "high", max_tokens?: number };
+}
+
+export interface Persona {
+  styleLabel?: string;
+  voiceRules: string[];
+  mbti: string;
+  gender: "male" | "female" | "nonbinary";
+  age: number;
+  basicInfo?: string;
+  voiceId?: string;
+  relationships?: string[];
+  logicStyle?: string;
+  triggerTopics?: string[];
+  socialHabit?: string;
+  humorStyle?: string;
+  werewolfExperience?: string;
+  vocabularyStyle?: string;
+  reasoningStyle?: string;
+  speechLengthHabit?: string;
+  pressureStyle?: string;
+  uncertaintyStyle?: string;
+  mistakePattern?: string;
+  wolfDeceptionStyle?: string;
+}
+
+export interface PlayerMind {
+  courage: string;
+  memoryBias: string;
+  suspicionThreshold: string;
+  selfProtection: string;
+  logicDepth: string;
+  tablePresence: string;
+}
+
+export interface AgentProfile {
+  modelRef: ModelRef;
+  persona: Persona;
+  playerMind?: PlayerMind;
+}
+
+export interface Player {
+  playerId: string;
+  seat: number;
+  displayName: string;
+  avatarSeed?: string;
+  alive: boolean;
+  role: Role;
+  alignment: Alignment;
+  isHuman: boolean;
+  agentProfile?: AgentProfile;
+}
+
+export type GameEventType =
+  | "GAME_START"
+  | "ROLE_ASSIGNED"
+  | "PHASE_CHANGED"
+  | "CHAT_MESSAGE"
+  | "SYSTEM_MESSAGE"
+  | "NIGHT_ACTION"
+  | "VOTE_CAST"
+  | "PLAYER_DIED"
+  | "GAME_END";
+
+export interface GameEvent {
+  id: string;
+  ts: number;
+  type: GameEventType;
+  visibility: "public" | "private";
+  visibleTo?: string[];
+  payload: unknown;
+}
+
+export interface ChatMessage {
+  id: string;
+  playerId: string;
+  playerName: string;
+  content: string;
+  timestamp: number;
+  day?: number;
+  phase?: Phase;
+  isSystem?: boolean;
+  isStreaming?: boolean;
+  speechRound?: number;
+  pkSource?: "badge" | "vote";
+  isLastWords?: boolean;  // Flag for last words (遗言) messages
+}
+
+/** 已结算且公开的投票快照；旧存档中的每日票型仍保留作兼容回退。 */
+export interface VoteRound {
+  id: string;
+  day: number;
+  kind: "badge" | "execution";
+  round: number;
+  candidates: number[];
+  votes: Record<string, number>;
+  sheriffSeat: number | null;
+  winnerSeat: number | null;
+  outcome: "elected" | "executed" | "idiot-revealed" | "tie" | "no-votes";
+}
+
+export interface GameState {
+  gameId: string;
+  /** 数据库单人游戏会话的唯一身份；进行中的可恢复状态必须存在。 */
+  gameSessionId?: string | null;
+  phase: Phase;
+  day: number;
+  startTime?: number;
+  devMutationId?: number;
+  devPhaseJump?: { to: Phase; ts: number };
+  isPaused?: boolean;
+  scenario?: GameScenario;
+  isGenshinMode?: boolean;
+  isSpectatorMode?: boolean;
+  difficulty: DifficultyLevel;
+  players: Player[];
+  events: GameEvent[];
+  messages: ChatMessage[];
+  currentSpeakerSeat: number | null;
+  nextSpeakerSeatOverride?: number | null;
+  daySpeechStartSeat: number | null;
+  /** 当前发言轮次开始时的 messages 长度；用于隔离同一天重复进入的 PK/竞选发言。 */
+  speechRoundStartMessageIndex?: number | null;
+  speechDirection?: SpeechDirection;
+  pkTargets?: number[];
+  pkSource?: "badge" | "vote";
+  badge: {
+    holderSeat: number | null;
+    candidates: number[];
+    signup: Record<string, boolean>;
+    votes: Record<string, number>;
+    allVotes: Record<string, number>;
+    history: Record<number, Record<string, number>>;
+    /** 每日警徽竞选最终赢家快照；null 表示该日竞选最终无人当选。 */
+    electionWinners?: Record<number, number | null>;
+    revoteCount: number;
+  };
+  votes: Record<string, number>;
+  voteReasons?: Record<string, string>;
+  lastVoteReasons?: Record<string, string>;
+  voteRounds?: VoteRound[];
+  voteHistory: Record<number, Record<string, number>>; // day -> { voterId -> targetSeat }
+  nightHistory?: Record<
+    number,
+    {
+      /** 夜间结算已由主持人公开，不能用提示词的 phase 代替。 */
+      resultsAnnounced?: boolean;
+      guardTarget?: number;
+      wolfTarget?: number;
+      witchSave?: boolean;
+      witchPoison?: number;
+      seerTarget?: number;
+      seerResult?: { targetSeat: number; isWolf: boolean };
+      deaths?: Array<{ seat: number; reason: "wolf" | "poison" | "milk" }>;
+      hunterShot?: { hunterSeat: number; targetSeat: number };
+    }
+  >;
+  dayHistory?: Record<
+    number,
+    {
+      executed?: { seat: number; votes: number };
+      voteTie?: boolean;
+      /** 当日放逐投票发生时的警长座位；null 表示当时无警长。 */
+      sheriffSeatAtVote?: number | null;
+      hunterShot?: { hunterSeat: number; targetSeat: number };
+      whiteWolfKingBoom?: { boomSeat: number; targetSeat: number };
+      idiotRevealed?: { seat: number };
+    }
+  >;
+  dailySummaries: Record<number, string[]>; // day -> summary bullet list
+  dailySummaryFacts: Record<number, DailySummaryFact[]>; // day -> structured facts
+  dailySummaryVoteData?: Record<number, DailySummaryVoteData>;
+  nightActions: {
+    guardTarget?: number;        // 守卫保护的目标
+    lastGuardTarget?: number;    // 上一晚守卫保护的目标（不能连续保护同一人）
+    wolfVotes?: Record<string, number>;
+    wolfTarget?: number;         // 狼人出刀目标
+    witchSave?: boolean;         // 女巫是否救人
+    witchPoison?: number;        // 女巫毒谁
+    seerTarget?: number;
+    seerResult?: { targetSeat: number; isWolf: boolean };
+    seerHistory?: Array<{ targetSeat: number; isWolf: boolean; day: number }>; // 查验历史
+    pendingWolfVictim?: number;  // 待公布的狼人击杀目标（警长竞选后公布）
+    pendingPoisonVictim?: number; // 待公布的女巫毒杀目标（警长竞选后公布）
+  };
+  // 角色能力使用记录
+  roleAbilities: {
+    witchHealUsed: boolean;      // 女巫解药是否已用
+    witchPoisonUsed: boolean;    // 女巫毒药是否已用
+    witchCanHeal?: boolean;      // 这一晚轮到我、且还能救人
+    witchCanPoison?: boolean;    // 这一晚轮到我、且还能毒人
+    hunterCanShoot: boolean;     // 猎人是否能开枪（被毒死不能开枪）
+    idiotRevealed: boolean;      // 白痴是否已翻牌（翻牌后失去投票权但不死）
+    whiteWolfKingBoomUsed: boolean; // 白狼王是否已自爆
+    elderLives?: number;            // 长老剩余命数（2/1）
+    knightUsed?: boolean;           // 骑士是否已决斗
+    wolfKingCanShoot?: boolean;     // 狼王出局时是否能开枪
+    skillsBlocked?: boolean;        // 被长老封印/殉情，不能发动技能
+    grave?: {
+      disabled: boolean;
+      day: number | null;
+      seat: number | null;
+      name: string | null;
+      alignment: Alignment | null;
+    } | null;
+    wolfBeauty?: { lastTarget: number | null; charmedSeat: number | null } | null;
+  };
+  winner: Alignment | null;
+}
+
+export interface DailySummaryFact {
+  fact: string;
+  day?: number;
+  speakerSeat?: number | null;
+  speakerName?: string;
+  targetSeat?: number | null;
+  targetName?: string;
+  type?: "vote" | "claim" | "suspicion" | "defense" | "alignment" | "death" | "switch" | "other";
+  evidence?: string;
+}
+
+/** Structured vote data extracted from [VOTE_RESULT] to preserve "who voted for whom" for later days. */
+export interface DailySummaryVoteData {
+  sheriff_election?: { winner: number; votes: Record<string, number[]> };
+  execution_vote?: { eliminated: number; votes: Record<string, number[]> };
+}
+
+// Shared model IDs
+export const MODEL_IDS = {
+  zenmux: {
+    geminiFlashLite: "google/gemini-3.1-flash-lite",
+    geminiFlashPreview: "google/gemini-3-flash-preview",
+    deepseek: "deepseek/deepseek-v3.2",
+    gpt52Chat: "openai/gpt-5.2-chat",
+    claudeHaiku45: "anthropic/claude-haiku-4.5",
+    claudeSonnet45: "anthropic/claude-sonnet-4.5",
+    claudeOpus45: "anthropic/claude-opus-4.5",
+    deepseekV4Flash: "deepseek/deepseek-v4-flash",
+    grok4: "x-ai/grok-4.5",
+    glm47: "z-ai/glm-4.7",
+    minimaxM21: "minimax/minimax-m2.1",
+  },
+  dashscope: {
+    deepseek: "deepseek-v3.2",
+  },
+  tokendance: {
+    minimaxM27: "minimax-m2.7",
+    deepseekV4Pro: "deepseek-v4-pro",
+    deepseekV4Flash0731: "deepseek-v4-flash-0731",
+    glm53Flash: "glm-5.3-flash",
+    qwen3Max: "qwen3-max",
+    glm5: "glm-5",
+    kimiK25: "kimi-k2.5",
+    deepseekV32: "deepseek-v3.2",
+  },
+} as const;
+
+const BUILTIN_DEEPSEEK_V4_FLASH_MODEL: ModelRef = {
+  provider: "tokendance",
+  model: MODEL_IDS.tokendance.deepseekV4Flash0731,
+  reasoning: { enabled: false },
+};
+
+export const DEFAULT_MODEL_CONFIG = {
+  generator: MODEL_IDS.zenmux.geminiFlashLite,
+  summary: MODEL_IDS.tokendance.deepseekV4Flash0731,
+  review: MODEL_IDS.tokendance.deepseekV4Flash0731,
+  validation: {
+    zenmux: MODEL_IDS.zenmux.geminiFlashLite,
+    dashscope: MODEL_IDS.dashscope.deepseek,
+    tokendance: MODEL_IDS.tokendance.minimaxM27,
+  },
+} as const;
+
+// Models for summary & character generation
+export const GENERATOR_MODEL = DEFAULT_MODEL_CONFIG.generator;
+export const SUMMARY_MODEL = DEFAULT_MODEL_CONFIG.summary;
+export const REVIEW_MODEL = DEFAULT_MODEL_CONFIG.review;
+export const ZENMUX_VALIDATION_MODEL = DEFAULT_MODEL_CONFIG.validation.zenmux;
+export const DASHSCOPE_VALIDATION_MODEL = DEFAULT_MODEL_CONFIG.validation.dashscope;
+export const TOKENDANCE_VALIDATION_MODEL = DEFAULT_MODEL_CONFIG.validation.tokendance;
+
+export const BUILTIN_PLAYER_MODELS: ModelRef[] = [
+  BUILTIN_DEEPSEEK_V4_FLASH_MODEL,
+];
+
+// Default built-in models exposed to the app when custom key is not enabled.
+// This list includes system defaults plus the small built-in player pool.
+export const AVAILABLE_MODELS: ModelRef[] = [
+  BUILTIN_DEEPSEEK_V4_FLASH_MODEL,
+];
+
+// Built-in project-key models that the server may call internally.
+// These are intentionally not exposed in the custom-key model selector.
+export const PROJECT_MODELS: ModelRef[] = [
+  ...AVAILABLE_MODELS,
+  // Provider-specific validation models for user API key checks.
+  { provider: "dashscope", model: MODEL_IDS.dashscope.deepseek },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.geminiFlashLite },
+];
+
+// User-selectable models when custom key is enabled.
+export const ALL_MODELS: ModelRef[] = [
+  { provider: "dashscope", model: MODEL_IDS.dashscope.deepseek },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.geminiFlashLite },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.deepseek },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.deepseekV4Flash },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.geminiFlashPreview },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.gpt52Chat },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.claudeHaiku45 },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.claudeSonnet45 },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.claudeOpus45 },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.grok4 },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.glm47, temperature: 1, reasoning: { enabled: false } },
+  { provider: "zenmux", model: MODEL_IDS.zenmux.minimaxM21, temperature: 1, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.minimaxM27, temperature: 1, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.deepseekV4Pro, reasoning: { enabled: false } },
+  BUILTIN_DEEPSEEK_V4_FLASH_MODEL,
+  { provider: "tokendance", model: MODEL_IDS.tokendance.glm53Flash, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.qwen3Max, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.glm5, temperature: 1, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.kimiK25, temperature: 1, reasoning: { enabled: false } },
+  { provider: "tokendance", model: MODEL_IDS.tokendance.deepseekV32, reasoning: { enabled: false } },
+];
+
+// Models not allowed for in-game players (summary & generation only).
+// Compare provider + model so a project system model does not accidentally
+// exclude the same model ID from a playable provider pool.
+export const NON_PLAYER_MODELS: ModelRef[] = [];
+
+export function filterPlayerModels(models: ModelRef[]): ModelRef[] {
+  const filtered = models.filter(
+    (ref) =>
+      !NON_PLAYER_MODELS.some(
+        (blocked) => blocked.provider === ref.provider && blocked.model === ref.model,
+      ),
+  );
+  return filtered.length > 0 ? filtered : models;
+}
+
+// Built-in player model pool used when custom key is disabled.
+export const PLAYER_MODELS: ModelRef[] = BUILTIN_PLAYER_MODELS;

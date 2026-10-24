@@ -1,0 +1,106 @@
+import { describe, expect, it } from 'vitest'
+import * as THREE from 'three'
+import { createTileInstanceRenderer } from './tileInstanceRenderer'
+
+describe('tileInstanceRenderer', () => {
+  it.each([260, 512])('updates tile matrices through capacity %i without silently truncating a tower', (capacity) => {
+    const scene = new THREE.Scene()
+    const dynamicGroups: THREE.Object3D[] = []
+    const geometry = new THREE.BoxGeometry(1, 1, 1)
+    const atlasGeometry = geometry.clone()
+    const material = new THREE.MeshBasicMaterial()
+    scene.userData.tileBaseGeometry = geometry
+    scene.userData.tileCapGeometry = geometry
+    scene.userData.faceSide = material
+    scene.userData.backMaterial = material
+    scene.userData.tileSide = material
+    scene.userData.tileBottom = material
+
+    const renderer = createTileInstanceRenderer({
+      capacity,
+      scene,
+      dynamicGroups,
+      ownDynamic: (resource) => resource,
+      getAtlasMaterial: () => material,
+      getAtlasCapGeometry: () => atlasGeometry,
+      atlasCellUvFor: () => ({ u: 0, v: 0 }),
+    })
+
+    renderer.begin()
+    const tile = renderer.add(
+      new THREE.Vector3(),
+      new THREE.Quaternion(),
+      null,
+    )
+    renderer.finish()
+
+    const baseMesh = dynamicGroups[0] as THREE.InstancedMesh
+    const baseVersion = baseMesh.instanceMatrix.version
+    const capVersion = tile.capMesh.instanceMatrix.version
+
+    renderer.set(
+      tile.baseIndex,
+      tile.capMesh,
+      tile.capIndex,
+      new THREE.Vector3(2, 3, 4),
+      new THREE.Quaternion(),
+      0.8,
+    )
+
+    expect(baseMesh.instanceMatrix.version).toBeGreaterThan(baseVersion)
+    expect(tile.capMesh.instanceMatrix.version).toBeGreaterThan(capVersion)
+    for (let i = 1; i < capacity; i++) renderer.add(new THREE.Vector3(i, 0, 0), new THREE.Quaternion(), null)
+    renderer.finish()
+    expect(baseMesh.count).toBe(capacity)
+    const last = new THREE.Matrix4()
+    baseMesh.getMatrixAt(capacity - 1, last)
+    expect(new THREE.Vector3().setFromMatrixPosition(last).x).toBe(capacity - 1)
+    expect(() => renderer.add(new THREE.Vector3(), new THREE.Quaternion(), null)).toThrow('capacity exceeded')
+
+    geometry.dispose()
+    atlasGeometry.dispose()
+    material.dispose()
+  })
+
+  it('reuses the same meshes and buffers between deal batches', () => {
+    const scene = new THREE.Scene()
+    const dynamicGroups: THREE.Object3D[] = []
+    const geometry = new THREE.BoxGeometry(1, 1, 1)
+    const atlasGeometry = geometry.clone()
+    const material = new THREE.MeshBasicMaterial()
+    scene.userData.tileBaseGeometry = geometry
+    scene.userData.tileCapGeometry = geometry
+    scene.userData.faceSide = material
+    scene.userData.backMaterial = material
+    scene.userData.tileSide = material
+    scene.userData.tileBottom = material
+
+    const renderer = createTileInstanceRenderer({
+      scene,
+      dynamicGroups,
+      ownDynamic: (resource) => resource,
+      getAtlasMaterial: () => material,
+      getAtlasCapGeometry: () => atlasGeometry,
+      atlasCellUvFor: () => ({ u: 0, v: 0 }),
+    })
+
+    renderer.begin()
+    renderer.add(new THREE.Vector3(), new THREE.Quaternion(), null)
+    renderer.finish()
+    const firstMeshes = [...dynamicGroups]
+    const firstAtlasUv = atlasGeometry.getAttribute('aUvOffset')
+
+    expect(renderer.canReuse()).toBe(true)
+    renderer.begin(true)
+    renderer.add(new THREE.Vector3(1, 0, 0), new THREE.Quaternion(), null)
+    renderer.finish()
+
+    expect(dynamicGroups).toEqual(firstMeshes)
+    expect(scene.children).toEqual(firstMeshes)
+    expect(atlasGeometry.getAttribute('aUvOffset')).toBe(firstAtlasUv)
+
+    geometry.dispose()
+    atlasGeometry.dispose()
+    material.dispose()
+  })
+})

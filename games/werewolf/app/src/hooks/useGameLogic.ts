@@ -1,0 +1,2424 @@
+"use client";
+
+/**
+ * useGameLogic - 游戏逻辑协调层（重构版）
+ * 
+ * 职责：
+ * 1. 协调各阶段 Hook 的调用
+ * 2. 管理全局游戏状态
+ * 3. 处理 Dev Mode 跳转
+ * 4. 暴露统一的 API 给 UI 组件
+ * 
+ * 遵循原则：
+ * - SRP: 仅负责协调，不包含具体业务逻辑
+ * - DRY: 复用子模块，避免重复代码
+ */
+
+import { useState, useCallback, useRef, useEffect } from "react";
+import { useAtom, useStore } from "jotai";
+import { useLocalStorageState } from "ahooks";
+import { toast } from "sonner";
+import { useTranslations } from "next-intl";
+
+import { ALL_MODELS, PLAYER_MODELS, PROJECT_MODELS, isWolfRole, type GameState, type Player, type Phase, type Role, type DevPreset, type ModelRef, type StartGameOptions } from "@/types/game";
+import { gameStateAtom, isValidTransition, clearPersistedGameState, isRestorableGameState } from "@/store/game-machine";
+import { getGeneratorModel } from "@/lib/api-keys";
+import {
+  createInitialGameState,
+  setupPlayers,
+  addSystemMessage,
+  addPlayerMessage,
+  transitionPhase as rawTransitionPhase,
+  checkWinCondition,
+  killPlayer,
+  generateDailySummary,
+  getRandomHumanSeat,
+  generateHumanSpeechSuggestion,
+  generateWhiteWolfKingBoomDecision,
+} from "@/lib/game-master";
+import { buildGenshinModelRefs, generateCharacters, generateGenshinModeCharacters, sampleModelRefs, type GeneratedCharacter } from "@/lib/character-generator";
+import { getSystemMessages, getUiText } from "@/lib/game-texts";
+import { runAiTaskWithRetry, cancelPendingAiRetry } from "@/lib/ai-retry";
+import { getRandomScenario } from "@/lib/scenarios";
+import { DELAY_CONFIG, PHASE_CATEGORIES, getRoleName } from "@/lib/game-constants";
+import { generateUUID } from "@/lib/utils";
+import {
+  AsyncFlowController,
+  delay,
+  randomDelay,
+  computeUniqueTopSeat,
+} from "@/lib/game-flow-controller";
+import { playNarrator } from "@/lib/narrator-audio-player";
+import { PhaseManager } from "@/game/core/PhaseManager";
+import { gameStatsTracker } from "@/hooks/useGameStats";
+import { gameSessionTracker } from "@/lib/game-session-tracker";
+import { continueAfterHunterShotWithBadgeTransfer } from "@/lib/hunter-badge-flow";
+import { isQuotaExhaustedMessage } from "@/lib/llm";
+import { aiLogger } from "@/lib/ai-logger";
+
+// 子模块
+import { useDialogueManager, type DialogueState } from "./useDialogueManager";
+import { useDayPhase } from "./game-phases/useDayPhase";
+import { useBadgePhase } from "./game-phases/useBadgePhase";
+import { useSpecialEvents } from "./game-phases/useSpecialEvents";
+
+function getModelRefForModel(model: string): ModelRef {
+  return (
+    PROJECT_MODELS.find((ref) => ref.model === model) ??
+    ALL_MODELS.find((ref) => ref.model === model) ??
+    { provider: "zenmux" as const, model }
+  );
+}
+
+function getRandomModelRef(): ModelRef {
+  const fallback = sampleModelRefs(1)[0];
+  if (fallback) return fallback;
+  if (PLAYER_MODELS.length === 0) {
+    // Fallback to GENERATOR_MODEL if no models available
+    return getModelRefForModel(getGeneratorModel());
+  }
+  const randomIndex = Math.floor(Math.random() * PLAYER_MODELS.length);
+  return PLAYER_MODELS[randomIndex];
+}
+
+// Re-export for backward compatibility
+export type { DialogueState };
+
+export function useGameLogic() {
+  const t = useTranslations();
+  const speakerHost = t("speakers.host");
+
+  // ============================================
+  // 基础状态
+  // ============================================
+  const [humanName, setHumanName] = useLocalStorageState<string>("wolfcha_human_name", {
+    defaultValue: "",
+  });
+  const [gameStarted, setGameStarted] = useState(false);
+  const [gameState, setGameState] = useAtom(gameStateAtom);
+  const [isLoading, setIsLoading] = useState(false);
+  const [inputText, setInputText] = useState("");
+  // 「AI 助我」：只把草稿写进输入框，绝不代替玩家发送
+  const [isAiAssistLoading, setIsAiAssistLoading] = useState(false);
+  const aiAssistRequestRef = useRef<{ id: string; controller: AbortController } | null>(null);
+  const [showTable, setShowTable] = useState(false);
+  const logRef = useRef<HTMLDivElement>(null);
+
+  /** 取消进行中的「AI 助我」请求（重开/换轮时调用） */
+  const cancelAiAssist = useCallback(() => {
+    aiAssistRequestRef.current?.controller.abort();
+    aiAssistRequestRef.current = null;
+    setIsAiAssistLoading(false);
+  }, []);
+
+  // 卸载时断开在途请求，避免组件已卸载还在写状态
+  useEffect(() => () => {
+    aiAssistRequestRef.current?.controller.abort();
+    aiAssistRequestRef.current = null;
+  }, []);
+
+  // 换轮/换阶段后本轮草稿已失效：作废在途请求，避免 loading 态残留到下一次发言
+  useEffect(() => {
+    cancelAiAssist();
+  }, [cancelAiAssist, gameState.currentSpeakerSeat, gameState.phase]);
+
+  // 角色批量生成失败 → 挂起等待用户在 UI 上确认是否重试该批
+  const [characterRetry, setCharacterRetry] = useState<{
+    message: string;
+    batchStartIndex: number;
+    attempt: number;
+  } | null>(null);
+  const characterRetryResolveRef = useRef<((ok: boolean) => void) | null>(null);
+
+  const requestCharacterBatchRetry = useCallback(
+    async (info: { batchStartIndex: number; attempt: number; reason: string }) =>
+      new Promise<boolean>((resolve) => {
+        characterRetryResolveRef.current = resolve;
+        setCharacterRetry({
+          message: info.reason || `batch ${info.batchStartIndex}`,
+          batchStartIndex: info.batchStartIndex,
+          attempt: info.attempt,
+        });
+      }),
+    [],
+  );
+
+  const confirmCharacterBatchRetry = useCallback((ok: boolean) => {
+    const resolve = characterRetryResolveRef.current;
+    characterRetryResolveRef.current = null;
+    setCharacterRetry(null);
+    resolve?.(ok);
+  }, []);
+  
+  // Track if we've already restored the game state on mount
+  const hasRestoredRef = useRef(false);
+  // If the FIRST render is already "in progress", it's almost certainly restored from localStorage
+  const restoredInProgressOnMountRef = useRef(
+    isRestorableGameState(gameState) && gameState.players.length > 0
+  );
+  const hasResumedFromCheckpointRef = useRef(false);
+
+  // Restore game state from localStorage on mount
+  useEffect(() => {
+    if (hasRestoredRef.current) return;
+    hasRestoredRef.current = true;
+    
+    // Check if the current gameState is from a restored game in progress
+    if (isRestorableGameState(gameState) && gameState.players.length > 0 && gameState.gameSessionId) {
+      console.info("[wolfcha] Restoring game session from previous state");
+      gameSessionTracker.rehydrate(gameState.gameSessionId, gameState.startTime ?? Date.now());
+      void gameSessionTracker.syncProgressImmediate().catch((error) => {
+        console.error("[game-session] Failed to sync restored session:", error);
+      });
+      setGameStarted(true);
+      setShowTable(true);
+    }
+  }, [gameState]);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "production") return;
+    void aiLogger.clearLogsOncePerPageLoad();
+  }, []);
+
+  // ============================================
+  // 流程控制
+  // ============================================
+  const flowController = useRef(new AsyncFlowController());
+  const phaseManagerRef = useRef(new PhaseManager());
+  const phaseExtrasRef = useRef<{ phase: Phase; extras: Record<string, unknown> } | null>(null);
+  const gameStateRef = useRef<GameState>(gameState);
+  const prevPhaseRef = useRef<Phase>(gameState.phase);
+  const phaseLifecycleRef = useRef<Phase>(gameState.phase);
+  const prevDayRef = useRef<number>(gameState.day);
+  const prevDevMutationIdRef = useRef<number | undefined>(gameState.devMutationId);
+  const prevDevPhaseJumpTsRef = useRef<number | undefined>(undefined);
+  const runAISpeechRef = useRef<((state: GameState, player: Player) => Promise<void>) | null>(null);
+  const handleVoteCompleteRef = useRef<((state: GameState, result: { seat: number; count: number } | null, token: ReturnType<typeof getToken>) => Promise<void>) | null>(null);
+  const endGameRef = useRef<((state: GameState, winner: "village" | "wolf") => Promise<void>) | null>(null);
+  const resolveNightRef = useRef<((state: GameState, token: ReturnType<typeof getToken>, onComplete: (resolvedState: GameState) => Promise<void>) => Promise<void>) | null>(null);
+  const startDayPhaseInternalRef = useRef<((state: GameState, token: ReturnType<typeof getToken>, options?: { skipAnnouncements?: boolean }) => Promise<void>) | null>(null);
+  const badgeTransferRef = useRef<((state: GameState, sheriff: Player, afterTransfer: (s: GameState) => Promise<void>) => Promise<void>) | null>(null);
+  const hunterDeathRef = useRef<((state: GameState, hunter: Player, diedAtNight: boolean) => Promise<void>) | null>(null);
+  const proceedToNightRef = useRef<((state: GameState, token: ReturnType<typeof getToken>) => Promise<void>) | null>(null);
+  const onStartVoteRef = useRef<((state: GameState, token: ReturnType<typeof getToken>) => Promise<void>) | null>(null);
+  const onBadgeSpeechEndRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+  const onPkSpeechEndRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+  const wwkBoomCheckRef = useRef<((state: GameState, wwk: Player) => Promise<boolean>) | null>(null);
+
+  // 游戏启动相关 refs
+  const pendingStartStateRef = useRef<GameState | null>(null);
+  const hasContinuedAfterRevealRef = useRef(false);
+  const isAwaitingRoleRevealRef = useRef(false);
+  const showTableTimeoutRef = useRef<number | null>(null);
+  const cancellableTimeoutsRef = useRef<number[]>([]);
+  const cancellableTimeoutGenerationRef = useRef(0);
+
+  const clearCancellableTimeouts = useCallback(() => {
+    cancellableTimeoutGenerationRef.current += 1;
+    cancellableTimeoutsRef.current.forEach((timer) => window.clearTimeout(timer));
+    cancellableTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleCancellableTimeout = useCallback(
+    (generation: number, callback: () => void, delayMs: number) => {
+      if (generation !== cancellableTimeoutGenerationRef.current) return;
+      let timer = 0;
+      timer = window.setTimeout(() => {
+        cancellableTimeoutsRef.current = cancellableTimeoutsRef.current.filter(
+          (activeTimer) => activeTimer !== timer,
+        );
+        if (generation === cancellableTimeoutGenerationRef.current) callback();
+      }, delayMs);
+      cancellableTimeoutsRef.current.push(timer);
+    },
+    [],
+  );
+
+  useEffect(() => () => clearCancellableTimeouts(), [clearCancellableTimeouts]);
+
+  // 回调 refs（用于人类操作后继续流程）
+  const afterLastWordsRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+  const nightContinueRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+  const afterBadgeTransferRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+  const badgeSpeechEndRef = useRef<((state: GameState) => Promise<void>) | null>(null);
+
+  // ============================================
+  // 对话管理
+  // ============================================
+  const dialogue = useDialogueManager();
+  const {
+    currentDialogue,
+    isWaitingForAI,
+    waitingForNextRound,
+    setIsWaitingForAI,
+    setWaitingForNextRound,
+    setDialogue,
+    clearDialogue,
+    initSpeechQueue,
+    initStreamingSpeechQueue,
+    appendToSpeechQueue,
+    finalizeSpeechQueue,
+    getSpeechQueue,
+    advanceSpeechQueue,
+    clearSpeechQueue,
+    resetDialogueState,
+    setPrefetchedSpeech,
+    consumePrefetchedSpeech,
+    markCurrentSegmentCommitted,
+    isCurrentSegmentCommitted,
+    markCurrentSegmentCompleted,
+    isCurrentSegmentCompleted,
+    shouldAutoAdvanceToNextAI,
+  } = dialogue;
+
+  // ============================================
+  // 派生状态
+  // ============================================
+  const humanPlayer = gameState.players.find((p) => p.isHuman) || null;
+  const isNight = gameState.phase.includes("NIGHT");
+
+  // ============================================
+  // 工具函数
+  // ============================================
+  const transitionPhase = useCallback((state: GameState, newPhase: Phase): GameState => {
+    if (!isValidTransition(state.phase, newPhase)) {
+      console.warn(`[wolfcha] Invalid phase transition: ${state.phase} -> ${newPhase}`);
+    }
+    return rawTransitionPhase(state, newPhase);
+  }, []);
+
+  const waitForUnpause = useCallback(async () => {
+    while (gameStateRef.current.isPaused) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }, []);
+
+  const getToken = useCallback(() => flowController.current.getToken(), []);
+  const isTokenValid = useCallback((token: { isValid: () => boolean }) => token.isValid(), []);
+
+  // 细粒度恢复逻辑在后面定义（等 runNightPhaseAction 等函数定义后）
+
+  const scrollToBottom = useCallback(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight;
+    }
+  }, []);
+
+  const queuePhaseExtras = useCallback((phase: Phase, extras: Record<string, unknown>) => {
+    phaseExtrasRef.current = { phase, extras };
+  }, []);
+
+  const gameStore = useStore();
+  const buildVotePhaseExtras = useCallback((token: ReturnType<typeof getToken>, options?: { isRevote?: boolean }) => {
+    return {
+      token,
+      getGameState: () => gameStore.get(gameStateAtom),
+      isRevote: options?.isRevote === true,
+      humanPlayer,
+      setGameState,
+      setDialogue,
+      setIsWaitingForAI,
+      waitForUnpause,
+      isTokenValid,
+      onVoteComplete: async (state: GameState, result: { seat: number; count: number } | null) => {
+        const nextToken = getToken();
+        const fn = handleVoteCompleteRef.current;
+        if (fn) {
+          await fn(state, result, nextToken);
+        }
+      },
+      onGameEnd: async (state: GameState, winner: "village" | "wolf") => {
+        const fn = endGameRef.current;
+        if (fn) {
+          await fn(state, winner);
+        }
+      },
+      runAISpeech: async (state: GameState, player: Player) => {
+        const fn = runAISpeechRef.current;
+        if (fn) {
+          await fn(state, player);
+        }
+      },
+    };
+  }, [gameStore, getToken, humanPlayer, isTokenValid, setDialogue, setGameState, setIsWaitingForAI, waitForUnpause]);
+
+  const buildNightPhaseExtras = useCallback((token: ReturnType<typeof getToken>) => {
+    return {
+      token,
+      setGameState,
+      setDialogue,
+      setIsWaitingForAI,
+      waitForUnpause,
+      isTokenValid,
+      onNightComplete: async (state: GameState) => {
+        const nextToken = getToken();
+        const resolveFn = resolveNightRef.current;
+        const startDayFn = startDayPhaseInternalRef.current;
+        if (!resolveFn || !startDayFn) return;
+        await resolveFn(state, nextToken, async (resolvedState) => {
+          await startDayFn(resolvedState, nextToken);
+        });
+      },
+    };
+  }, [getToken, isTokenValid, setDialogue, setGameState, setIsWaitingForAI, waitForUnpause]);
+
+  const buildDaySpeechExtras = useCallback((token: ReturnType<typeof getToken>) => {
+    return {
+      token,
+      setGameState,
+      setDialogue,
+      waitForUnpause,
+      runAISpeech: async (state: GameState, player: Player) => {
+        const fn = runAISpeechRef.current;
+        if (fn) {
+          await fn(state, player);
+        }
+      },
+      onStartVote: async (state: GameState, nextToken: ReturnType<typeof getToken>) => {
+        const fn = onStartVoteRef.current;
+        if (fn) {
+          await fn(state, nextToken);
+        }
+      },
+      onBadgeSpeechEnd: async (state: GameState) => {
+        const fn = onBadgeSpeechEndRef.current;
+        if (fn) {
+          await fn(state);
+        }
+      },
+      onPkSpeechEnd: async (state: GameState) => {
+        const fn = onPkSpeechEndRef.current;
+        if (fn) {
+          await fn(state);
+        }
+      },
+      onWhiteWolfKingBoomCheck: async (state: GameState, wwk: Player): Promise<boolean> => {
+        const fn = wwkBoomCheckRef.current;
+        if (fn) {
+          return fn(state, wwk);
+        }
+        return false;
+      },
+      onBadgeTransfer: async (state: GameState, sheriff: Player, afterTransfer: (s: GameState) => Promise<void>) => {
+        const fn = badgeTransferRef.current;
+        if (fn) {
+          await fn(state, sheriff, afterTransfer);
+        }
+      },
+      onHunterDeath: async (state: GameState, hunter: Player, diedAtNight: boolean) => {
+        const fn = hunterDeathRef.current;
+        if (fn) {
+          await fn(state, hunter, diedAtNight);
+        }
+      },
+      onGameEnd: async (state: GameState, winner: "village" | "wolf") => {
+        const fn = endGameRef.current;
+        if (fn) {
+          await fn(state, winner);
+        }
+      },
+    };
+  }, [setDialogue, setGameState, waitForUnpause]);
+
+  const runDaySpeechAction = useCallback(
+    async (
+      state: GameState,
+      token: ReturnType<typeof getToken>,
+      action: "START_DAY_SPEECH_AFTER_BADGE" | "ADVANCE_SPEAKER",
+      options?: { skipAnnouncements?: boolean }
+    ) => {
+      const phaseImpl = phaseManagerRef.current.getPhase("DAY_SPEECH");
+      if (!phaseImpl) return;
+      await phaseImpl.handleAction(
+        { state, phase: state.phase, extras: buildDaySpeechExtras(token) },
+        action === "START_DAY_SPEECH_AFTER_BADGE"
+          ? { type: action, options }
+          : { type: action }
+      );
+    },
+    [buildDaySpeechExtras]
+  );
+
+  const runNightPhaseAction = useCallback(
+    async (state: GameState, token: ReturnType<typeof getToken>, action: "START_NIGHT" | "CONTINUE_NIGHT_AFTER_GUARD" | "CONTINUE_NIGHT_AFTER_WOLF" | "CONTINUE_NIGHT_AFTER_WITCH") => {
+      const phaseImpl = phaseManagerRef.current.getPhase("NIGHT_START");
+      if (!phaseImpl) return;
+      await phaseImpl.handleAction(
+        { state, phase: state.phase, extras: buildNightPhaseExtras(token) },
+        { type: action }
+      );
+    },
+    [buildNightPhaseExtras]
+  );
+
+  // ============================================
+  // Phase lifecycle hook
+  // ============================================
+  useEffect(() => {
+    const prevPhase = phaseLifecycleRef.current;
+    const nextPhase = gameState.phase;
+    if (prevPhase === nextPhase) return;
+
+    const manager = phaseManagerRef.current;
+    const prevImpl = manager.getPhase(prevPhase);
+    const nextImpl = manager.getPhase(nextPhase);
+    let cancelled = false;
+    const queued = phaseExtrasRef.current;
+    let extras = queued?.phase === nextPhase ? queued.extras : undefined;
+    if (queued?.phase === nextPhase) {
+      phaseExtrasRef.current = null;
+    }
+    if (!extras && nextPhase === "DAY_VOTE") {
+      extras = buildVotePhaseExtras(getToken());
+    }
+
+    (async () => {
+      if (prevImpl) {
+        await prevImpl.onExit({ state: gameState, phase: prevPhase });
+      }
+      if (cancelled) return;
+      if (nextImpl) {
+        await nextImpl.onEnter({ state: gameState, phase: nextPhase, extras });
+      }
+    })();
+
+    phaseLifecycleRef.current = nextPhase;
+    return () => {
+      cancelled = true;
+    };
+  }, [buildVotePhaseExtras, gameState, gameState.phase, getToken]);
+
+  // ============================================
+  // 每日总结生成
+  // ============================================
+  const maybeGenerateDailySummary = useCallback(
+    async (state: GameState, options?: { force?: boolean }): Promise<GameState> => {
+      if (state.day <= 0) return state;
+      if (!options?.force && state.dailySummaries?.[state.day]?.length) return state;
+      if (!state.messages || state.messages.length === 0) return state;
+      try {
+        const summary = await generateDailySummary(state);
+        if (!summary || summary.bullets.length === 0) return state;
+        return {
+          ...state,
+          dailySummaries: { ...state.dailySummaries, [state.day]: summary.bullets },
+          dailySummaryVoteData: {
+            ...(state.dailySummaryVoteData ?? {}),
+            ...(summary.voteData ? { [state.day]: summary.voteData } : {}),
+          },
+        };
+      } catch {
+        return state;
+      }
+    },
+    []
+  );
+
+  const buildRawDayTranscript = useCallback((state: GameState): string => {
+    const aliveIds = new Set(state.players.filter((p) => p.alive).map((p) => p.playerId));
+    const dayStartIndex = (() => {
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const m = state.messages[i];
+        if (m.isSystem && m.content === t("system.dayBreak")) return i;
+      }
+      return 0;
+    })();
+
+    const voteStartIndex = (() => {
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const m = state.messages[i];
+        if (m.isSystem && m.content === t("system.voteStart")) return i;
+      }
+      return state.messages.length;
+    })();
+
+    const slice = state.messages.slice(
+      dayStartIndex,
+      voteStartIndex > dayStartIndex ? voteStartIndex : state.messages.length
+    );
+
+    return slice
+      .filter((m) => !m.isSystem && aliveIds.has(m.playerId))
+      .map((m) => `${m.playerName}: ${m.content}`)
+      .join("\n");
+  }, []);
+
+  // ============================================
+  // 特殊事件处理
+  // ============================================
+  const specialEvents = useSpecialEvents({
+    setDialogue,
+    setIsWaitingForAI,
+    waitForUnpause,
+    isTokenValid,
+    prepareFinalState: (state) => maybeGenerateDailySummary(state, { force: true }),
+  });
+
+  const { endGame, resolveNight } = specialEvents;
+
+  const endGameSafely = useCallback(
+    async (state: GameState, winner: "village" | "wolf") => {
+      clearSpeechQueue();
+      clearDialogue();
+      setIsWaitingForAI(false);
+      setWaitingForNextRound(false);
+      await endGame(state, winner);
+    },
+    [clearDialogue, clearSpeechQueue, endGame, setIsWaitingForAI, setWaitingForNextRound]
+  );
+
+  endGameRef.current = endGameSafely;
+  resolveNightRef.current = resolveNight;
+
+  // ============================================
+  // 投票阶段（Phase 驱动）
+  // ============================================
+  const enterVotePhase = useCallback(
+    async (state: GameState, token: ReturnType<typeof getToken>, options?: { isRevote?: boolean }) => {
+      // 投票阶段不再触发总结 - 避免重复调用
+      // 总结将在进入夜晚时统一生成，此时信息最完整（包含投票结果和遗言）
+      
+      queuePhaseExtras("DAY_VOTE", buildVotePhaseExtras(token, options));
+      const clearedState: GameState = {
+        ...state,
+        votes: {},
+        lastVoteReasons: state.voteReasons ? { ...state.voteReasons } : {},
+        voteReasons: {},
+      };
+      const nextState = transitionPhase(clearedState, "DAY_VOTE");
+      setGameState(nextState);
+    },
+    [buildVotePhaseExtras, queuePhaseExtras, setGameState, transitionPhase]
+  );
+
+  const resolveVotePhase = useCallback(
+    async (state: GameState, token: ReturnType<typeof getToken>) => {
+      const phaseImpl = phaseManagerRef.current.getPhase("DAY_VOTE");
+      if (!phaseImpl) return;
+      await phaseImpl.handleAction(
+        { state, phase: "DAY_VOTE", extras: buildVotePhaseExtras(token) },
+        { type: "RESOLVE_VOTES" }
+      );
+    },
+    [buildVotePhaseExtras]
+  );
+
+  const resolveVotesSafely = useCallback(async (
+    state: GameState,
+    token: ReturnType<typeof getToken>
+  ) => {
+    if (isResolvingVotesRef.current) return;
+    isResolvingVotesRef.current = true;
+    try {
+      await resolveVotePhase(state, token);
+    } finally {
+      isResolvingVotesRef.current = false;
+    }
+  }, [resolveVotePhase]);
+
+  // ============================================
+  // 白天阶段
+  // ============================================
+  const dayPhase = useDayPhase(humanPlayer, {
+    setDialogue,
+    setIsWaitingForAI,
+    setWaitingForNextRound,
+    isTokenValid,
+    getToken,
+    initSpeechQueue,
+    initStreamingSpeechQueue,
+    appendToSpeechQueue,
+    finalizeSpeechQueue,
+    setPrefetchedSpeech,
+    consumePrefetchedSpeech,
+    setAfterLastWords: (cb) => { afterLastWordsRef.current = cb; },
+  });
+
+  const { startLastWordsPhase, runAISpeech, isSpeechBlocked } = dayPhase;
+  runAISpeechRef.current = runAISpeech;
+
+  // ============================================
+  // 警长竞选阶段
+  // ============================================
+  const badgePhase = useBadgePhase({
+    setDialogue,
+    clearDialogue,
+    setIsWaitingForAI,
+    waitForUnpause,
+    isTokenValid,
+    onBadgeElectionComplete: async (state) => {
+      const token = getToken();
+      await runDaySpeechAction(state, token, "START_DAY_SPEECH_AFTER_BADGE");
+    },
+    onBadgeTransferComplete: async (state) => {
+      const afterTransfer = afterBadgeTransferRef.current;
+      afterBadgeTransferRef.current = null;
+      if (afterTransfer) {
+        await afterTransfer(state);
+      }
+    },
+    runAISpeech: async (state, player) => {
+      await runAISpeech(state, player);
+    },
+  });
+  badgeTransferRef.current = badgePhase.handleBadgeTransfer;
+  onStartVoteRef.current = enterVotePhase;
+  onBadgeSpeechEndRef.current = async (state: GameState) => {
+    await badgePhase.startBadgeElectionPhase(state);
+  };
+  onPkSpeechEndRef.current = async (state: GameState) => {
+    const token = getToken();
+    const nextState = {
+      ...state,
+      pkTargets: undefined,
+      pkSource: undefined,
+    };
+
+    if (state.pkSource === "badge") {
+      await badgePhase.startBadgeElectionPhase(nextState, { isRevote: true });
+      return;
+    }
+
+    if (state.pkSource === "vote") {
+      await enterVotePhase(state, token, { isRevote: true });
+      return;
+    }
+  };
+
+  // AI白狼王自爆决策
+  wwkBoomCheckRef.current = async (state: GameState, wwk: Player): Promise<boolean> => {
+    if (state.roleAbilities.whiteWolfKingBoomUsed) return false;
+    if (!wwk.agentProfile?.modelRef) return false;
+
+    const token = getToken();
+    const targetSeat = await runAiTaskWithRetry<number | null>({
+      label: t("aiRetry.wwkBoom"),
+      description: wwk.displayName,
+      stillValid: () => isTokenValid(token),
+      task: () => generateWhiteWolfKingBoomDecision(state, wwk),
+      onSkip: () => null,
+    });
+    if (targetSeat === null) return false; // AI 选择不自爆
+
+    if (!isTokenValid(token)) return false;
+
+    // 执行自爆逻辑
+    let currentState = transitionPhase(state, "WHITE_WOLF_KING_BOOM");
+    currentState = killPlayer(currentState, wwk.seat);
+    currentState = {
+      ...currentState,
+      roleAbilities: { ...currentState.roleAbilities, whiteWolfKingBoomUsed: true },
+    };
+
+    const target = currentState.players.find((p) => p.seat === targetSeat);
+    if (target && target.alive) {
+      currentState = killPlayer(currentState, targetSeat);
+      const msg = t("system.whiteWolfKingBoom", {
+        seat: wwk.seat + 1,
+        name: wwk.displayName,
+        targetSeat: targetSeat + 1,
+        targetName: target.displayName,
+      });
+      currentState = addSystemMessage(currentState, msg);
+      setDialogue(speakerHost, msg, false);
+
+      const prevDayRecord = (currentState.dayHistory || {})[currentState.day] || {};
+      currentState = {
+        ...currentState,
+        dayHistory: {
+          ...(currentState.dayHistory || {}),
+          [currentState.day]: { ...prevDayRecord, whiteWolfKingBoom: { boomSeat: wwk.seat, targetSeat } },
+        },
+      };
+    } else {
+      const msg = t("system.whiteWolfKingBoomNoTarget", { seat: wwk.seat + 1, name: wwk.displayName });
+      currentState = addSystemMessage(currentState, msg);
+      setDialogue(speakerHost, msg, false);
+    }
+
+    // 白狼王自爆带走的人没有遗言，如果被带走的人或白狼王是警长，警徽直接撕毁
+    const sheriffSeat = currentState.badge.holderSeat;
+    if (sheriffSeat !== null && (!currentState.players.find((p) => p.seat === sheriffSeat)?.alive)) {
+      const sheriffPlayer = currentState.players.find((p) => p.seat === sheriffSeat);
+      const forceTornMsg = t("system.badgeForceTorn", { seat: sheriffSeat + 1, name: sheriffPlayer?.displayName || "" });
+      currentState = addSystemMessage(currentState, forceTornMsg);
+      currentState = {
+        ...currentState,
+        badge: { ...currentState.badge, holderSeat: null },
+      };
+    }
+
+    setGameState(currentState);
+
+    // 白狼王自爆带走猎人时，猎人可以开枪（非毒死，技能可发动）
+    const boomTarget = currentState.players.find((p) => p.seat === targetSeat);
+    if (boomTarget?.role === "Hunter" && currentState.roleAbilities.hunterCanShoot) {
+      await delay(1200);
+      const hunterFn = hunterDeathRef.current;
+      if (hunterFn) await hunterFn(currentState, boomTarget, false);
+      return true;
+    }
+
+    const winner = checkWinCondition(currentState);
+    if (winner) {
+      const endFn = endGameRef.current;
+      if (endFn) await endFn(currentState, winner);
+      return true;
+    }
+
+    await delay(1200);
+    const proceedFn = proceedToNightRef.current;
+    if (proceedFn) await proceedFn(currentState, token);
+    return true;
+  };
+
+  // ============================================
+  // 内部流程函数
+  // ============================================
+  const startDayPhaseInternal = useCallback(async (
+    state: GameState,
+    token: ReturnType<typeof getToken>,
+    options?: { skipAnnouncements?: boolean }
+  ) => {
+    // 第一天：先进行警徽评选
+    if (state.day === 1 && state.badge.holderSeat === null) {
+      await badgePhase.startBadgeSignupPhase(state);
+      return;
+    }
+    // 非第一天：直接进入讨论
+    await runDaySpeechAction(state, token, "START_DAY_SPEECH_AFTER_BADGE", options);
+  }, [badgePhase, runDaySpeechAction]);
+  startDayPhaseInternalRef.current = startDayPhaseInternal;
+
+  const proceedToNight = useCallback(async (state: GameState, token: ReturnType<typeof getToken>) => {
+    if (!isTokenValid(token)) return;
+    if (isAwaitingRoleRevealRef.current) return;
+
+    // 天黑时同步游戏进度到数据库（incrementRound 内部会立即同步）
+    gameSessionTracker.incrementRound().catch(() => {});
+
+    const systemMessages = getSystemMessages();
+    const lastGuardTarget = state.nightActions.guardTarget ?? state.nightActions.lastGuardTarget;
+    // Preserve seerHistory across nights
+    const seerHistory = state.nightActions.seerHistory;
+    let nextState = {
+      ...state,
+      day: state.day + 1,
+      nightActions: {
+        ...(lastGuardTarget !== undefined ? { lastGuardTarget } : {}),
+        ...(seerHistory ? { seerHistory } : {}),
+      },
+    };
+    nextState = transitionPhase(nextState, "NIGHT_START");
+    nextState = addSystemMessage(nextState, systemMessages.nightFall(nextState.day));
+    setGameState(nextState);
+
+    // Set dialogue before playing audio so message box appears immediately
+    setDialogue(speakerHost, systemMessages.nightFall(nextState.day), false);
+
+    // 播放旁白语音
+    await playNarrator("nightFall");
+
+    await delay(250);
+    if (!isTokenValid(token)) return;
+
+    setDialogue(speakerHost, systemMessages.summarizingDay, false);
+
+    const summarized = await maybeGenerateDailySummary(state, { force: true });
+    if (!isTokenValid(token)) return;
+
+    const mergedState = {
+      ...nextState,
+      dailySummaries: summarized.dailySummaries,
+      dailySummaryFacts: summarized.dailySummaryFacts,
+      dailySummaryVoteData: summarized.dailySummaryVoteData ?? nextState.dailySummaryVoteData,
+    };
+
+    await runNightPhaseAction(mergedState, token, "START_NIGHT");
+  }, [isTokenValid, maybeGenerateDailySummary, runNightPhaseAction, setGameState, setDialogue, speakerHost, transitionPhase]);
+  proceedToNightRef.current = proceedToNight;
+
+  // ============================================
+  // 从检查点恢复后的细粒度推进
+  // 根据恢复的具体阶段决定如何继续流程
+  // ============================================
+  useEffect(() => {
+    if (!restoredInProgressOnMountRef.current) return;
+    if (hasResumedFromCheckpointRef.current) return;
+
+    const s = gameStateRef.current;
+    if (!isRestorableGameState(s) || !s.gameSessionId || s.players.length === 0) return;
+
+    hasResumedFromCheckpointRef.current = true;
+    const token = getToken();
+
+    console.info(`[wolfcha] Resuming from checkpoint at phase ${s.phase}, day ${s.day}`);
+
+    const uiText = getUiText();
+    const speakerHint = t("speakers.hint");
+
+    const didLastSpeechComeFrom = (state: GameState, playerId: string): boolean => {
+      for (let i = state.messages.length - 1; i >= 0; i--) {
+        const m = state.messages[i];
+        if (m.isSystem) continue;
+        if (m.day !== state.day) continue;
+        if (m.phase !== state.phase) continue;
+        return m.playerId === playerId;
+      }
+      return false;
+    };
+
+    // 根据恢复的阶段决定如何继续
+    switch (s.phase) {
+      case "NIGHT_START": {
+        // 第一晚需要弹身份牌，后续夜晚直接开始夜晚流程
+        if (s.day === 1) {
+          // 第一晚：标记等待身份牌展示
+          pendingStartStateRef.current = s;
+          hasContinuedAfterRevealRef.current = false;
+          isAwaitingRoleRevealRef.current = true;
+        } else {
+          // 后续夜晚：直接开始夜晚流程（不弹身份牌）
+          hasContinuedAfterRevealRef.current = true;
+          isAwaitingRoleRevealRef.current = false;
+          void runNightPhaseAction(s, token, "START_NIGHT");
+        }
+        break;
+      }
+
+      case "NIGHT_GUARD_ACTION": {
+        // 守卫阶段：检查是否已完成
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        const guard = s.players.find((p) => p.role === "Guard" && p.alive);
+        if (!guard || s.nightActions.guardTarget !== undefined) {
+          // 守卫已选择或没有守卫，继续到狼人阶段
+          void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_GUARD");
+        } else if (!guard.isHuman) {
+          // AI 守卫需要重新选择
+          void runNightPhaseAction(s, token, "START_NIGHT");
+        }
+        // 人类守卫等待输入
+        break;
+      }
+
+      case "NIGHT_WOLF_ACTION": {
+        // 狼人阶段：检查是否已完成
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        if (s.nightActions.wolfTarget !== undefined) {
+          // 狼人已选择，继续到女巫阶段
+          void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WOLF");
+        } else {
+          const humanWolf = s.players.find((p) => isWolfRole(p.role) && p.alive && p.isHuman);
+          if (!humanWolf) {
+            // AI 狼人需要重新选择
+            void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_GUARD");
+          }
+          // 人类狼人等待输入
+        }
+        break;
+      }
+
+      case "NIGHT_WITCH_ACTION": {
+        // 女巫阶段：检查是否已完成
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        const witch = s.players.find((p) => p.role === "Witch" && p.alive);
+        const witchDone =
+          !witch ||
+          (s.roleAbilities.witchHealUsed && s.roleAbilities.witchPoisonUsed) ||
+          s.nightActions.witchSave !== undefined ||
+          s.nightActions.witchPoison !== undefined;
+
+        if (witchDone) {
+          // 女巫已决定，继续到预言家阶段
+          void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WITCH");
+        } else if (!witch?.isHuman) {
+          // AI 女巫需要重新选择
+          void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WOLF");
+        }
+        // 人类女巫等待输入
+        break;
+      }
+
+      case "NIGHT_SEER_ACTION": {
+        // 预言家阶段：检查是否已完成
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        if (s.nightActions.seerTarget !== undefined) {
+          // 预言家已查验，设置继续回调并显示查验结果
+          const seerResult = s.nightActions.seerResult;
+          if (seerResult) {
+            const targetPlayer = s.players.find((p) => p.seat === seerResult.targetSeat);
+            setDialogue(
+              t("speakers.seerResult"),
+              t("gameLogicMessages.seerResultText", {
+                seat: seerResult.targetSeat + 1,
+                name: targetPlayer?.displayName || "",
+                result: seerResult.isWolf ? t("gameLogicMessages.werewolfResult") : t("gameLogicMessages.goodResult"),
+              }),
+              false
+            );
+          }
+          nightContinueRef.current = async (state) => {
+            await resolveNight(state, token, async (resolvedState) => {
+              await startDayPhaseInternal(resolvedState, token);
+            });
+          };
+        } else {
+          const seer = s.players.find((p) => p.role === "Seer" && p.alive);
+          if (!seer?.isHuman) {
+            // AI 预言家需要重新查验
+            void runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WITCH");
+          }
+          // 人类预言家等待输入
+        }
+        break;
+      }
+
+      case "DAY_START": {
+        // 白天开始：进入警徽/讨论流程
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        void startDayPhaseInternal(s, token);
+        break;
+      }
+
+      case "DAY_BADGE_SIGNUP": {
+        // Day 1 警长竞选报名：恢复后继续让 AI 补齐报名，并在全员决定后衔接发言
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        void badgePhase.resumeBadgeSignupPhase(s);
+        break;
+      }
+
+      case "DAY_BADGE_SPEECH":
+      case "DAY_PK_SPEECH":
+      case "DAY_SPEECH": {
+        // 发言阶段：恢复后尝试把 UI/AI 推进到一个可继续的状态
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+
+        // 若没有 speaker（异常/边界），尝试推进到下一个 speaker
+        if (s.currentSpeakerSeat === null) {
+          void runDaySpeechAction(s, token, "ADVANCE_SPEAKER");
+          break;
+        }
+
+        const currentSpeaker = s.players.find((p) => p.seat === s.currentSpeakerSeat) || null;
+        if (!currentSpeaker || !currentSpeaker.alive) {
+          void runDaySpeechAction(s, token, "ADVANCE_SPEAKER");
+          break;
+        }
+
+        if (currentSpeaker.isHuman) {
+          setDialogue(speakerHint, uiText.yourTurn, false);
+          break;
+        }
+
+        // AI speaker：如果刷新前它已经说完（最后一条本 phase 消息来自它），则恢复为"等待下一轮"状态
+        // 否则说明它还没开始/没说完，重新触发一次发言生成
+        const aiAlreadySpoke = didLastSpeechComeFrom(s, currentSpeaker.playerId);
+        if (aiAlreadySpoke) {
+          setWaitingForNextRound(true);
+          break;
+        }
+
+        void runAISpeech(s, currentSpeaker);
+        break;
+      }
+
+      case "DAY_LAST_WORDS": {
+        // 遗言阶段：发言者应该是已死亡的玩家
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+
+        // 若没有 speaker，说明状态异常，跳过遗言直接进入下一阶段
+        if (s.currentSpeakerSeat === null) {
+          console.warn('[wolfcha] DAY_LAST_WORDS: currentSpeakerSeat is null, skipping last words');
+          void proceedToNight(s, token);
+          break;
+        }
+
+        const lastWordsSpeaker = s.players.find((p) => p.seat === s.currentSpeakerSeat) || null;
+        
+        // 遗言发言者必须存在（无论生死）
+        if (!lastWordsSpeaker) {
+          console.warn('[wolfcha] DAY_LAST_WORDS: speaker not found, skipping last words');
+          void proceedToNight(s, token);
+          break;
+        }
+
+        // 遗言阶段的发言者应该是已死亡的玩家，如果还活着说明状态异常
+        if (lastWordsSpeaker.alive) {
+          console.warn('[wolfcha] DAY_LAST_WORDS: speaker is still alive, this should not happen');
+          void proceedToNight(s, token);
+          break;
+        }
+
+        if (lastWordsSpeaker.isHuman) {
+          // 人类玩家：始终恢复到可以继续发言的状态，让玩家决定是否继续或结束
+          setDialogue(speakerHint, uiText.yourTurn, false);
+          break;
+        }
+
+        // AI 遗言发言者：由于无法可靠判断是否已完整说完（可能只说了一部分就刷新了）
+        // 因此不检查历史消息，直接重新触发 AI 发言
+        // AI 会根据历史消息自行判断是否需要继续说，如果已经说过遗言，AI 会生成简短的补充或确认
+        console.info('[wolfcha] DAY_LAST_WORDS: Restoring AI last words, re-triggering speech');
+        void runAISpeech(s, lastWordsSpeaker);
+        break;
+      }
+
+      case "DAY_BADGE_ELECTION": {
+        // 如果已经全员投票，恢复后直接触发一次结算（否则维持现状）
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        void badgePhase.startBadgeElectionPhase(s, { isResume: true });
+        break;
+      }
+
+      case "DAY_VOTE": {
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        void phaseManagerRef.current.getPhase("DAY_VOTE")?.handleAction(
+          { state: s, phase: "DAY_VOTE", extras: buildVotePhaseExtras(token) },
+          { type: "RESUME_VOTES" },
+        );
+        break;
+      }
+
+      default: {
+        // 其他阶段暂不自动推进
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        break;
+      }
+    }
+  }, [badgePhase, buildVotePhaseExtras, getToken, proceedToNight, runAISpeech, runDaySpeechAction, runNightPhaseAction, resolveNight, resolveVotesSafely, setDialogue, setWaitingForNextRound, startDayPhaseInternal, t]);
+
+  const transferBadgeAfterHunterShot = badgePhase.handleBadgeTransfer;
+  const continueAfterHunterShot = useCallback(async (
+    state: GameState,
+    continuation: (nextState: GameState) => Promise<void>
+  ) => {
+    await continueAfterHunterShotWithBadgeTransfer(
+      state,
+      transferBadgeAfterHunterShot,
+      continuation
+    );
+  }, [transferBadgeAfterHunterShot]);
+
+  hunterDeathRef.current = async (state: GameState, hunter: Player, diedAtNight: boolean) => {
+    const token = getToken();
+    await specialEvents.handleHunterDeath(state, hunter, diedAtNight, token, async (afterState) => {
+      await continueAfterHunterShot(afterState, async (nextState) => {
+        const startDayFn = startDayPhaseInternalRef.current;
+        const proceedFn = proceedToNightRef.current;
+        if (!startDayFn || !proceedFn) return;
+        if (diedAtNight) {
+          await startDayFn(nextState, token, { skipAnnouncements: true });
+        } else {
+          await proceedFn(nextState, token);
+        }
+      });
+    });
+  };
+
+  const handleVoteComplete = useCallback(async (
+    state: GameState,
+    result: { seat: number; count: number } | null,
+    token: ReturnType<typeof getToken>
+  ) => {
+    if (result) {
+      const executedPlayer = state.players.find((p) => p.seat === result.seat);
+      const isSheriff = state.badge.holderSeat === result.seat;
+
+      await delay(DELAY_CONFIG.MEDIUM);
+      if (!isTokenValid(token)) return;
+
+      await startLastWordsPhase(state, result.seat, async (s) => {
+        // 警长死亡，先移交警徽
+        if (isSheriff && executedPlayer) {
+          afterBadgeTransferRef.current = async (afterTransferState) => {
+            if (executedPlayer?.role === "Hunter" && afterTransferState.roleAbilities.hunterCanShoot) {
+              await specialEvents.handleHunterDeath(afterTransferState, executedPlayer, false, token, async (afterHunterState) => {
+                await continueAfterHunterShot(afterHunterState, async (nextState) => {
+                  await proceedToNight(nextState, token);
+                });
+              });
+              return;
+            }
+
+            const winnerAfterTransfer = checkWinCondition(afterTransferState);
+            if (winnerAfterTransfer) {
+              await endGameSafely(afterTransferState, winnerAfterTransfer);
+              return;
+            }
+
+            await proceedToNight(afterTransferState, token);
+          };
+          await badgePhase.handleBadgeTransfer(s, executedPlayer, async (afterTransferState) => {
+            const cb = afterBadgeTransferRef.current;
+            afterBadgeTransferRef.current = null;
+            if (cb) await cb(afterTransferState);
+          });
+          return;
+        }
+
+        // 猎人开枪
+        if (executedPlayer?.role === "Hunter" && s.roleAbilities.hunterCanShoot) {
+          await specialEvents.handleHunterDeath(s, executedPlayer, false, token, async (afterHunterState) => {
+            await continueAfterHunterShot(afterHunterState, async (nextState) => {
+              await proceedToNight(nextState, token);
+            });
+          });
+          return;
+        }
+
+        // 检查胜负
+        const winnerAfterLastWords = checkWinCondition(s);
+        if (winnerAfterLastWords) {
+          await endGameSafely(s, winnerAfterLastWords);
+          return;
+        }
+
+        await proceedToNight(s, token);
+      }, token);
+      return;
+    }
+
+    // 平票，等待一段时间让用户看到结果，然后进入夜晚
+    await delay(DELAY_CONFIG.MEDIUM);
+    if (!isTokenValid(token)) return;
+    await proceedToNight(state, token);
+  }, [isTokenValid, startLastWordsPhase, badgePhase, specialEvents, endGameSafely, proceedToNight, continueAfterHunterShot]);
+  handleVoteCompleteRef.current = handleVoteComplete;
+
+  
+
+  // ============================================
+  // 投票完成监控（安全保障机制）
+  // ============================================
+  const isResolvingVotesRef = useRef(false);
+  useEffect(() => {
+    if (gameState.phase !== "DAY_VOTE") return;
+    if (isResolvingVotesRef.current) return;
+    if (isWaitingForAI) return;
+
+    // Revealed Idiot cannot vote, exclude from allVoted check
+    const revealedIdiotId = gameState.roleAbilities.idiotRevealed
+      ? gameState.players.find((p) => p.role === "Idiot" && p.alive)?.playerId
+      : undefined;
+    // PK投票时，参与PK的人不投票，需要排除
+    const pkTargets =
+      gameState.pkSource === "vote" && Array.isArray(gameState.pkTargets) ? gameState.pkTargets : [];
+    const voterIds = gameState.players
+      .filter((p) => p.alive && p.playerId !== revealedIdiotId && !pkTargets.includes(p.seat))
+      .map((p) => p.playerId);
+    const allVoted = voterIds.every((id) => typeof gameState.votes[id] === "number");
+    
+    if (allVoted && voterIds.length > 0) {
+      console.log("[wolfcha] useEffect: All votes detected, triggering resolveVotePhase as safety net");
+      const token = getToken();
+      void resolveVotesSafely(gameState, token);
+    }
+  }, [gameState.phase, gameState.votes, gameState.players, getToken, resolveVotesSafely, isWaitingForAI]);
+
+  // ============================================
+  // 同步 gameStateRef
+  // ============================================
+  useEffect(() => {
+    gameStateRef.current = gameState;
+
+    // Dev Mode 容错
+    const prevDevMutationId = prevDevMutationIdRef.current;
+    const devMutationId = gameState.devMutationId;
+    const devMutated =
+      typeof devMutationId === "number" &&
+      (typeof prevDevMutationId !== "number" || devMutationId !== prevDevMutationId);
+
+    const phaseChanged = prevPhaseRef.current !== gameState.phase;
+    const dayChanged = prevDayRef.current !== gameState.day;
+    const hardReset = phaseChanged || dayChanged || !!gameState.devPhaseJump;
+
+    if (devMutated) {
+      flowController.current.interrupt();
+      pendingStartStateRef.current = null;
+      hasContinuedAfterRevealRef.current = false;
+
+      if (waitingForNextRound) setWaitingForNextRound(false);
+      if (isWaitingForAI) setIsWaitingForAI(false);
+
+      if (hardReset) {
+        afterLastWordsRef.current = null;
+        nightContinueRef.current = null;
+        clearSpeechQueue();
+        if (currentDialogue) clearDialogue();
+        if (inputText) setInputText("");
+      } else {
+        // Dev 动作编辑：可能中断了 runNightPhase 的后台推进。若关键数据已被用户补齐，则自动继续夜晚流程。
+        // 注意：只在"软编辑"时尝试恢复，避免和显式跳转冲突。
+        const s = gameState;
+        (async () => {
+          const token = flowController.current.getToken();
+
+          // Night phases: if the required action is already set (possibly via Dev actions tab), continue.
+          if (s.phase === "NIGHT_GUARD_ACTION") {
+            const guard = s.players.find((p) => p.role === "Guard" && p.alive);
+            if (!guard || s.nightActions.guardTarget !== undefined) {
+              await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_GUARD");
+            }
+            return;
+          }
+
+          if (s.phase === "NIGHT_WOLF_ACTION") {
+            if (s.nightActions.wolfTarget !== undefined) {
+              await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WOLF");
+            }
+            return;
+          }
+
+          if (s.phase === "NIGHT_WITCH_ACTION") {
+            const witch = s.players.find((p) => p.role === "Witch" && p.alive);
+            const usedAll = s.roleAbilities.witchHealUsed && s.roleAbilities.witchPoisonUsed;
+            const decided = s.nightActions.witchSave !== undefined || s.nightActions.witchPoison !== undefined;
+            if (!witch || usedAll || decided) {
+              await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WITCH");
+            }
+            return;
+          }
+
+          if (s.phase === "NIGHT_SEER_ACTION") {
+            if (s.nightActions.seerTarget !== undefined) {
+              // 预言家已查验，设置 nightContinueRef 以便用户确认后继续
+              nightContinueRef.current = async (state) => {
+                await resolveNight(state, token, async (resolvedState) => {
+                  await startDayPhaseInternal(resolvedState, token);
+                });
+              };
+            }
+            return;
+          }
+
+          if (s.phase === "DAY_VOTE") {
+            const revIdiotId = s.roleAbilities.idiotRevealed
+              ? s.players.find((p) => p.role === "Idiot" && p.alive)?.playerId
+              : undefined;
+            const aliveIds = s.players.filter((p) => p.alive && p.playerId !== revIdiotId).map((p) => p.playerId);
+            const allVoted = aliveIds.every((id) => typeof s.votes[id] === "number");
+            if (allVoted) {
+              await resolveVotePhase(s, token);
+            }
+          }
+        })();
+      }
+    }
+
+    prevPhaseRef.current = gameState.phase;
+    prevDayRef.current = gameState.day;
+    prevDevMutationIdRef.current = devMutationId;
+  }, [gameState, currentDialogue, inputText, isWaitingForAI, waitingForNextRound, clearDialogue, clearSpeechQueue, setIsWaitingForAI, setWaitingForNextRound, runNightPhaseAction, resolveNight, startDayPhaseInternal, resolveVotePhase]);
+
+  // ============================================
+  // Dev Phase Jump 处理
+  // ============================================
+  useEffect(() => {
+    const payload = gameState.devPhaseJump;
+    if (!payload) return;
+    if (prevDevPhaseJumpTsRef.current === payload.ts) return;
+    prevDevPhaseJumpTsRef.current = payload.ts;
+
+    flowController.current.interrupt();
+    const token = getToken();
+    const to = payload.to;
+    const s = gameStateRef.current;
+
+    const clearMark = () => {
+      setGameState((prev) => {
+        if (!prev.devPhaseJump || prev.devPhaseJump.ts !== payload.ts) return prev;
+        return { ...prev, devPhaseJump: undefined };
+      });
+    };
+
+    (async () => {
+      try {
+        if (to === "NIGHT_START" || to === "NIGHT_GUARD_ACTION") {
+          if (isAwaitingRoleRevealRef.current) return;
+          await runNightPhaseAction(s, token, "START_NIGHT");
+          return;
+        }
+        if (to === "NIGHT_WOLF_ACTION") {
+          await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_GUARD");
+          return;
+        }
+        if (to === "NIGHT_WITCH_ACTION") {
+          await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WOLF");
+          return;
+        }
+        if (to === "NIGHT_SEER_ACTION") {
+          await runNightPhaseAction(s, token, "CONTINUE_NIGHT_AFTER_WITCH");
+          return;
+        }
+        if (to === "NIGHT_RESOLVE") {
+          await resolveNight(s, token, async (resolvedState) => {
+            await startDayPhaseInternal(resolvedState, token);
+          });
+          return;
+        }
+        if (to === "DAY_START" || to === "DAY_SPEECH") {
+          await startDayPhaseInternal(s, token);
+          return;
+        }
+        if (to === "DAY_VOTE") {
+          await enterVotePhase(s, token);
+          return;
+        }
+        if (to === "DAY_LAST_WORDS") {
+          const seat = s.currentSpeakerSeat ?? s.players.find((p) => !p.alive)?.seat ?? 0;
+          await startLastWordsPhase(s, seat, async (after) => {
+            await proceedToNight(after, token);
+          }, token);
+          return;
+        }
+        if (to === "DAY_RESOLVE") {
+          await resolveVotePhase(s, token);
+          return;
+        }
+      } finally {
+        clearMark();
+      }
+    })();
+  }, [gameState.devPhaseJump, getToken, runNightPhaseAction, resolveNight, startDayPhaseInternal, enterVotePhase, startLastWordsPhase, resolveVotePhase, proceedToNight, setGameState]);
+
+  /** 开始游戏 */
+  const startGame = useCallback(async (options?: Partial<StartGameOptions>) => {
+    const {
+      fixedRoles,
+      devPreset,
+      difficulty = "normal",
+      playerCount = 10,
+      gameSessionId,
+      isGenshinMode = false,
+      isSpectatorMode = false,
+      customCharacters = [],
+      preferredRole,
+    } = options ?? {};
+
+    const totalPlayers = playerCount;
+
+    clearCancellableTimeouts();
+    cancelPendingAiRetry();
+    const characterAnimationGeneration = cancellableTimeoutGenerationRef.current;
+    resetDialogueState();
+    setInputText("");
+    setShowTable(false);
+    pendingStartStateRef.current = null;
+    hasContinuedAfterRevealRef.current = false;
+    isAwaitingRoleRevealRef.current = false;
+    badgeSpeechEndRef.current = null;
+    if (showTableTimeoutRef.current !== null) {
+      window.clearTimeout(showTableTimeoutRef.current);
+      showTableTimeoutRef.current = null;
+    }
+
+    setIsLoading(true);
+    let sessionId: string | null = null;
+    try {
+      // 初始化游戏统计追踪器
+      const statsConfig = {
+        playerCount,
+        difficulty,
+        usedCustomKey: true,
+      };
+      gameStatsTracker.start(statsConfig);
+
+      sessionId = await gameSessionTracker.start({
+        playerCount,
+        difficulty,
+        usedCustomKey: true,
+        sessionId: gameSessionId,
+      }).catch((err) => {
+        console.error("[game-session] Failed to create:", err);
+        return null;
+      });
+      if (sessionId) {
+        gameStatsTracker.setSessionId(sessionId);
+      }
+
+      const systemMessages = getSystemMessages();
+      const scenario = isGenshinMode ? undefined : getRandomScenario();
+      const makeId = () => generateUUID();
+
+      // 普通模式每局只随机一次人类座位；之后 UI、阶段推进和 Prompt 都读取同一个 seat。
+      // 观战模式没有人类玩家。
+      const humanSeat = isSpectatorMode ? -1 : getRandomHumanSeat(totalPlayers);
+
+      const aiSeats = Array.from({ length: totalPlayers }, (_, seat) => seat).filter(
+        (seat) => seat !== humanSeat
+      );
+      const aiSeatOrder = (() => {
+        const shuffled = [...aiSeats];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      })();
+
+      const aiModelRefs = sampleModelRefs(isSpectatorMode ? totalPlayers : totalPlayers - 1);
+      const initialPlayers: Player[] = Array.from({ length: totalPlayers }).map((_, seat) => {
+        const isHuman = !isSpectatorMode && seat === humanSeat;
+        const playerId = makeId();
+        return {
+          playerId,
+          seat,
+          displayName: isHuman ? (humanName || "你") : "",
+          avatarSeed: playerId,
+          alive: true,
+          role: "Villager" as Role,
+          alignment: "village",
+          isHuman,
+        };
+      });
+
+      const seedPlayerIds = initialPlayers.map((p) => p.playerId);
+
+      setGameState({
+        ...createInitialGameState(),
+        gameSessionId: sessionId,
+        scenario,
+        players: initialPlayers,
+        phase: "LOBBY",
+        day: 0,
+        difficulty,
+        isGenshinMode,
+        isSpectatorMode,
+      });
+
+      setGameStarted(true);
+      setShowTable(true);
+
+      let characters: GeneratedCharacter[] = [];
+      let genshinModelRefs: ModelRef[] | undefined = undefined;
+      const numAiPlayers = isSpectatorMode ? totalPlayers : totalPlayers - 1;
+
+      // Convert custom characters to GeneratedCharacter format
+      const customCharsToUse = customCharacters.slice(0, numAiPlayers);
+      const customGeneratedCharacters: GeneratedCharacter[] = customCharsToUse.map((cc) => ({
+        displayName: cc.display_name,
+        persona: {
+          styleLabel: "",
+          voiceRules: cc.style_label?.trim() ? [cc.style_label.trim()] : [],
+          mbti: cc.mbti || "",
+          gender: cc.gender,
+          age: cc.age,
+          basicInfo: cc.basic_info?.trim() || undefined,
+          voiceId: undefined,
+        },
+        avatarSeed: cc.avatar_seed || undefined,
+      }));
+
+      const applyCustomCharactersToState = (customList: GeneratedCharacter[]) => {
+        if (customList.length === 0) return;
+        const seatMap = new Map<number, { character: GeneratedCharacter; index: number }>();
+        customList.forEach((character, index) => {
+          const seat = aiSeatOrder[index] ?? aiSeats[index] ?? index;
+          if (Number.isFinite(seat)) {
+            seatMap.set(seat, { character, index });
+          }
+        });
+        if (seatMap.size === 0) return;
+        setGameState((prev) => {
+          const nextPlayers = prev.players.map((pl) => {
+            const match = seatMap.get(pl.seat);
+            if (!match || pl.isHuman) return pl;
+            return {
+              ...pl,
+              displayName: match.character.displayName,
+              avatarSeed: match.character.avatarSeed ?? pl.avatarSeed ?? pl.playerId,
+              agentProfile: {
+                modelRef: aiModelRefs[match.index] ?? getRandomModelRef(),
+                persona: match.character.persona,
+                playerMind: match.character.playerMind,
+              },
+            };
+          });
+          return { ...prev, players: nextPlayers };
+        });
+      };
+
+      // Use custom characters if provided, otherwise generate
+      const hasCustomCharacters = customGeneratedCharacters.length > 0;
+
+      if (hasCustomCharacters) {
+        applyCustomCharactersToState(customGeneratedCharacters);
+        // Fill remaining slots with generated characters if needed
+        const remainingCount = numAiPlayers - customGeneratedCharacters.length;
+        if (remainingCount > 0) {
+          const extraCharacters = await generateCharacters(remainingCount, scenario, {});
+          characters = [...customGeneratedCharacters, ...extraCharacters];
+        } else {
+          characters = customGeneratedCharacters;
+        }
+        
+        // Custom characters appear immediately (no delay), generated ones animate in
+        const customCount = customGeneratedCharacters.length;
+        characters.forEach((character, index) => {
+          const seat = aiSeatOrder[index] ?? aiSeats[index] ?? index;
+          const isCustom = index < customCount;
+          const delay = isCustom ? 0 : 200 + (index - customCount) * 180;
+          
+          scheduleCancellableTimeout(characterAnimationGeneration, () => {
+            setGameState((prev) => {
+              const nextPlayers = prev.players.map((pl) => {
+                if (pl.seat !== seat) return pl;
+                if (pl.isHuman) return pl;
+                return {
+                  ...pl,
+                  displayName: character.displayName,
+                  avatarSeed: character.avatarSeed ?? pl.avatarSeed ?? pl.playerId,
+                  agentProfile: {
+                    modelRef: aiModelRefs[index] ?? getRandomModelRef(),
+                    persona: character.persona,
+                    playerMind: character.playerMind,
+                  },
+                };
+              });
+              return { ...prev, players: nextPlayers };
+            });
+          }, delay);
+        });
+      } else if (isGenshinMode) {
+        genshinModelRefs = buildGenshinModelRefs(numAiPlayers);
+        characters = await generateGenshinModeCharacters(numAiPlayers, genshinModelRefs);
+        
+        // 为 Genshin 模式添加逐个出现的动画效果
+        characters.forEach((character, index) => {
+          const seat = aiSeatOrder[index] ?? aiSeats[index] ?? index;
+          scheduleCancellableTimeout(characterAnimationGeneration, () => {
+            setGameState((prev) => {
+              const nextPlayers = prev.players.map((pl) => {
+                if (pl.seat !== seat) return pl;
+                if (pl.isHuman) return pl;
+                return {
+                  ...pl,
+                  displayName: character.displayName,
+                  avatarSeed: pl.avatarSeed ?? pl.playerId,
+                  agentProfile: {
+                    modelRef: genshinModelRefs![index] ?? getRandomModelRef(),
+                    persona: character.persona,
+                    playerMind: character.playerMind,
+                  },
+                };
+              });
+              return { ...prev, players: nextPlayers };
+            });
+          }, 200 + index * 180); // 逐个出现，每个间隔 180ms
+        });
+      } else {
+        characters = await generateCharacters(numAiPlayers, scenario, {
+          onBaseProfiles: (profiles) => {
+            profiles.forEach((p, i) => {
+              const seat = aiSeatOrder[i] ?? aiSeats[i] ?? i;
+              scheduleCancellableTimeout(characterAnimationGeneration, () => {
+                setGameState((prev) => {
+                  const nextPlayers = prev.players.map((pl) => {
+                    if (pl.seat === seat) return { ...pl, displayName: p.displayName };
+                    return pl;
+                  });
+                  return { ...prev, players: nextPlayers };
+                });
+              }, 420 + i * 260);
+            });
+          },
+          onCharacter: (index, character) => {
+            const seat = aiSeatOrder[index] ?? aiSeats[index] ?? index;
+            scheduleCancellableTimeout(characterAnimationGeneration, () => {
+              setGameState((prev) => {
+                const nextPlayers = prev.players.map((pl) => {
+                  if (pl.seat !== seat) return pl;
+                  if (pl.isHuman) return pl;
+                  return {
+                    ...pl,
+                    displayName: character.displayName,
+                  avatarSeed: pl.avatarSeed ?? pl.playerId,
+                    agentProfile: {
+                      modelRef: aiModelRefs[index] ?? getRandomModelRef(),
+                      persona: character.persona,
+                      playerMind: character.playerMind,
+                    },
+                  };
+                });
+                return { ...prev, players: nextPlayers };
+              });
+            }, 120);
+          },
+          onBatchRetry: async (info) => requestCharacterBatchRetry(info),
+        });
+      }
+
+      if (sessionId) {
+        await gameSessionTracker.markRunning().catch((error) => {
+          console.error("[game-session] Failed to mark session running:", error);
+        });
+      }
+
+      const players = setupPlayers(
+        characters,
+        humanSeat,
+        humanName || "你",
+        totalPlayers,
+        fixedRoles,
+        seedPlayerIds,
+        isGenshinMode ? genshinModelRefs : aiModelRefs,
+        aiSeatOrder,
+        preferredRole
+      );
+
+      let newState: GameState = {
+        ...createInitialGameState(),
+        gameSessionId: sessionId,
+        scenario,
+        players,
+        phase: "NIGHT_START",
+        day: 1,
+        difficulty,
+        isGenshinMode,
+        isSpectatorMode,
+      };
+
+      newState = addSystemMessage(newState, systemMessages.gameStart);
+      newState = addSystemMessage(newState, systemMessages.nightFall(1));
+
+      // Dev 预设处理
+      if (devPreset === "MILK_POISON_TEST") {
+        const newPlayers = newState.players.map((p, i) => {
+          if (i === 0) return { ...p, role: "Guard" as Role, alignment: "village" as const, alive: true };
+          if (i === 1) return { ...p, role: "Witch" as Role, alignment: "village" as const, alive: true };
+          if (i === 2) return { ...p, role: "Werewolf" as Role, alignment: "wolf" as const, alive: true };
+          if (i === 3) return { ...p, role: "Villager" as Role, alignment: "village" as const, alive: true };
+          return { ...p, alive: true };
+        });
+        newState = {
+          ...newState,
+          players: newPlayers,
+          phase: "NIGHT_WITCH_ACTION",
+          day: 1,
+          devMutationId: (newState.devMutationId ?? 0) + 1,
+          devPhaseJump: { to: "NIGHT_WITCH_ACTION", ts: Date.now() },
+          nightActions: {
+            ...newState.nightActions,
+            guardTarget: 3,
+            wolfTarget: 3,
+          },
+          roleAbilities: {
+            ...newState.roleAbilities,
+            witchHealUsed: false,
+            witchPoisonUsed: false,
+            hunterCanShoot: true,
+          },
+        };
+      } else if (devPreset === "LAST_WORDS_TEST") {
+        const alivePlayers = newState.players.filter((p) => p.alive);
+        const votes: Record<string, number> = {};
+        alivePlayers.forEach((p) => {
+          votes[p.playerId] = 0;
+        });
+        newState = {
+          ...newState,
+          phase: "DAY_VOTE",
+          day: 1,
+          devMutationId: (newState.devMutationId ?? 0) + 1,
+          devPhaseJump: { to: "DAY_VOTE", ts: Date.now() },
+          votes,
+        };
+      }
+
+      setGameState(newState);
+
+      // In spectator mode, skip role reveal and start the game immediately
+      if (isSpectatorMode) {
+        pendingStartStateRef.current = null;
+        hasContinuedAfterRevealRef.current = true;
+        isAwaitingRoleRevealRef.current = false;
+        
+        // Start the night phase directly after state is set
+        scheduleCancellableTimeout(characterAnimationGeneration, async () => {
+          const token = getToken();
+          if (isTokenValid(token)) {
+            const systemMessages = getSystemMessages();
+            setDialogue(speakerHost, systemMessages.nightFall(newState.day), false);
+            await playNarrator("nightFall");
+            await runNightPhaseAction(newState, token, "START_NIGHT");
+          }
+        }, 0);
+      } else {
+        pendingStartStateRef.current = devPreset ? null : newState;
+        hasContinuedAfterRevealRef.current = false;
+        isAwaitingRoleRevealRef.current = true;
+      }
+    } catch (error) {
+      clearCancellableTimeouts();
+      if (sessionId) {
+        await gameSessionTracker.markFailed().catch((statusError) => {
+          console.error("[game-session] Failed to mark session failed:", statusError);
+        });
+      }
+      const msg = String(error);
+      if (isQuotaExhaustedMessage(msg)) {
+        toast.error(t("gameLogicMessages.quotaExhausted.title"), {
+          description: t("gameLogicMessages.quotaExhausted.description"),
+          duration: 10000,
+        });
+      } else if (msg.includes("ZenMux API error: 401") || msg.includes(" 401")) {
+        toast.error(t("gameLogicMessages.zenmux401"));
+      } else {
+        toast.error(t("gameLogicMessages.requestFailed"), { description: msg });
+      }
+      setDialogue(t("speakers.system"), t("gameLogicMessages.errorOccurred", { error: String(error) }), false);
+      setGameStarted(false);
+      setShowTable(false);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [clearCancellableTimeouts, getToken, humanName, isTokenValid, resetDialogueState, requestCharacterBatchRetry, runNightPhaseAction, scheduleCancellableTimeout, setDialogue, setGameStarted, setGameState, setInputText, setIsLoading, setShowTable, speakerHost, t]);
+
+  /** 角色揭示后继续 */
+  const continueAfterRoleReveal = useCallback(async () => {
+    const token = getToken();
+    const pending = pendingStartStateRef.current ?? gameStateRef.current;
+    if (!pending) return;
+    // Only meaningful at NIGHT_START (role reveal screen)
+    if (pending.phase !== "NIGHT_START") return;
+    if (hasContinuedAfterRevealRef.current) return;
+
+    hasContinuedAfterRevealRef.current = true;
+    pendingStartStateRef.current = null;
+    isAwaitingRoleRevealRef.current = false;
+
+    if (!isTokenValid(token)) return;
+
+    const systemMessages = getSystemMessages();
+
+    // Set dialogue before playing audio so message box appears immediately
+    setDialogue(speakerHost, systemMessages.nightFall(pending.day), false);
+    
+    // 播放第一晚的"天黑请闭眼"旁白
+    await playNarrator("nightFall");
+    
+    await runNightPhaseAction(pending, token, "START_NIGHT");
+  }, [getToken, isTokenValid, runNightPhaseAction, setDialogue, speakerHost]);
+
+  /** 重新开始 */
+  const restartGame = useCallback(() => {
+    flowController.current.interrupt();
+    cancelPendingAiRetry();
+    cancelAiAssist();
+    void gameSessionTracker.abandon().catch((error) => {
+      console.error("[game-session] Failed to abandon session:", error);
+    });
+    gameSessionTracker.reset();
+    clearCancellableTimeouts();
+
+    // Clear persisted game state from localStorage
+    clearPersistedGameState();
+    
+    setGameState(createInitialGameState());
+    resetDialogueState();
+    setInputText("");
+    setShowTable(false);
+    setGameStarted(false);
+
+    pendingStartStateRef.current = null;
+    hasContinuedAfterRevealRef.current = false;
+    isAwaitingRoleRevealRef.current = false;
+    badgeSpeechEndRef.current = null;
+    if (showTableTimeoutRef.current !== null) {
+      window.clearTimeout(showTableTimeoutRef.current);
+      showTableTimeoutRef.current = null;
+    }
+  }, [cancelAiAssist, clearCancellableTimeouts, resetDialogueState, setGameState]);
+
+  /** 人类发言 */
+  const handleHumanSpeech = useCallback(async () => {
+    if (!inputText.trim() || !humanPlayer) return;
+
+    const s = gameStateRef.current;
+    const isMyTurn = (s.phase === "DAY_SPEECH" || s.phase === "DAY_LAST_WORDS" || s.phase === "DAY_BADGE_SPEECH" || s.phase === "DAY_PK_SPEECH") && s.currentSpeakerSeat === humanPlayer.seat;
+    if (!isMyTurn) return;
+
+    const speech = inputText.trim();
+    setInputText("");
+    // 玩家自己发出去了：作废可能还在路上的 AI 草稿，避免它再盖回输入框
+    aiAssistRequestRef.current?.controller.abort();
+    aiAssistRequestRef.current = null;
+    setIsAiAssistLoading(false);
+
+    const currentState = addPlayerMessage(gameStateRef.current, humanPlayer.playerId, speech);
+    setGameState(currentState);
+  }, [inputText, humanPlayer, setGameState]);
+
+  /**
+   * 「AI 助我」：让 AI 起草一段属于这名玩家的公开发言。
+   *
+   * 结果只写进输入框，不发送——玩家可以改完再点发送。
+   * 生成期间如果换轮/换阶段/重开，旧请求作废，不会把过期草稿盖到新输入框上。
+   */
+  const handleAiAssist = useCallback(async () => {
+    if (!humanPlayer) return;
+    if (aiAssistRequestRef.current) return;
+
+    const startState = gameStateRef.current;
+    const isMyTurn =
+      PHASE_CATEGORIES.SPEECH_PHASES.includes(startState.phase as typeof PHASE_CATEGORIES.SPEECH_PHASES[number]) &&
+      startState.currentSpeakerSeat === humanPlayer.seat;
+    if (!isMyTurn) return;
+
+    const controller = new AbortController();
+    const id = generateUUID();
+    aiAssistRequestRef.current = { id, controller };
+    setIsAiAssistLoading(true);
+
+    try {
+      const draft = await generateHumanSpeechSuggestion(startState, humanPlayer, {
+        signal: controller.signal,
+        hint: inputText,
+      });
+      const isCurrent = aiAssistRequestRef.current?.id === id && !controller.signal.aborted;
+      const liveState = gameStateRef.current;
+      const stillMyTurn =
+        liveState.phase === startState.phase && liveState.currentSpeakerSeat === startState.currentSpeakerSeat;
+      if (!isCurrent || !stillMyTurn) return;
+      setInputText(draft);
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      console.error("[ai-assist] 生成发言草稿失败:", error);
+      const message = error instanceof Error ? error.message : "";
+      // 未配置网关属于可操作提示，直接透出原文；其余统一给一句可重试的提示。
+      toast.error(message.includes("尚未配置") ? message : t("dialog.input.aiAssistFailed"));
+    } finally {
+      if (aiAssistRequestRef.current?.id === id) {
+        aiAssistRequestRef.current = null;
+        setIsAiAssistLoading(false);
+      }
+    }
+  }, [humanPlayer, inputText, t]);
+
+  /** 人类结束发言 */
+  const handleFinishSpeaking = useCallback(async () => {
+    if (!humanPlayer) return;
+
+    if (gameStateRef.current.phase === "DAY_LAST_WORDS") {
+      const next = afterLastWordsRef.current;
+      afterLastWordsRef.current = null;
+      if (next) {
+        await delay(500);
+        await next(gameStateRef.current);
+      }
+      return;
+    }
+
+    const startState = gameStateRef.current;
+    const startGameId = startState.gameId;
+    const startPhase = startState.phase;
+
+    await delay(300);
+
+    const liveState = gameStateRef.current;
+    if (liveState.gameId !== startGameId) return;
+    if (liveState.phase !== startPhase) return;
+
+    const token = getToken();
+    await runDaySpeechAction(liveState, token, "ADVANCE_SPEAKER");
+  }, [humanPlayer, getToken, runDaySpeechAction]);
+
+  /** 下一轮按钮 */
+  const handleNextRound = useCallback(async () => {
+    if (isSpeechBlocked()) return;
+    const startState = gameStateRef.current;
+    const startGameId = startState.gameId;
+    const startPhase = startState.phase;
+
+    if (startPhase !== "DAY_SPEECH" && startPhase !== "DAY_LAST_WORDS" && startPhase !== "DAY_BADGE_SPEECH" && startPhase !== "DAY_PK_SPEECH") {
+      return;
+    }
+
+    setWaitingForNextRound(false);
+    await delay(300);
+
+    const liveState = gameStateRef.current;
+    if (liveState.gameId !== startGameId) return;
+    if (liveState.phase !== startPhase) return;
+
+    const token = getToken();
+    await runDaySpeechAction(liveState, token, "ADVANCE_SPEAKER");
+  }, [isSpeechBlocked, getToken, runDaySpeechAction, setWaitingForNextRound]);
+
+  /** 人类投票 */
+  const handleHumanVote = useCallback(async (targetSeat: number) => {
+    if (!humanPlayer) return;
+    if (!humanPlayer.alive) return;
+
+    // Revealed Idiot cannot vote
+    const baseState0 = gameStateRef.current;
+    if (humanPlayer.role === "Idiot" && baseState0.roleAbilities.idiotRevealed) return;
+
+    const baseState = baseState0;
+    if (baseState.phase !== "DAY_VOTE" && baseState.phase !== "DAY_BADGE_ELECTION") return;
+    const targetPlayer = baseState.players.find((p) => p.seat === targetSeat);
+    if (!targetPlayer || !targetPlayer.alive) return;
+
+    if (baseState.phase === "DAY_BADGE_ELECTION") {
+      if (typeof baseState.badge.votes?.[humanPlayer.playerId] === "number") return;
+      const candidates = baseState.badge.candidates || [];
+      if (candidates.includes(humanPlayer.seat)) {
+        console.warn("[wolfcha] Candidate cannot vote in badge election");
+        return;
+      }
+
+      const nextState: GameState = {
+        ...baseState,
+        badge: {
+          ...baseState.badge,
+          votes: { ...baseState.badge.votes, [humanPlayer.playerId]: targetSeat },
+        },
+      };
+      setGameState(nextState);
+      gameStateRef.current = nextState;
+
+      await delay(200);
+      await badgePhase.maybeResolveBadgeElection(nextState);
+      return;
+    }
+
+    if (typeof baseState.votes[humanPlayer.playerId] === "number") return;
+    if (baseState.pkSource === "vote" && Array.isArray(baseState.pkTargets) && baseState.pkTargets.length > 0) {
+      if (!baseState.pkTargets.includes(targetSeat)) {
+        console.warn("[wolfcha] Vote target not in PK list");
+        return;
+      }
+    }
+
+    // 使用函数式更新确保获取最新状态（解决AI投票后状态同步问题）
+    let updatedState: GameState | null = null;
+    setGameState((prevState) => {
+      updatedState = {
+        ...prevState,
+        votes: { ...prevState.votes, [humanPlayer.playerId]: targetSeat },
+      };
+      return updatedState;
+    });
+
+    // 等待状态更新完成
+    await delay(200);
+    
+    // 从 ref 获取最新状态（setGameState 的函数式更新会确保 prevState 是最新的）
+    const latestState = updatedState || gameStateRef.current;
+    gameStateRef.current = latestState;
+
+    // 检查是否所有人都投票了（已翻牌白痴除外）
+    const revealedIdiotId2 = latestState.roleAbilities.idiotRevealed
+      ? latestState.players.find((p) => p.role === "Idiot" && p.alive)?.playerId
+      : undefined;
+    const aliveIds = latestState.players.filter((p) => p.alive && p.playerId !== revealedIdiotId2).map((p) => p.playerId);
+    const allVoted = aliveIds.every((id) => typeof latestState.votes[id] === "number");
+    
+    console.log("[wolfcha] handleHumanVote: allVoted =", allVoted, "votes count =", Object.keys(latestState.votes).length, "alive count =", aliveIds.length);
+    
+    if (allVoted && !isWaitingForAI) {
+      const token = getToken();
+      await resolveVotesSafely(latestState, token);
+    }
+  }, [humanPlayer, setGameState, badgePhase, getToken, resolveVotesSafely, isWaitingForAI]);
+
+  /** 夜晚行动 */
+  const handleNightAction = useCallback(async (targetSeat: number, witchAction?: "save" | "poison" | "pass") => {
+    if (!humanPlayer) return;
+    if (!humanPlayer.alive && gameState.phase !== "HUNTER_SHOOT") return;
+
+    const token = getToken();
+    const systemMessages = getSystemMessages();
+    let currentState = gameState;
+
+    // 守卫保护
+    if (gameState.phase === "NIGHT_GUARD_ACTION" && humanPlayer.role === "Guard") {
+      if (currentState.nightActions.lastGuardTarget === targetSeat) {
+        toast.error(t("gameLogicMessages.guardNoRepeat"));
+        return;
+      }
+      const targetPlayer = currentState.players.find((p) => p.seat === targetSeat);
+      currentState = {
+        ...currentState,
+        nightActions: { ...currentState.nightActions, guardTarget: targetSeat },
+      };
+      setDialogue(t("speakers.system"), t("gameLogicMessages.youProtected", { seat: targetSeat + 1, name: targetPlayer?.displayName || "" }), false);
+      setGameState(currentState);
+
+      await delay(1000);
+      await waitForUnpause();
+      await runNightPhaseAction(currentState, token, "CONTINUE_NIGHT_AFTER_GUARD");
+    }
+    // 狼人击杀
+    else if (gameState.phase === "NIGHT_WOLF_ACTION" && isWolfRole(humanPlayer.role)) {
+      const targetPlayer = currentState.players.find((p) => p.seat === targetSeat);
+      const wolves = currentState.players.filter((p) => isWolfRole(p.role) && p.alive);
+      
+      // 简化逻辑：人类狼人决定目标，其他AI狼人自动达成共识
+      const wolfVotes: Record<string, number> = {};
+      for (const wolf of wolves) {
+        wolfVotes[wolf.playerId] = targetSeat;
+      }
+
+      currentState = {
+        ...currentState,
+        nightActions: { ...currentState.nightActions, wolfVotes, wolfTarget: targetSeat },
+      };
+      
+      // 显示狼队达成一致的确认消息
+      setDialogue(t("speakers.system"), t("gameLogicMessages.wolfDecided", { seat: targetSeat + 1, name: targetPlayer?.displayName || "" }), false);
+      setGameState(currentState);
+
+      await delay(800);
+      await waitForUnpause();
+      await runNightPhaseAction(currentState, token, "CONTINUE_NIGHT_AFTER_WOLF");
+    }
+    // 女巫用药
+    else if (gameState.phase === "NIGHT_WITCH_ACTION" && humanPlayer.role === "Witch") {
+      if (witchAction === "save" && !currentState.roleAbilities.witchHealUsed) {
+        currentState = {
+          ...currentState,
+          nightActions: { ...currentState.nightActions, witchSave: true },
+          roleAbilities: { ...currentState.roleAbilities, witchHealUsed: true },
+        };
+        setDialogue(t("speakers.system"), t("gameLogicMessages.usedAntidote"), false);
+      } else if (witchAction === "poison" && !currentState.roleAbilities.witchPoisonUsed) {
+        const targetPlayer = currentState.players.find((p) => p.seat === targetSeat);
+        currentState = {
+          ...currentState,
+          nightActions: { ...currentState.nightActions, witchPoison: targetSeat },
+          roleAbilities: { ...currentState.roleAbilities, witchPoisonUsed: true },
+        };
+        setDialogue(t("speakers.system"), t("gameLogicMessages.usedPoison", { seat: targetSeat + 1, name: targetPlayer?.displayName || "" }), false);
+      } else {
+        setDialogue(t("speakers.system"), t("gameLogicMessages.noPotion"), false);
+      }
+      setGameState(currentState);
+
+      await delay(800);
+      await waitForUnpause();
+      await runNightPhaseAction(currentState, token, "CONTINUE_NIGHT_AFTER_WITCH");
+    }
+    // 预言家查验
+    else if (gameState.phase === "NIGHT_SEER_ACTION" && humanPlayer.role === "Seer") {
+      // Check if seer has already checked this night
+      if (currentState.nightActions.seerTarget !== undefined) {
+        return;
+      }
+      const targetPlayer = currentState.players.find((p) => p.seat === targetSeat);
+      const isWolf = targetPlayer ? targetPlayer.alignment === "wolf" : false;
+      const seerHistory = currentState.nightActions.seerHistory || [];
+
+      currentState = {
+        ...currentState,
+        nightActions: {
+          ...currentState.nightActions,
+          seerTarget: targetSeat,
+          seerResult: { targetSeat, isWolf: isWolf || false },
+          seerHistory: [...seerHistory, { targetSeat, isWolf: isWolf || false, day: currentState.day }],
+        },
+      };
+      setDialogue(t("speakers.seerResult"), t("gameLogicMessages.seerResultText", { seat: targetSeat + 1, name: targetPlayer?.displayName || "", result: isWolf ? t("gameLogicMessages.werewolfResult") : t("gameLogicMessages.goodResult") }), false);
+      setGameState(currentState);
+
+      nightContinueRef.current = async (s) => {
+        await resolveNight(s, token, async (resolvedState) => {
+          await startDayPhaseInternal(resolvedState, token);
+        });
+      };
+      return;
+    }
+    // 猎人开枪
+    else if (gameState.phase === "HUNTER_SHOOT" && humanPlayer.role === "Hunter") {
+      const diedAtNight = (currentState as GameState & { _hunterDiedAtNight?: boolean })._hunterDiedAtNight ?? true;
+      if (targetSeat >= 0) {
+        currentState = killPlayer(currentState, targetSeat);
+        const target = currentState.players.find((p) => p.seat === targetSeat);
+        if (target) {
+          currentState = addSystemMessage(currentState, systemMessages.hunterShoot(humanPlayer.seat + 1, targetSeat + 1, target.displayName));
+          setDialogue(speakerHost, systemMessages.hunterShoot(humanPlayer.seat + 1, targetSeat + 1, target.displayName), false);
+        }
+
+        const shot = { hunterSeat: humanPlayer.seat, targetSeat };
+        if (diedAtNight) {
+          const prevNightRecord = (currentState.nightHistory || {})[currentState.day] || {};
+          currentState = {
+            ...currentState,
+            nightHistory: {
+              ...(currentState.nightHistory || {}),
+              [currentState.day]: { ...prevNightRecord, hunterShot: shot },
+            },
+          };
+        } else {
+          const prevDayRecord = (currentState.dayHistory || {})[currentState.day] || {};
+          currentState = {
+            ...currentState,
+            dayHistory: {
+              ...(currentState.dayHistory || {}),
+              [currentState.day]: { ...prevDayRecord, hunterShot: shot },
+            },
+          };
+        }
+        setGameState(currentState);
+      }
+
+      const winner = checkWinCondition(currentState);
+      if (winner) {
+        await endGameSafely(currentState, winner);
+        return;
+      }
+
+      await continueAfterHunterShot(currentState, async (nextState) => {
+        await delay(1200);
+        if (diedAtNight) {
+          let dayState = transitionPhase(nextState, "DAY_START");
+          dayState = addSystemMessage(dayState, systemMessages.dayBreak);
+          setGameState(dayState);
+          await delay(800);
+          await startDayPhaseInternal(dayState, token, { skipAnnouncements: true });
+        } else {
+          await proceedToNight(nextState, token);
+        }
+      });
+    }
+    // 白狼王自爆
+    else if (gameState.phase === "WHITE_WOLF_KING_BOOM" && humanPlayer.role === "WhiteWolfKing") {
+      // Kill the White Wolf King himself
+      currentState = killPlayer(currentState, humanPlayer.seat);
+      currentState = {
+        ...currentState,
+        roleAbilities: { ...currentState.roleAbilities, whiteWolfKingBoomUsed: true },
+      };
+
+      if (targetSeat >= 0) {
+        // Kill the target
+        currentState = killPlayer(currentState, targetSeat);
+        const target = currentState.players.find((p) => p.seat === targetSeat);
+        if (target) {
+          const msg = t("system.whiteWolfKingBoom", { seat: humanPlayer.seat + 1, name: humanPlayer.displayName, targetSeat: targetSeat + 1, targetName: target.displayName });
+          currentState = addSystemMessage(currentState, msg);
+          setDialogue(speakerHost, msg, false);
+        }
+        const prevDayRecord = (currentState.dayHistory || {})[currentState.day] || {};
+        currentState = {
+          ...currentState,
+          dayHistory: {
+            ...(currentState.dayHistory || {}),
+            [currentState.day]: { ...prevDayRecord, whiteWolfKingBoom: { boomSeat: humanPlayer.seat, targetSeat } },
+          },
+        };
+      } else {
+        const msg = t("system.whiteWolfKingBoomNoTarget", { seat: humanPlayer.seat + 1, name: humanPlayer.displayName });
+        currentState = addSystemMessage(currentState, msg);
+        setDialogue(speakerHost, msg, false);
+      }
+
+      // 白狼王自爆带走的人没有遗言，如果被带走的人或白狼王是警长，警徽直接撕毁
+      const boomSheriffSeat = currentState.badge.holderSeat;
+      if (boomSheriffSeat !== null && (!currentState.players.find((p) => p.seat === boomSheriffSeat)?.alive)) {
+        const boomSheriffPlayer = currentState.players.find((p) => p.seat === boomSheriffSeat);
+        const forceTornMsg = t("system.badgeForceTorn", { seat: boomSheriffSeat + 1, name: boomSheriffPlayer?.displayName || "" });
+        currentState = addSystemMessage(currentState, forceTornMsg);
+        currentState = {
+          ...currentState,
+          badge: { ...currentState.badge, holderSeat: null },
+        };
+      }
+
+      setGameState(currentState);
+
+      // 白狼王自爆带走猎人时，猎人可以开枪（非毒死，技能可发动）
+      if (targetSeat >= 0) {
+        const boomTarget = currentState.players.find((p) => p.seat === targetSeat);
+        if (boomTarget?.role === "Hunter" && currentState.roleAbilities.hunterCanShoot) {
+          await delay(1200);
+          const hunterFn = hunterDeathRef.current;
+          if (hunterFn) await hunterFn(currentState, boomTarget, false);
+          return;
+        }
+      }
+
+      const winner = checkWinCondition(currentState);
+      if (winner) {
+        await endGameSafely(currentState, winner);
+        return;
+      }
+
+      await delay(1200);
+      await proceedToNight(currentState, token);
+    }
+  }, [gameState, humanPlayer, setGameState, setDialogue, setIsWaitingForAI, waitForUnpause, getToken, runNightPhaseAction, resolveNight, startDayPhaseInternal, proceedToNight, endGameSafely, transitionPhase, speakerHost, t, continueAfterHunterShot]);
+
+  /** 人类白狼王自爆（进入 WHITE_WOLF_KING_BOOM 阶段） */
+  const handleWhiteWolfKingBoom = useCallback(async () => {
+    if (!humanPlayer || humanPlayer.role !== "WhiteWolfKing" || !humanPlayer.alive) return;
+    const currentState = gameStateRef.current;
+    if (currentState.roleAbilities.whiteWolfKingBoomUsed) return;
+    if (currentState.phase !== "DAY_SPEECH" && currentState.phase !== "DAY_BADGE_SPEECH" && currentState.phase !== "DAY_PK_SPEECH") return;
+
+    // Transition to WWK boom phase
+    const nextState = transitionPhase(currentState, "WHITE_WOLF_KING_BOOM");
+    setGameState(nextState);
+    clearDialogue();
+    setDialogue(speakerHost, t("ui.whiteWolfKingBoom"), false);
+  }, [humanPlayer, transitionPhase, setGameState, clearDialogue, setDialogue, speakerHost, t]);
+
+  /** 人类警长移交 */
+  const handleHumanBadgeTransfer = useCallback(async (targetSeat: number) => {
+    await badgePhase.handleHumanBadgeTransfer(targetSeat);
+  }, [badgePhase]);
+
+  /** 推进发言 */
+  const advanceSpeech = useCallback(async (): Promise<{ finished: boolean; shouldAdvanceToNextSpeaker: boolean; shouldAutoAdvanceToNextAI: boolean }> => {
+    if (gameStateRef.current.phase === "GAME_END" || gameStateRef.current.winner) {
+      clearSpeechQueue();
+      clearDialogue();
+      setIsWaitingForAI(false);
+      setWaitingForNextRound(false);
+      return { finished: true, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+    if (gameStateRef.current.phase.includes("NIGHT")) {
+      const cont = nightContinueRef.current;
+      if (cont) {
+        nightContinueRef.current = null;
+        clearDialogue();
+        setIsWaitingForAI(false);
+        setWaitingForNextRound(false);
+        await cont(gameStateRef.current);
+        return { finished: true, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+      }
+      return { finished: false, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+
+    const queue = getSpeechQueue();
+    if (!queue || (queue.request && !queue.request.isValid())) {
+      return { finished: false, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+
+    if (queue.isStreaming && !isCurrentSegmentCompleted()) {
+      return { finished: false, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+
+    const { segments, currentIndex, player } = queue;
+
+    let nextState = gameStateRef.current;
+
+    // 将当前句子添加到消息列表（如果尚未提交）
+    const currentSegment = segments[currentIndex];
+    if (currentSegment && currentSegment.trim().length > 0 && !isCurrentSegmentCommitted()) {
+      nextState = addPlayerMessage(nextState, player.playerId, currentSegment, {
+        id: queue.request ? `${queue.request.id}:${currentIndex}` : undefined,
+      });
+      setGameState(nextState);
+      markCurrentSegmentCommitted();
+
+      const rawTranscript = buildRawDayTranscript(nextState);
+      const shouldSummarizeEarly =
+        nextState.phase === "DAY_SPEECH" &&
+        nextState.day > 0 &&
+        !nextState.dailySummaries?.[nextState.day]?.length &&
+        rawTranscript.length > 10000;
+      if (shouldSummarizeEarly) {
+        void maybeGenerateDailySummary(nextState)
+          .then((summarized) => {
+            setGameState((prev) => {
+              if (prev.gameId !== summarized.gameId || prev.day !== summarized.day) return prev;
+              return {
+                ...prev,
+                dailySummaries: summarized.dailySummaries,
+                dailySummaryFacts: summarized.dailySummaryFacts,
+                dailySummaryVoteData: summarized.dailySummaryVoteData ?? prev.dailySummaryVoteData,
+              };
+            });
+          })
+          .catch(() => {});
+      }
+    }
+
+    const result = advanceSpeechQueue();
+    if (!result) return { finished: false, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+
+    if (!result.finished) {
+      return { finished: false, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+
+    setIsWaitingForAI(false);
+
+    if (isSpeechBlocked()) {
+      return { finished: true, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: false };
+    }
+    if (result.afterSpeech) {
+      await result.afterSpeech(nextState);
+      // 如果下一个发言者是AI，返回标志让调用方知道可以自动推进
+      return { finished: true, shouldAdvanceToNextSpeaker: false, shouldAutoAdvanceToNextAI: result.shouldAutoAdvanceToNextAI ?? false };
+    }
+
+    // 不设置 waitingForNextRound，直接返回 shouldAdvanceToNextSpeaker: true
+    // 让调用方立即调用 handleNextRound，避免单条消息时需要按两次回车的问题
+    return { finished: true, shouldAdvanceToNextSpeaker: true, shouldAutoAdvanceToNextAI: false };
+  }, [clearDialogue, clearSpeechQueue, isSpeechBlocked, buildRawDayTranscript, maybeGenerateDailySummary, setIsWaitingForAI, setWaitingForNextRound, getSpeechQueue, advanceSpeechQueue, setGameState, isCurrentSegmentCommitted, markCurrentSegmentCommitted, isCurrentSegmentCompleted]);
+
+  /** 切换暂停 */
+  const togglePause = useCallback(() => {
+    setGameState((prev) => ({
+      ...prev,
+      isPaused: !prev.isPaused,
+    }));
+  }, [setGameState]);
+
+  // ============================================
+  // 返回 API
+  // ============================================
+  return {
+    // State
+    humanName: humanName || "",
+    setHumanName,
+    gameStarted,
+    gameState,
+    isLoading,
+    isWaitingForAI,
+    waitingForNextRound,
+    currentDialogue,
+    inputText,
+    setInputText,
+    isAiAssistLoading,
+    showTable,
+    logRef,
+    humanPlayer,
+    isNight,
+    characterRetry,
+    confirmCharacterBatchRetry,
+
+    // Actions
+    startGame,
+    continueAfterRoleReveal,
+    restartGame,
+    handleHumanSpeech,
+    handleAiAssist,
+    handleFinishSpeaking,
+    handleBadgeSignup: badgePhase.handleBadgeSignup,
+    handleHumanVote,
+    handleNightAction,
+    handleHumanBadgeTransfer,
+    handleWhiteWolfKingBoom,
+    handleNextRound,
+    scrollToBottom,
+    advanceSpeech,
+    togglePause,
+    markCurrentSegmentCompleted,
+    isCurrentSegmentCompleted,
+    shouldAutoAdvanceToNextAI,
+  };
+}

@@ -1,0 +1,6 @@
+1:"$Sreact.fragment"
+2:I[4321,[],"ViewportBoundary"]
+3:I[4321,[],"MetadataBoundary"]
+4:"$Sreact.suspense"
+5:I[7172,[],"IconMark"]
+0:{"buildId":"KSvVTceyEanziPKmHaJt5","rsc":["$","$1","h",{"children":[null,["$","$L2",null,{"children":[["$","meta","0",{"charSet":"utf-8"}],["$","meta","1",{"name":"viewport","content":"width=device-width, initial-scale=1"}]]}],["$","div",null,{"hidden":true,"children":["$","$L3",null,{"children":["$","$4",null,{"name":"Next.Metadata","children":[["$","title","0",{"children":"狼人杀｜线上真人身份局"}],["$","meta","1",{"name":"description","content":"纯真人 6–12 人在线狼人杀：8 个角色、警长竞选、猎人开枪、白狼王自爆，打字发言 180 秒，账号就是平台账号。"}],["$","meta","2",{"name":"application-name","content":"狼人杀｜线上真人身份局"}],["$","link","3",{"rel":"icon","href":"/werewolf/brand/wolfcha-favicon.svg"}],["$","$L5","4",{}]]}]}]}],null]}],"loading":null,"isPartial":false}

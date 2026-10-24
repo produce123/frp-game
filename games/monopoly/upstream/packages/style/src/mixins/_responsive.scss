@@ -1,0 +1,27 @@
+// =============================================================================
+// 响应式混入
+// =============================================================================
+
+@import '../variables/breakpoints';
+
+// 最小宽度媒体查询
+@mixin fp-min-width($breakpoint) {
+  @if map-has-key($fp-breakpoints, $breakpoint) {
+    @media (min-width: map-get($fp-breakpoints, $breakpoint)) {
+      @content;
+    }
+  } @else {
+    @warn "`#{$breakpoint}` 不是有效的断点名称";
+  }
+}
+
+// 最大宽度媒体查询
+@mixin fp-max-width($breakpoint) {
+  @if map-has-key($fp-breakpoints, $breakpoint) {
+    @media (max-width: map-get($fp-breakpoints, $breakpoint) - 1px) {
+      @content;
+    }
+  } @else {
+    @warn "`#{$breakpoint}` 不是有效的断点名称";
+  }
+}

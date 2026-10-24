@@ -1,0 +1,26 @@
+{
+  "name": "frp-game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "自托管网页桌游平台：一个零依赖 Node 进程 + 账号/好友/房间，8 个游戏（3 个自建 + 无名杀/狼人杀/斗地主/大富翁/莲花广麻）；面向小团体，禁止商用",
+  "license": "MIT",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node server/server.mjs",
+    "test": "node --test --test-concurrency=2 \"tests/*.test.mjs\"",
+    "test:browser": "node tests/browser.smoke.mjs && node tests/room.browser.mjs && node tests/login-race.browser.mjs && node tests/shared.browser.mjs && node tests/react-lock.browser.mjs && node tests/werewolf.browser.mjs && node tests/ddz.browser.mjs && node tests/monopoly.browser.mjs && node tests/mahjong.browser.mjs && node tests/mahjong.join.browser.mjs && node tests/fullscreen.browser.mjs",
+    "test:room": "node tests/room.browser.mjs",
+    "test:login": "node tests/login-race.browser.mjs",
+    "test:react": "node tests/react-lock.browser.mjs",
+    "test:werewolf": "node --test tests/werewolf.engine.test.mjs tests/werewolf.test.mjs && node tests/werewolf.browser.mjs",
+    "test:ddz": "node --test games/ddz/tests/*.test.mjs && node --test tests/ddz.test.mjs && node tests/ddz.browser.mjs",
+    "test:monopoly": "node --test tests/monopoly.test.mjs && node tests/monopoly.browser.mjs",
+    "test:mahjong": "node --test tests/mahjong.test.mjs && node tests/mahjong.browser.mjs && node tests/mahjong.join.browser.mjs",
+    "test:mahjong:node": "node --test tests/mahjong.test.mjs",
+    "check:noname": "node tools/check-noname.mjs",
+    "noname:check": "node tools/noname-update.mjs --check"
+  }
+}

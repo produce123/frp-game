@@ -1,0 +1,78 @@
+// =============================================================================
+// Fatpaper 颜色变量系统
+// 命名规范: $fp-color-{semantic}-{variant}
+// =============================================================================
+
+// ---- 基础品牌色 ----
+$fp-color-primary: #ff8f00;
+$fp-color-secondary: #ffa000;
+$fp-color-tertiary: #ffc10f;
+
+// ---- 语义色 ----
+$fp-color-success: #67c23a;
+$fp-color-warning: #e6a23c;
+$fp-color-error: #f56c6c;
+$fp-color-info: #909399;
+$fp-color-message: #095fce;
+
+// ---- 中性色 ----
+$fp-color-black: #000000;
+$fp-color-white: #ffffff;
+$fp-color-text-base: #303030;
+
+// ---- 背景色 ----
+$fp-color-bg: #ffcc80;
+$fp-color-bg-transparent: rgba(255, 255, 255, 0.65);
+$fp-color-bg-light: #fff8e1;
+$fp-color-bg-disable: #c8c9cc;
+
+$fp-color-bg-success: #e1f3d8;
+$fp-color-bg-warning: #faecd8;
+$fp-color-bg-error: #fde2e2;
+$fp-color-bg-message: #cedfff;
+
+// ---- 边框色 ----
+$fp-color-border-success: #d1edc4;
+$fp-color-border-warning: #f8e3c5;
+$fp-color-border-error: #fcd3d3;
+$fp-color-border-message: #a8d4ff;
+
+$fp-color-border-base: #dcdfe6;
+$fp-color-border-light: #e4e7ed;
+$fp-color-border-lighter: #ebeef5;
+$fp-color-border-extra-light: #f2f6fc;
+
+// ---- 文字色 ----
+$fp-color-text-primary: #ff8800;
+$fp-color-text-secondary: #606266;
+$fp-color-text-regular: #606266;
+$fp-color-text-placeholder: #c0c4cc;
+$fp-color-text-white: #ffffff;
+$fp-color-text-disable: #909399;
+
+$fp-color-text-success: $fp-color-success;
+$fp-color-text-warning: $fp-color-warning;
+$fp-color-text-error: $fp-color-error;
+$fp-color-text-message: $fp-color-message;
+
+// ---- 状态变体 ----
+$fp-color-primary-hover: mix($fp-color-white, $fp-color-primary, 20%);
+$fp-color-primary-active: mix($fp-color-black, $fp-color-primary, 10%);
+$fp-color-primary-light-5: mix($fp-color-white, $fp-color-primary, 50%);
+$fp-color-primary-light-9: mix($fp-color-white, $fp-color-primary, 90%);
+
+$fp-color-success-hover: mix($fp-color-white, $fp-color-success, 20%);
+$fp-color-success-active: mix($fp-color-black, $fp-color-success, 10%);
+
+$fp-color-warning-hover: mix($fp-color-white, $fp-color-warning, 20%);
+$fp-color-warning-active: mix($fp-color-black, $fp-color-warning, 10%);
+
+$fp-color-error-hover: mix($fp-color-white, $fp-color-error, 20%);
+$fp-color-error-active: mix($fp-color-black, $fp-color-error, 10%);
+
+$fp-color-info-hover: mix($fp-color-white, $fp-color-info, 20%);
+$fp-color-info-active: mix($fp-color-black, $fp-color-info, 10%);
+
+// ---- 遮罩色 ----
+$fp-color-mask-white: rgba(255, 255, 255, 0.9);
+$fp-color-mask-black: rgba(0, 0, 0, 0.45);

@@ -1,0 +1,724 @@
+<script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import * as THREE from 'three'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
+import { OutlineEffect } from 'three/addons/effects/OutlineEffect.js'
+import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js'
+import { preloadTileImages, preloadedTileImages, tileBackUrl, type TileAssetTheme } from '../game/core/presentation/tileAssets'
+import type { TileType } from '../game/core/contracts/types'
+import { createAdaptiveQualityController, parseQualityOverride, QUALITY_LEVELS } from './table/three/adaptiveQuality'
+import { createDicePresenter } from './table/three/dicePresenter'
+import { createPerfHud } from './table/three/perfHud'
+import { createStaticTableScene } from './table/three/staticTableScene'
+import {
+  DEFAULT_TABLE_SCENE_PROFILE,
+  applyDirectionalShadowProfile,
+  applyRendererProfile,
+  responsiveCameraFov,
+  shadowMapSizeForQuality,
+  tableCameraPosition,
+  tableSceneRenderProfile,
+  type TableSceneRenderProfile,
+} from './table/three/sceneRenderProfile'
+import { tableThemeByName, type TableTheme } from './table/three/tableTheme'
+import { createTileInstanceRenderer } from './table/three/tileInstanceRenderer'
+import { TABLE_LAYOUT } from '../game/core/presentation/tableLayout'
+import { createWinEffectPresenter } from './table/three/winEffectPresenter'
+import { createTableTilePresenter } from './table/three/tableTilePresenter'
+import { tileMarkerFor } from './table/three/tileMarker'
+import type { TableProps } from './table/three/tableRenderTypes'
+import { bloodFlowPileAnchor } from './table/three/bloodFlowWinPile'
+import { createBloodFlowWinEffects } from './table/three/bloodFlowWinEffects'
+import { cuePhase } from '../game/variants/lotus/bloodFlow/presentation'
+import { createKongWeather } from './table/three/kongWeather'
+import { preloadWeatherAssets } from './table/three/kongWeatherAssets'
+
+const props = withDefaults(defineProps<TableProps>(), {
+  players: () => [], localSeat: 0, currentPlayer: -1, lastDiscard: null, wall: () => [], wallHeadDrawn: 0, wallCount: 0, horses: () => [],
+  revealHands: false, winnerIndex: -1, winEffect: null, winPresentation: null,
+  jokerTiles: () => [],
+  wildcardTiles: () => [],
+  dealAnimation: () => ({ playerIndex: -1, count: 0, serial: 0 }),
+  openingStage: null, diceValues: () => [1, 1], dealerIndex: 0, diceThrowerIndex: 0,
+  tableActionEvent: null,
+})
+const emit = defineEmits<{
+  ready: []
+  loadError: [message: string]
+  pileAnchors: [anchors: { left: number; top: number }[]]
+}>()
+
+const canvas = ref(null)
+let renderer
+let outlineEffect: OutlineEffect | null = null
+let scene
+let camera
+let resizeObserver
+let animationFrame
+let destroyed = false
+/**
+ * 还没结束的 compileAsync（着色器编译）。
+ *
+ * 卸载时必须等它结束再 dispose：three 的 `compileAsync` 用 `setTimeout` 轮询
+ * `checkMaterialsReady()`，而 `renderer.dispose()` 会清空内部 properties ⇒ 轮询里
+ * `materialProperties.currentProgram` 变成 undefined，`program.isReady()` 直接抛
+ * `Cannot read properties of undefined (reading 'isReady')`。这个异常发生在 setTimeout 回调里，
+ * 既不会让 compileAsync 的 promise 变成 reject，也catch 不到，只能保证"编译期间不 dispose"。
+ * 实测：快速进出回放视图（编译还没完成就返回大厅）时必现。
+ */
+let compilingShaders: Promise<unknown> | null = null
+let lastPileAnchors = ''
+let dynamicGroups = []
+let winEffectPresenter: ReturnType<typeof createWinEffectPresenter> | null = null
+let bloodFlowWinEffects: ReturnType<typeof createBloodFlowWinEffects> | null = null
+let kongWeather: ReturnType<typeof createKongWeather> | null = null
+let dicePresenter: ReturnType<typeof createDicePresenter> | null = null
+let perfHud: ReturnType<typeof createPerfHud> | null = null
+const staticResources = []
+const dynamicResources = []
+let tableScene: ReturnType<typeof createStaticTableScene>
+let tableTiles: ReturnType<typeof createTableTilePresenter>
+// 中控台与墨玉台面的 Z 中心（桌身中心，保持不变）
+const PLAY_AREA_OFFSET_Z = -1.65
+// 牌层（牌墙/牌河/手牌/副露/骰子）的 Z 中心：单独向本家（+z）偏移，靠近玩家侧
+function applyTableCamera(position: readonly number[]) {
+  camera.position.set(position[0], position[1], position[2])
+  camera.lookAt(0, 0, renderProfile.camera.lookAtZ)
+}
+const TILE_LAYER_Z = -1.0
+const TILE_GAP_OFFSET = TABLE_LAYOUT.tilePitch    // 手牌间隙和加杠偏移量
+const POINT_GAP_OFFSET = TABLE_LAYOUT.sourcePitch  // 副露指向的偏移量
+const WALL_DEAL_ORIGIN_Y = 1.1  // 发牌从牌山 head 槽位上方起飞的初始高度（略高于两墩牌顶）
+
+// 触屏设备（真机）判定：主指针 coarse 且无 hover。
+const isMobileLike = typeof window.matchMedia === 'function'
+  && window.matchMedia('(hover: none) and (pointer: coarse)').matches
+// 渲染分辨率上限（清晰度 vs 帧率）：桌面 3、真机 2.5（在 2 的清晰与 3 的帧率间取平衡）。
+// URL 带 ?pr=<数字> 可覆盖。
+let pixelRatioCap = parseFloat(new URLSearchParams(window.location.search).get('pr') ?? '') || (isMobileLike ? 2.5 : 3)
+
+// 抗锯齿：默认开（二次元渲染已足够轻，真机也能扛）；?aa=off 可关。
+const aaEnabled = new URLSearchParams(window.location.search).get('aa') !== 'off'
+const cameraLabEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).has('cameraLab')
+// 低成本真 3D 实验开关（dev）：?cheapTable=1 关闭实时阴影/描边/环境反射/面光。
+const cheapTable = import.meta.env.DEV && new URLSearchParams(window.location.search).has('cheapTable')
+// 二次元 cel 渲染：llmAnime 主题默认启用（?animeTable=0 强制关闭回退写实）。
+let animeTable = false
+// 开发态调试钩子：暴露累计渲染帧数 + 最近一帧 draw calls，供 E2E 验证按需渲染与廉价档收益。
+type TableDebugWindow = Window & {
+  __tableRenderedFrames?: () => number
+  __tableDrawCalls?: () => number
+}
+const tableDebugWindow = window as TableDebugWindow
+const renderedFramesProbe = () => renderedFrames
+const drawCallsProbe = () => renderer?.info.render.calls ?? 0
+if (import.meta.env.DEV) {
+  tableDebugWindow.__tableRenderedFrames = renderedFramesProbe
+  tableDebugWindow.__tableDrawCalls = drawCallsProbe
+}
+const adaptiveQuality = createAdaptiveQualityController({
+  override: parseQualityOverride(window.location.search),
+  onChange: applyQuality,
+})
+let lastFrameAt = 0
+// 静止停帧：只有「有动画在跑」或「状态变更（dirty）」时才重绘，否则停掉 RAF。
+let rendering = false
+let dirty = false
+let started = false
+let renderedFrames = 0
+// 静止停顿后重新开画时，帧间隔会被放大成一个假的大间隔，喂给 adaptiveQuality 会误判卡顿。
+// 超过该阈值的间隔视为「新的一段」，frameMs 归零，不参与降档判断。
+const FRAME_GAP_RESET_MS = 250
+
+function invalidate() {
+  // 挂载期（首帧 render() 之前）的变更由首帧统一绘制，避免在 compileAsync 期间提前开画。
+  if (!started) return
+  dirty = true
+  if (!rendering && !animationFrame) animationFrame = requestAnimationFrame(render)
+}
+
+function own(resource) {
+  staticResources.push(resource)
+  return resource
+}
+
+function ownDynamic(resource) {
+  dynamicResources.push(resource)
+  return resource
+}
+
+async function loadTableSurfaceTexture(theme: TableTheme | undefined) {
+  const config = theme?.tableSurfaceTexture
+  if (!config || !renderer) return undefined
+
+  try {
+    const texture = await new THREE.TextureLoader().loadAsync(config.url)
+    if (destroyed) {
+      texture.dispose()
+      return undefined
+    }
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping
+    texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 4)
+    texture.center.set(.5, .5)
+    texture.rotation = config.rotation ?? 0
+    if (config.offset) texture.offset.set(...config.offset)
+    if (config.repeat) texture.repeat.set(...config.repeat)
+    texture.needsUpdate = true
+    return own(texture)
+  } catch (error) {
+    // 主题图片是纯视觉增强；加载失败时保留深蓝材质，不能阻塞开局 ready 门闸。
+    console.warn('牌桌主题纹理加载失败，已回退纯色桌面', error)
+    return undefined
+  }
+}
+
+async function loadTileBackTexture(themeName: TileAssetTheme) {
+  if (themeName !== 'llmAnime') return undefined
+  try {
+    const texture = await new THREE.TextureLoader().loadAsync(tileBackUrl(themeName))
+    texture.colorSpace = THREE.SRGBColorSpace
+    texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping
+    texture.anisotropy = Math.min(renderer.capabilities.getMaxAnisotropy(), 8)
+    return own(texture)
+  } catch (error) {
+    console.warn('[table] llmAnime 牌背图片加载失败，使用主题渐变回退', error)
+    return undefined
+  }
+}
+
+
+
+function clearDynamicScene() {
+  dynamicGroups.forEach((group) => scene.remove(group))
+  // Presenters/renderers retain this array by reference. Keep the identity stable
+  // so every subsequently-created dynamic object remains visible to cleanup.
+  dynamicGroups.length = 0
+  winEffectPresenter?.reset()
+  dynamicResources.splice(0).forEach((resource) => resource.dispose?.())
+}
+
+function makeTableTile(topMaterial) {
+  const tile = new THREE.Group()
+  const green = scene.userData.faceSide
+  const white = scene.userData.tileSide
+  const bottom = scene.userData.tileBottom
+  const back = scene.userData.backMaterial
+  const base = new THREE.Mesh(scene.userData.tileBaseGeometry, [green, green, green, back, green, green])
+  base.position.y = -.06
+  base.castShadow = true
+  base.receiveShadow = true
+  tile.add(base)
+
+  const cap = new THREE.Mesh(scene.userData.tileCapGeometry, [white, white, topMaterial, bottom, white, white])
+  cap.position.y = .13
+  cap.castShadow = true
+  cap.receiveShadow = true
+  tile.add(cap)
+  return tile
+}
+
+function makeFaceTile(tileName) {
+  const marker = tileMarkerFor(tileName, props.jokerTiles, props.wildcardTiles)
+  return makeTableTile(tableScene.makeFaceMaterial(tileName, marker))
+}
+
+const scratchVector = new THREE.Vector3()
+let tileInstances: ReturnType<typeof createTileInstanceRenderer>
+
+function beginTableInstances() {
+  tileInstances.begin()
+}
+function addTableTile(pos, quat, face, scale = 1, initialPos = null, initialScale = null) {
+  return tileInstances.add(pos, quat, face, scale, initialPos, initialScale)
+}
+function setTileInstance(baseIndex, capMesh, capIndex, pos, quat, scale) {
+  tileInstances.set(baseIndex, capMesh, capIndex, pos, quat, scale)
+}
+function finishTableInstances() {
+  tileInstances.finish()
+}
+
+
+let shadowLight: THREE.DirectionalLight | null = null
+let glossyMaterials = true
+let renderProfile: TableSceneRenderProfile = DEFAULT_TABLE_SCENE_PROFILE
+
+// 共享牌体材质：写实档把满配 PBR 参数存入 userData，高负载时清零 clearcoat/specular/ior；
+// 二次元档（ToonMaterial）没有这些字段，track/apply 里按 instanceof 跳过。
+type TileMaterial = THREE.MeshPhysicalMaterial | THREE.MeshToonMaterial
+const tileMaterials: TileMaterial[] = []
+function trackTileMaterial(material: TileMaterial): TileMaterial {
+  if (material instanceof THREE.MeshPhysicalMaterial) {
+    material.userData.fullClearcoat = material.clearcoat
+    material.userData.fullClearcoatRoughness = material.clearcoatRoughness
+    material.userData.fullSpecularIntensity = material.specularIntensity
+    material.userData.fullIor = material.ior
+  }
+  tileMaterials.push(material)
+  return material
+}
+
+function applyGlossy(glossy: boolean) {
+  if (glossyMaterials === glossy) return
+  glossyMaterials = glossy
+  const change = (m: TileMaterial) => {
+    if (!(m instanceof THREE.MeshPhysicalMaterial)) return
+    m.clearcoat = glossy ? m.userData.fullClearcoat : 0
+    m.clearcoatRoughness = glossy ? m.userData.fullClearcoatRoughness : 0
+    m.specularIntensity = glossy ? m.userData.fullSpecularIntensity : 0
+    m.ior = glossy ? m.userData.fullIor : 1.5
+    m.needsUpdate = true
+  }
+  tileMaterials.forEach(change)
+  tableScene?.forEachFaceMaterial(change)
+}
+
+function resize() {
+  if (!renderer || !canvas.value) return
+  const width = canvas.value.clientWidth
+  const height = canvas.value.clientHeight
+  const pixelRatio = Math.min(window.devicePixelRatio, pixelRatioCap)
+  renderer.setPixelRatio(pixelRatio)
+  // OutlineEffect 直接复用 renderer，没有独立 render target。保持原先
+  // updateStyle=false，避免 resize 时改写 canvas 的 CSS 尺寸。
+  renderer.setSize(width, height, false)
+  camera.aspect = width / Math.max(height, 1)
+  camera.fov = responsiveCameraFov(renderProfile.camera.fov, camera.aspect)
+  camera.updateProjectionMatrix()
+  invalidate()
+}
+
+function applyQuality(levelIndex = adaptiveQuality.level) {
+  const level = QUALITY_LEVELS[levelIndex]
+  applyGlossy(level.glossy)
+  const shadowSize = shadowMapSizeForQuality(renderProfile, level.shadowSize)
+  if (shadowLight && shadowLight.shadow.mapSize.x !== shadowSize) {
+    shadowLight.shadow.mapSize.set(shadowSize, shadowSize)
+    shadowLight.shadow.map?.dispose()
+    shadowLight.shadow.map = null
+    shadowLight.shadow.needsUpdate = true
+  }
+  invalidate()
+}
+
+function render(time = 0) {
+  animationFrame = 0
+  if (!renderer) return
+  rendering = true
+  dirty = false
+  let keepGoing = false
+  try {
+    perfHud?.frame(time)
+    const frameMs = lastFrameAt && time > lastFrameAt && time - lastFrameAt <= FRAME_GAP_RESET_MS
+      ? time - lastFrameAt
+      : 0
+    lastFrameAt = time
+    adaptiveQuality.frame(frameMs)
+    let cameraShakeX = 0
+    let cameraShakeZ = 0
+    let exposure = renderProfile.exposure
+    const diceActive = dicePresenter?.animate(time) ?? false
+    const tilesActive = tableTiles.animate(time, scratchVector)
+    kongWeather?.setAspect(camera.aspect)
+    const weatherActive = kongWeather?.animate(time) ?? false
+    if (import.meta.env.DEV && canvas.value) {
+      canvas.value.dataset.kongWeather = JSON.stringify(kongWeather?.visibleCues ?? [])
+      canvas.value.dataset.kongWeatherLayout = JSON.stringify(kongWeather?.visibleLayouts ?? [])
+    }
+    const winFrame = winEffectPresenter?.animate(time)
+    const bloodFlowFrame = bloodFlowWinEffects?.animate(time)
+    const bloodFlowActive = bloodFlowFrame?.active ?? false
+    if (props.bloodFlowBatches && canvas.value) canvas.value.dataset.bloodFlowEffects = String(bloodFlowWinEffects?.activeCount ?? 0)
+    // 已盖楼层数（每条胡牌记录一楼）：回放/实时共用；也是"牌堆到底画出来没有"的可断言依据。
+    if (props.bloodFlowBatches && canvas.value) canvas.value.dataset.bloodFlowPiles = String(
+      props.bloodFlowBatches.reduce((total, batch) => total + batch.winners.length, 0),
+    )
+    if(props.bloodFlowBatches&&canvas.value){canvas.value.dataset.bloodFlowCue=props.bloodFlowCue?.id??'';canvas.value.dataset.bloodFlowCueStart=String(props.bloodFlowCue?.startedAt??'');canvas.value.dataset.bloodFlowPhase=props.bloodFlowCue?cuePhase(props.bloodFlowCue,time):''}
+    if (winFrame) {
+      // 胡牌演出的 exposure 以旧牌桌 .92 为基准；主题只叠加同样的亮度变化，
+      // 不把 llmAnime 的主题基础曝光瞬间拉回旧值。
+      exposure = renderProfile.exposure + (winFrame.exposure - DEFAULT_TABLE_SCENE_PROFILE.exposure)
+      cameraShakeX = winFrame.shakeX
+      cameraShakeZ = winFrame.shakeZ
+    }
+    // 血流胡牌时相机完全静止：只保留曝光脉冲，不再施加任何位移/震动。
+    if(bloodFlowFrame&&!winFrame){exposure+=bloodFlowFrame.exposureDelta}
+    renderer.toneMappingExposure = exposure
+    const cameraPosition = tableCameraPosition(renderProfile, cameraShakeX, cameraShakeZ)
+    applyTableCamera(cameraPosition)
+    if (props.bloodFlowBatches) {
+      camera.updateMatrixWorld()
+      if(import.meta.env.DEV&&canvas.value)canvas.value.dataset.bloodFlowFlights=JSON.stringify(tableTiles.flightDebug().map(f=>{
+        const p=new THREE.Vector3(f.source.x,f.source.y,f.source.z).project(camera)
+        return {...f,sourceScreen:{x:(p.x+1)/2,y:(1-p.y)/2}}
+      }))
+      const anchors = [0, 1, 2, 3].map(seat => {
+        const { badge } = bloodFlowPileAnchor(seat, props.bloodFlowCompact)
+        const point = new THREE.Vector3(badge.x, badge.y, badge.z + TILE_LAYER_Z).project(camera)
+        return { left: Number(((point.x + 1) * 50).toFixed(3)), top: Number(((1 - point.y) * 50).toFixed(3)) }
+      })
+      const key = JSON.stringify(anchors)
+      if (key !== lastPileAnchors) { lastPileAnchors = key; emit('pileAnchors', anchors) }
+    }
+    if (cameraLabEnabled && canvas.value) {
+      const canvasElement = canvas.value as HTMLCanvasElement
+      canvasElement.dataset.cameraPosition = camera.position.toArray()
+        .map((value) => value.toFixed(6))
+        .join(',')
+      canvasElement.dataset.cameraFov = camera.fov.toFixed(6)
+      canvasElement.dataset.cameraDirection = camera.getWorldDirection(new THREE.Vector3()).toArray().join(',')
+      canvasElement.dataset.handFaceRects = JSON.stringify(tableTiles.handFaceScreenRects(camera))
+    }
+    if (outlineEffect) outlineEffect.render(scene, camera)
+    else renderer.render(scene, camera)
+    kongWeather?.renderOverlay(renderer)
+    renderedFrames += 1
+    keepGoing = diceActive || tilesActive || weatherActive || Boolean(winFrame) || bloodFlowActive || dirty
+  } finally {
+    rendering = false
+  }
+  if (keepGoing) animationFrame = requestAnimationFrame(render)
+}
+
+onMounted(async () => {
+  try {
+  // 先让牌桌加载提示完成一次浏览器绘制，再进行 WebGL/几何体初始化。
+  // 否则异步组件虽然已经挂载，下面的大段同步工作仍会把画面卡在黑屏。
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  if (destroyed) return
+
+  const activeThemeName = (props.themeName ?? new URLSearchParams(window.location.search).get('theme') ?? 'jade') as TileAssetTheme
+  // llmAnime 默认走二次元 cel；?animeTable=0 可强制关闭回退写实 PBR。
+  animeTable = activeThemeName === 'llmAnime' && new URLSearchParams(window.location.search).get('animeTable') !== '0'
+  const activeTheme = tableThemeByName(activeThemeName)
+  // 真机降低牌体圆角细分（segments→2）：RoundedBoxGeometry 三角面数随 segments² 增长，
+  // 是 494k 三角面的主要来源之一；桌面保持原细分（llmAnime=4）。
+  if (isMobileLike) {
+    const base = activeTheme.tileGeometry ?? { segments: 6, baseRadius: .07, capRadius: .072 }
+    activeTheme.tileGeometry = { ...base, segments: 2 }
+  }
+  renderProfile = tableSceneRenderProfile(activeThemeName)
+
+  // 真机性能：触屏设备把 llmAnime 的 VSM 2048 软阴影降为 PCFSoft 1024，
+  // 并用半球光+主光提亮来补偿去掉的面光（RectAreaLight LTC 极贵）。
+  if (isMobileLike && renderProfile.shadows.mapType === THREE.VSMShadowMap) {
+    renderProfile = {
+      ...renderProfile,
+      hemisphere: { ...renderProfile.hemisphere, intensity: renderProfile.hemisphere.intensity * 1.5 },
+      keyLight: { ...renderProfile.keyLight, intensity: renderProfile.keyLight.intensity * 1.5 },
+      shadows: {
+        ...renderProfile.shadows,
+        mapType: THREE.PCFSoftShadowMap,
+        mapSize: 1024,
+        radius: 1,
+        blurSamples: 8,
+      },
+    }
+  }
+
+  // 廉价真3D：连实时阴影一起关，用半球+主光提亮补偿去掉的面光与环境反射。
+  if (cheapTable) {
+    renderProfile = {
+      ...renderProfile,
+      hemisphere: { ...renderProfile.hemisphere, intensity: renderProfile.hemisphere.intensity * 1.6 },
+      keyLight: { ...renderProfile.keyLight, intensity: renderProfile.keyLight.intensity * 1.6 },
+    }
+  }
+
+  // 二次元：去掉面光/环境反射后整体偏暗，用固定半球+主光提亮，PC 与真机亮度一致。
+  if (animeTable) {
+    renderProfile = {
+      ...renderProfile,
+      hemisphere: { ...renderProfile.hemisphere, intensity: 1.8 },
+      keyLight: { ...renderProfile.keyLight, intensity: 2.2 },
+    }
+  }
+
+  renderer = new THREE.WebGLRenderer({ canvas: canvas.value, antialias: aaEnabled, alpha: true, powerPreference: 'high-performance' })
+  applyRendererProfile(renderer, renderProfile)
+  if (cheapTable || animeTable) renderer.shadowMap.enabled = false
+  renderer.setClearColor(0x050706, 0)
+
+  scene = new THREE.Scene()
+  // 雾推到桌身之外（桌角最远约 30）：让整张桌（含对家远侧）都在雾区外，只让背景淡出。
+  scene.fog = renderProfile.fog ? new THREE.Fog(0x03100b, 32, 60) : null
+  if (!cheapTable) {
+    const pmremGenerator = new THREE.PMREMGenerator(renderer)
+    const roomEnvironment = new RoomEnvironment()
+    const environmentTarget = own(pmremGenerator.fromScene(roomEnvironment, .04))
+    // 环境反射只服务于麻将牌，提供树脂/亚克力边缘高光，不整体提亮桌面。
+    scene.userData.tileEnvironment = environmentTarget.texture
+    roomEnvironment.dispose()
+    pmremGenerator.dispose()
+  }
+  camera = new THREE.PerspectiveCamera(renderProfile.camera.fov, 1, .1, 60)
+  camera.position.set(0, renderProfile.camera.positionY, renderProfile.camera.positionZ)
+  scene.add(new THREE.HemisphereLight(
+    renderProfile.hemisphere.skyColor,
+    renderProfile.hemisphere.groundColor,
+    renderProfile.hemisphere.intensity,
+  ))
+  // 真机/廉价档跳过 RectAreaLight（LTC 面光片元极贵）；二次元档也不需要面光（cel 靠方向光+半球光）。
+  if (renderProfile.areaLights?.length && !isMobileLike && !cheapTable && !animeTable) {
+    RectAreaLightUniformsLib.init()
+    renderProfile.areaLights.forEach((profile) => {
+      const areaLight = new THREE.RectAreaLight(profile.color, profile.intensity, profile.width, profile.height)
+      areaLight.position.set(...profile.position)
+      areaLight.lookAt(...profile.target)
+      scene.add(areaLight)
+    })
+  }
+  const keyLight = new THREE.DirectionalLight(renderProfile.keyLight.color, renderProfile.keyLight.intensity)
+  keyLight.position.set(...renderProfile.keyLight.position)
+  keyLight.target.position.set(0, 0, renderProfile.keyLight.targetZ)
+  if (!cheapTable && !animeTable) {
+    applyDirectionalShadowProfile(keyLight, renderProfile)
+  }
+  scene.add(keyLight)
+  scene.add(keyLight.target)
+  shadowLight = keyLight
+  const surfaceTexture = await loadTableSurfaceTexture(activeTheme)
+  const tileBackTexture = await loadTileBackTexture(activeThemeName)
+  if (destroyed) return
+  const rimLight = new THREE.DirectionalLight(activeTheme?.rimLight?.color ?? 0x3acb8b, activeTheme?.rimLight?.intensity ?? 1.6)
+  rimLight.position.set(8, 5, -8)
+  scene.add(rimLight)
+  // 移除了 goldFill（点光源，每片元开销最大）与 tileHighlight（与 keyLight 同向的微弱重复）。
+  // 金色桌沿改由 gold/goldHighlight 的自发光补偿，保持亮度不依赖点光源。
+  tableScene = createStaticTableScene({
+    renderer,
+    scene,
+    props,
+    playAreaOffsetZ: PLAY_AREA_OFFSET_Z,
+    theme: activeTheme,
+    surfaceTexture,
+    tileBackTexture,
+    own,
+    ownDynamic,
+    trackTileMaterial,
+    isGlossy: () => glossyMaterials,
+    animeTable,
+  })
+  // 描边：二次元档依靠 cel 明暗与倒角勾边；后处理描边会产生「薄膜」壳，写实档仅保留轻薄描边。
+  if (renderProfile.outline && !cheapTable && !animeTable && !isMobileLike) {
+    outlineEffect = new OutlineEffect(renderer, {
+      defaultThickness: animeTable ? 0.003 : renderProfile.outline.thickness,
+      defaultColor: animeTable ? [0.22, 0.22, 0.22] : [...renderProfile.outline.color],
+      defaultAlpha: animeTable ? 0.55 : renderProfile.outline.alpha,
+      defaultKeepAlive: true,
+    })
+  }
+  tileInstances = createTileInstanceRenderer({
+    capacity: props.bloodFlowBatches ? 512 : undefined,
+    scene,
+    ownDynamic,
+    dynamicGroups,
+    getAtlasMaterial: tableScene.getAtlasMaterial,
+    getAtlasCapGeometry: tableScene.getAtlasCapGeometry,
+    atlasCellUvFor: tableScene.atlasCellUvFor,
+    getJokerAtlasMaterial: tableScene.getJokerAtlasMaterial,
+    getWildcardAtlasMaterial: tableScene.getWildcardAtlasMaterial,
+    getLaiziAtlasMaterial: tableScene.getLaiziAtlasMaterial,
+    isJoker: (tile) => tileMarkerFor(tile, props.jokerTiles, props.wildcardTiles) === 'joker',
+    isWildcard: (tile) => tileMarkerFor(tile, props.jokerTiles, props.wildcardTiles) === 'wildcard',
+    isLaizi: (tile) => tileMarkerFor(tile, props.jokerTiles, props.wildcardTiles) === 'laizi',
+    contactShadowY: animeTable ? 0.075 : undefined,
+  })
+  tableTiles = createTableTilePresenter({
+    projectOwnDraw:point=>{applyTableCamera(tableCameraPosition(renderProfile));camera.updateMatrixWorld();const ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2(point.x*2-1,1-point.y*2),camera);return ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0,1,0),-.56),new THREE.Vector3())},
+    props,
+    scene,
+    dynamicGroups,
+    ownDynamic,
+    clearDynamicScene,
+    makeFaceTile,
+    tableScene,
+    tileInstances,
+    tileLayerZ: TILE_LAYER_Z,
+    playAreaOffsetZ: PLAY_AREA_OFFSET_Z,
+    tileGapOffset: TILE_GAP_OFFSET,
+    pointGapOffset: POINT_GAP_OFFSET,
+    wallDealOriginY: WALL_DEAL_ORIGIN_Y,
+    addWinEffect: () => winEffectPresenter?.addWinEffect(),
+    addWinningDisplayTile: () => winEffectPresenter?.addWinningDisplayTile(),
+  })
+  const winEffectOptions = {
+    scene,
+    camera,
+    props,
+    tileLayerZ: TILE_LAYER_Z,
+    dynamicGroups,
+    own,
+    ownDynamic,
+    makeFaceTile,
+    meldTransform: tableTiles.meldTransform,
+    alignMeldBottom: tableTiles.alignMeldBottom,
+    sourceTileRotationOffset: tableTiles.sourceTileRotationOffset,
+  }
+  winEffectPresenter = createWinEffectPresenter(winEffectOptions)
+  bloodFlowWinEffects = createBloodFlowWinEffects(winEffectOptions)
+  bloodFlowWinEffects.sync()
+  dicePresenter = createDicePresenter({
+    scene,
+    own,
+    getOpeningStage: () => props.openingStage,
+    getValues: () => props.diceValues,
+    getThrowerIndex: () => props.diceThrowerIndex,
+    tileLayerZ: TILE_LAYER_Z,
+    anime: animeTable,
+  })
+
+  // 所有牌面必须下载并完成图片解码，之后才能创建 3D 图集。
+  const [, weatherAssets] = await Promise.all([
+    preloadTileImages(activeThemeName),
+    preloadWeatherAssets().catch(error => { console.warn('开杠特效素材加载失败', error); return null }),
+  ])
+  if (destroyed) return
+  kongWeather = createKongWeather({ scene, assets: weatherAssets, cues: () => props.kongWeather ?? [], localSeat: () => props.localSeat })
+  scene.userData.tileImages = preloadedTileImages(activeThemeName)
+  tableScene.addTable()
+  tableTiles.rebuild()
+  if (adaptiveQuality.overridden) adaptiveQuality.apply()
+  resizeObserver = new ResizeObserver(resize)
+  resizeObserver.observe(canvas.value)
+  resize()
+  perfHud = createPerfHud(
+    import.meta.env.DEV && new URLSearchParams(window.location.search).has('perf'),
+    () => ({
+      drawCalls: renderer?.info.render.calls ?? 0,
+      triangles: renderer?.info.render.triangles ?? 0,
+      pixelRatio: renderer?.getPixelRatio() ?? 2,
+      qualityLevel: adaptiveQuality.level,
+      glossy: glossyMaterials,
+    }),
+  )
+
+  // compileAsync 等待着色器真正可用；随后提交首帧并跨过两个浏览器合成帧。
+  if (destroyed) return
+  // 记下这个 promise：卸载时要等它结束再 dispose（见 compilingShaders 的说明）。
+  compilingShaders = renderer.compileAsync(scene, camera)
+  try {
+    await compilingShaders
+  } finally {
+    compilingShaders = null
+  }
+  if (destroyed) return
+  renderer.render(scene, camera)
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  if (destroyed) return
+  started = true
+  render(performance.now())
+  // ready 必须晚于资源、图集、着色器和合成首帧，否则父层不得隐藏加载层。
+  emit('ready')
+  } catch (error) {
+    if (destroyed) return
+    const message = error instanceof Error ? error.message : '牌桌资源加载失败'
+    emit('loadError', message)
+  }
+})
+
+watch(
+  () => (props.players.map((player) => [
+    player.hand.length,
+    player.concealedTileCount,
+    player.drawnTileIndex,
+    player.discards.join(','),
+    player.melds.map((meld) => `${meld.type}:${meld.from ?? '-'}:${meld.tiles.join(',')}`).join('|'),
+  ]).flat() as unknown[]).concat(
+    props.lastDiscard?.id,
+    props.revealHands,
+    props.winnerIndex,
+    props.winEffect?.id,
+    props.winPresentation?.winnerIndex,
+    props.winPresentation?.tile,
+    props.winPresentation?.robbedKong,
+    props.dealAnimation.serial,
+    props.wall?.length,
+    props.horses?.length,
+    props.jokerTiles?.join(','),
+    props.wildcardTiles?.join(','),
+    props.flipStack,
+    props.flipTile,
+    props.wallBreakIndex,
+    props.bloodFlowBatches?.map(b => b.batchId).join(','),
+    props.bloodFlowCompact,
+    props.bloodFlowPresentationKey,
+    props.bloodFlowCue?.id,
+    props.bloodFlowHiddenRecords?.join('|'),
+    props.bloodFlowSourceEvent?.id,
+    props.bloodFlowOwnDraw?.sourceId,
+    props.bloodFlowOwnDraw?.x,
+    props.bloodFlowOwnDraw?.y,
+    props.localSeat,
+  ),
+  // 发牌批次只刷新已有实例的 count / matrix / UV，避免每 150-260ms
+  // 销毁并重建整套 InstancedMesh 与 GPU buffer。
+  () => {
+    tableTiles?.rebuild({ reuseInstances: props.openingStage === 'deal' })
+    bloodFlowWinEffects?.sync()
+    invalidate()
+  },
+)
+
+watch(() => props.openingStage, (stage) => {
+  dicePresenter?.setVisible(stage === 'dice')
+  invalidate()
+})
+
+// 骰子值/掷骰者变化（莲花麻将二次掷骰）只影响骰子动画，单独监听并请求重绘。
+watch(() => props.diceValues.join(',') + '|' + props.diceThrowerIndex, () => invalidate())
+watch(() => props.kongWeather, () => invalidate())
+
+watch(() => props.dealerIndex, () => {
+  tableScene?.updateMachineTexture()
+  invalidate()
+})
+
+// 剩余牌数与当前玩家只影响中央机器 LCD（数字 / 高亮边），单独监听即可，避免整桌重建
+watch(() => props.wallCount, () => {
+  tableScene?.updateMachineTexture()
+  invalidate()
+})
+watch(() => props.currentPlayer, () => {
+  tableScene?.updateMachineTexture()
+  invalidate()
+})
+
+onBeforeUnmount(() => {
+  destroyed = true
+  cancelAnimationFrame(animationFrame)
+  perfHud?.destroy()
+  perfHud = null
+  resizeObserver?.disconnect()
+  // 先把引用摘掉：render() 与 resize() 都以 `!renderer` 作为"已卸载"的判据。
+  const target = renderer
+  renderer = null
+  if (tableDebugWindow.__tableRenderedFrames === renderedFramesProbe) delete tableDebugWindow.__tableRenderedFrames
+  if (tableDebugWindow.__tableDrawCalls === drawCallsProbe) delete tableDebugWindow.__tableDrawCalls
+  outlineEffect = null
+  /**
+   * 释放场景与渲染器。
+   * 着色器还在编译（`compileAsync` 未结束）时**必须推迟**：它内部用 setTimeout 轮询
+   * `checkMaterialsReady()`，读的是渲染器的 properties 表；先 dispose 材质/渲染器会让
+   * `materialProperties.currentProgram` 变成 undefined，`program.isReady()` 抛未捕获异常
+   * （实测：快速进出回放视图必现）。等不到就只丢引用，交给 GC 回收上下文 ——
+   * 宁可少释放一次，也不要抛异常打断整页。
+   */
+  const teardown = () => {
+    kongWeather?.dispose()
+    bloodFlowWinEffects?.dispose()
+    if (scene) clearDynamicScene()
+    staticResources.forEach((resource) => resource.dispose?.())
+    target?.dispose()
+  }
+  const pending: Promise<unknown> | null = compilingShaders
+  if (pending) void pending.then(teardown, teardown)
+  else teardown()
+})
+</script>
+
+<template>
+  <canvas ref="canvas" class="mahjong-scene" :data-table-theme="props.themeName ?? 'jade'" aria-hidden="true"></canvas>
+</template>

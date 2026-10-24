@@ -1,0 +1,768 @@
+{
+  "kind": "lianhua-llm-opponent-risk",
+  "version": 1,
+  "note": "对手牌型风险定价（档位版）的公共信息黄金输入。TS 与 Python 必须产出完全相同的 profiles / exposure / feature；牌面使用内部牌面 id（m1 / p4 / east / red …）。exposure 单位：点。",
+  "cases": [
+    {
+      "id": "quiet",
+      "note": "无任何公共信号：必须退化为旧口径（公开张数档位 × 40）",
+      "wallCount": 60,
+      "visibleTiles": [
+        "p3",
+        "p3",
+        "s1"
+      ],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [
+            "m1",
+            "m2",
+            "m3",
+            "p1",
+            "p2",
+            "p3",
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        },
+        {
+          "seat": 2,
+          "discards": [
+            "m1",
+            "m2",
+            "m3",
+            "p1",
+            "p2",
+            "p3",
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        },
+        {
+          "seat": 3,
+          "discards": [
+            "m1",
+            "m2",
+            "m3",
+            "p1",
+            "p2",
+            "p3",
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 0,
+          "factor": 1,
+          "signals": [],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": null,
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        },
+        {
+          "tier": 0,
+          "factor": 1,
+          "signals": [],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": null,
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        },
+        {
+          "tier": 0,
+          "factor": 1,
+          "signals": [],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": null,
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "p3": 0,
+        "s1": 4,
+        "m5": 10
+      },
+      "expectedFeature": {
+        "m5": null
+      }
+    },
+    {
+      "id": "flush-and-locked",
+      "note": "副露染手 + 已锁手且已胡过：现物与花色折扣都不适用，任何一张同价",
+      "wallCount": 40,
+      "visibleTiles": [
+        "east",
+        "east",
+        "p3"
+      ],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [
+            "m1"
+          ],
+          "melds": [
+            {
+              "type": "peng",
+              "tile": "p4",
+              "tiles": [
+                "p4",
+                "p4",
+                "p4"
+              ]
+            },
+            {
+              "type": "peng",
+              "tile": "p7",
+              "tiles": [
+                "p7",
+                "p7",
+                "p7"
+              ]
+            }
+          ],
+          "winCount": 9,
+          "locked": true
+        },
+        {
+          "seat": 2,
+          "discards": [
+            "m1",
+            "m2",
+            "m3",
+            "p1",
+            "p2",
+            "p3",
+            "s1",
+            "s2",
+            "s3"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 2,
+          "factor": 16,
+          "signals": [
+            "副露染手嫌疑",
+            "副露少牌河快听",
+            "已胡9次仍听"
+          ],
+          "suspectSuit": "p",
+          "locked": true,
+          "avoidsHonorTerminals": false,
+          "axisSource": "inferred",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        },
+        {
+          "tier": 0,
+          "factor": 1,
+          "signals": [],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": null,
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "p3": 160,
+        "m5": 160,
+        "east": 160
+      },
+      "expectedFeature": {
+        "p3": {
+          "tier": "中",
+          "payment": 160,
+          "signals": [
+            "副露染手嫌疑",
+            "副露少牌河快听",
+            "已胡9次仍听"
+          ]
+        },
+        "m5": {
+          "tier": "中",
+          "payment": 160,
+          "signals": [
+            "副露染手嫌疑",
+            "副露少牌河快听",
+            "已胡9次仍听"
+          ]
+        }
+      }
+    },
+    {
+      "id": "three-dragons",
+      "note": "三组箭牌 = 十六倍级嫌疑（tier 3，×32）",
+      "wallCount": 60,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [],
+          "melds": [
+            {
+              "type": "peng",
+              "tile": "red",
+              "tiles": [
+                "red",
+                "red",
+                "red"
+              ]
+            },
+            {
+              "type": "peng",
+              "tile": "green",
+              "tiles": [
+                "green",
+                "green",
+                "green"
+              ]
+            },
+            {
+              "type": "peng",
+              "tile": "white",
+              "tiles": [
+                "white",
+                "white",
+                "white"
+              ]
+            }
+          ],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 3,
+          "factor": 32,
+          "signals": [
+            "副露含三组箭牌",
+            "副露字牌成组",
+            "副露3组"
+          ],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": null,
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "m5": 320,
+        "east": 320
+      },
+      "expectedFeature": {
+        "m5": {
+          "tier": "高",
+          "payment": 320,
+          "signals": [
+            "副露含三组箭牌",
+            "副露字牌成组",
+            "副露3组"
+          ]
+        }
+      }
+    },
+    {
+      "id": "half-flush",
+      "note": "半染手（副露 2 组且同花色占比 ≥0.5）：嫌疑花色 ×1、非嫌疑花色 ×0.5",
+      "wallCount": 60,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 2,
+          "discards": [
+            "p1",
+            "p2",
+            "p3",
+            "s1",
+            "s2",
+            "s3",
+            "east",
+            "east",
+            "east"
+          ],
+          "melds": [
+            {
+              "type": "chi",
+              "tile": "p4",
+              "tiles": [
+                "p3",
+                "p4",
+                "p5"
+              ]
+            },
+            {
+              "type": "gang",
+              "tile": "m7",
+              "tiles": [
+                "m7",
+                "m7",
+                "m7",
+                "m7"
+              ]
+            }
+          ],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 1,
+          "factor": 4,
+          "signals": [
+            "副露半染手"
+          ],
+          "suspectSuit": "m",
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": "inferred",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "m5": 40,
+        "p5": 20
+      },
+      "expectedFeature": {
+        "m5": {
+          "tier": "低",
+          "payment": 40,
+          "signals": [
+            "副露半染手"
+          ]
+        }
+      }
+    },
+    {
+      "id": "sparse-suit",
+      "note": "门清短牌河：某花色只有 1 张（占比高于 tier2 阈值）→ 兜底弱信号 tier1，不误升级",
+      "wallCount": 60,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [
+            "m1",
+            "p9",
+            "m2",
+            "m3",
+            "p2",
+            "p3",
+            "s2",
+            "east"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 1,
+          "factor": 4,
+          "signals": [
+            "牌河少打条"
+          ],
+          "suspectSuit": "s",
+          "locked": false,
+          "avoidsHonorTerminals": false,
+          "axisSource": "inferred",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "s5": 40,
+        "m5": 20
+      },
+      "expectedFeature": {
+        "s5": {
+          "tier": "低",
+          "payment": 40,
+          "signals": [
+            "牌河少打条"
+          ]
+        }
+      }
+    },
+    {
+      "id": "concealed-thirteen-orphans",
+      "note": "门清十三幺/字一色读牌：牌河零字牌幺九 → tier3；字牌与幺九照价、中张减价、多现不归零",
+      "wallCount": 30,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [
+            "m3",
+            "m4",
+            "m5",
+            "m6",
+            "m7",
+            "p3",
+            "p4",
+            "p5",
+            "p6",
+            "p7",
+            "s3",
+            "s4"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 3,
+          "factor": 32,
+          "signals": [
+            "牌河零字牌幺九",
+            "牌河中张密集"
+          ],
+          "suspectSuit": null,
+          "locked": false,
+          "avoidsHonorTerminals": true,
+          "axisSource": "inferred",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "north": 320,
+        "m9": 320,
+        "p5": 80,
+        "m2": 80
+      },
+      "expectedFeature": {
+        "north": {
+          "tier": "高",
+          "payment": 320,
+          "signals": [
+            "牌河零字牌幺九",
+            "牌河中张密集"
+          ]
+        },
+        "p5": {
+          "tier": "高",
+          "payment": 80,
+          "signals": [
+            "牌河零字牌幺九",
+            "牌河中张密集"
+          ]
+        }
+      }
+    },
+    {
+      "id": "concealed-flush",
+      "note": "门清九莲/清一色读牌：整局不打某花色 → tier3；嫌疑花色中张照价、其他花色便宜",
+      "wallCount": 30,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 2,
+          "discards": [
+            "m2",
+            "m3",
+            "m4",
+            "m5",
+            "m6",
+            "m7",
+            "m8",
+            "p2",
+            "p3",
+            "p4",
+            "p5",
+            "p6"
+          ],
+          "melds": [],
+          "winCount": 0,
+          "locked": false
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 3,
+          "factor": 32,
+          "signals": [
+            "牌河零字牌幺九",
+            "牌河未打条",
+            "牌河中张密集"
+          ],
+          "suspectSuit": "s",
+          "locked": false,
+          "avoidsHonorTerminals": true,
+          "axisSource": "inferred",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "s5": 320,
+        "m5": 40,
+        "north": 160
+      },
+      "expectedFeature": {
+        "s5": {
+          "tier": "高",
+          "payment": 320,
+          "signals": [
+            "牌河零字牌幺九",
+            "牌河未打条",
+            "牌河中张密集"
+          ]
+        }
+      }
+    },
+    {
+      "id": "known-thirteen-orphans",
+      "note": "已公开番型（对手已胡十三幺且锁手）：威胁档由公开番型兜住，危险轴为 known —— 对锁手家同样生效",
+      "wallCount": 40,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 3,
+          "discards": [
+            "m1",
+            "p9",
+            "m4",
+            "m5",
+            "p4",
+            "p5",
+            "s4",
+            "s5",
+            "east",
+            "south"
+          ],
+          "melds": [],
+          "winCount": 3,
+          "locked": true,
+          "knownWins": [
+            {
+              "id": "thirteenOrphans",
+              "label": "十三幺",
+              "multiplier": 16
+            }
+          ]
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 3,
+          "factor": 32,
+          "signals": [
+            "已胡十三幺",
+            "已胡3次仍听"
+          ],
+          "suspectSuit": null,
+          "locked": true,
+          "avoidsHonorTerminals": true,
+          "axisSource": "known",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "north": 320,
+        "m9": 320,
+        "p5": 80
+      },
+      "expectedFeature": {
+        "north": {
+          "tier": "高",
+          "payment": 320,
+          "signals": [
+            "已胡十三幺",
+            "已胡3次仍听"
+          ]
+        },
+        "p5": {
+          "tier": "高",
+          "payment": 80,
+          "signals": [
+            "已胡十三幺",
+            "已胡3次仍听"
+          ]
+        }
+      }
+    },
+    {
+      "id": "known-big-three-dragons",
+      "note": "已公开番型：大三元（字牌刻子轴）——字牌照价、普通数牌便宜，锁手后仍成立",
+      "wallCount": 40,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 2,
+          "discards": [
+            "m1",
+            "p9",
+            "m4",
+            "m5",
+            "p4",
+            "p5",
+            "s4",
+            "s5",
+            "east",
+            "south"
+          ],
+          "melds": [],
+          "winCount": 1,
+          "locked": true,
+          "knownWins": [
+            {
+              "id": "big-three-dragons",
+              "label": "大三元",
+              "multiplier": 8,
+              "tile": "red"
+            }
+          ]
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 2,
+          "factor": 16,
+          "signals": [
+            "已胡大三元",
+            "已胡1次仍听"
+          ],
+          "suspectSuit": null,
+          "locked": true,
+          "avoidsHonorTerminals": false,
+          "axisSource": "known",
+          "honorsInFlush": false,
+          "honorEmphasis": true
+        }
+      ],
+      "expectedExposure": {
+        "east": 160,
+        "m5": 80
+      },
+      "expectedFeature": {
+        "east": {
+          "tier": "中",
+          "payment": 160,
+          "signals": [
+            "已胡大三元",
+            "已胡1次仍听"
+          ]
+        },
+        "m5": {
+          "tier": "中",
+          "payment": 80,
+          "signals": [
+            "已胡大三元",
+            "已胡1次仍听"
+          ]
+        }
+      }
+    },
+    {
+      "id": "known-pure-suit-locked",
+      "note": "已公开番型：清一色 + 锁手。实测该对手对非本门牌根本不能胡（0 点）、对本门牌 80 点；这里按 known 轴把轴外压到 0.1 倍（保守不归零）",
+      "wallCount": 40,
+      "visibleTiles": [],
+      "opponents": [
+        {
+          "seat": 1,
+          "discards": [
+            "m1",
+            "p9",
+            "m4",
+            "m5",
+            "p4",
+            "p5",
+            "s4",
+            "s5",
+            "east",
+            "south"
+          ],
+          "melds": [],
+          "winCount": 2,
+          "locked": true,
+          "knownWins": [
+            {
+              "id": "pure-suit",
+              "label": "清一色",
+              "multiplier": 4,
+              "tile": "p5"
+            }
+          ]
+        }
+      ],
+      "expectedProfiles": [
+        {
+          "tier": 2,
+          "factor": 16,
+          "signals": [
+            "已胡清一色",
+            "已胡2次仍听"
+          ],
+          "suspectSuit": "p",
+          "locked": true,
+          "avoidsHonorTerminals": false,
+          "axisSource": "known",
+          "honorsInFlush": false,
+          "honorEmphasis": false
+        }
+      ],
+      "expectedExposure": {
+        "p9": 160,
+        "m5": 16
+      },
+      "expectedFeature": {
+        "p9": {
+          "tier": "中",
+          "payment": 160,
+          "signals": [
+            "已胡清一色",
+            "已胡2次仍听"
+          ]
+        },
+        "m5": {
+          "tier": "中",
+          "payment": 16,
+          "signals": [
+            "已胡清一色",
+            "已胡2次仍听"
+          ]
+        }
+      }
+    }
+  ]
+}

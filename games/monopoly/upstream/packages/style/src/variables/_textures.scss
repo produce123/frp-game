@@ -1,0 +1,23 @@
+// =============================================================================
+// Fatpaper 纹理变量系统（毛毡风格）
+// 命名规范: $fp-{texture-type}-{variant}
+// =============================================================================
+
+// ---- 材质纹理 ----
+$fp-texture-knit: repeating-linear-gradient(45deg,
+  transparent,
+  transparent 0.2rem,
+  rgba(0, 0, 0, 0.02) 0.2rem,
+  rgba(0, 0, 0, 0.02) 0.4rem),
+repeating-linear-gradient(-45deg,
+  transparent,
+  transparent 0.2rem,
+  rgba(0, 0, 0, 0.01) 0.2rem,
+  rgba(0, 0, 0, 0.01) 0.4rem);
+
+$fp-texture-felt: radial-gradient(circle at 50% 50%, transparent 0%, rgba(0, 0, 0, 0.05) 100%),
+repeating-linear-gradient(0deg, transparent, transparent 0.15rem, rgba(0, 0, 0, 0.02) 0.15rem, rgba(0, 0, 0, 0.02) 0.4rem);
+
+// ---- 缝线颜色 ----
+$fp-stitch-color-light: rgba(255, 255, 255, 0.5);
+$fp-stitch-color-dark: rgba(0, 0, 0, 0.25);

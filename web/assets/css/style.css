@@ -1,0 +1,728 @@
+/*
+ * 平台外壳的样式（只作用于 web/，不影响任何游戏）。
+ *
+ * 顶部的 :root 里既有本页变量，也有给 /shared/ui/ui.css 用的 --ui-* 变量 ——
+ * 这就是"组件统一、风格各自保留"的接口：游戏只要自己覆盖 --ui-accent 等几个变量，
+ * 共用组件就会跟着换成它的风格。
+ */
+
+:root {
+  /* 给共用组件（/shared/ui/ui.css）读的 */
+  --ui-surface: #1e2027;
+  --ui-border: #31343d;
+  --ui-text: #eef0f4;
+  --ui-accent: #6aa9ff;
+  --ui-ok: #46c07a;
+  --ui-danger: #ff6b6b;
+  --ui-radius: 12px;
+
+  /* 本页自己的 */
+  --bg: #14161a;
+  --bg-soft: #1a1c22;
+  --panel: #1e2027;
+  --line: #2b2e37;
+  --text: #eef0f4;
+  --muted: #9aa0ad;
+  --accent: #6aa9ff;
+  --ok: #46c07a;
+  --shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+* { box-sizing: border-box; }
+
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+    "PingFang SC", "Hiragino Sans GB", sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+.container { width: min(100% - 32px, 880px); margin: 0 auto; }
+
+.muted { color: var(--muted); }
+.hint { color: var(--muted); font-size: 13px; line-height: 1.65; margin: 4px 0 0; }
+.empty { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+/* ============================== 屏幕 ============================== */
+
+.screen { display: none; min-height: 100%; flex-direction: column; }
+.screen.is-active { display: flex; }
+
+/* ============================== 登录 / 注册 ============================== */
+
+#screen-auth { align-items: center; justify-content: center; padding: 28px 0; }
+
+.auth-card {
+  width: min(100% - 32px, 400px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 26px 22px 22px;
+  box-shadow: var(--shadow);
+}
+
+.brand { margin: 0 0 6px; font-size: 22px; letter-spacing: 0.5px; }
+.auth-card > .muted { margin: 0 0 18px; font-size: 13.5px; }
+
+.tabs {
+  display: flex;
+  gap: 6px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.tab {
+  flex: 1;
+  min-height: 48px;   /* 手机点击区标准，别调小 —— tests/browser.smoke.mjs 会实测 */
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.tab.is-active { background: var(--panel); color: var(--text); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+
+.pane { display: none; }
+.pane.is-active { display: block; }
+
+.field { display: block; margin-bottom: 14px; }
+.field > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+.field strong { color: var(--accent); font-weight: 600; }
+
+input[type="text"], input[type="password"], input:not([type]) {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 13px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* < 16px 会让 iOS Safari 聚焦时自动放大页面 */
+}
+input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+/* ============================== 按钮 ============================== */
+
+.btn {
+  min-height: 48px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.btn:hover:not(:disabled) { border-color: #3d4250; background: #23262e; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary {
+  width: 100%;
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0d1117;
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) { background: #7db5ff; border-color: #7db5ff; }
+#form-register .btn-primary, #form-login .btn-primary { margin-top: 6px; }
+
+/* 撑满一行的次要按钮（设置栏的「登出」）。宽度按容器走，手机上别让它变成一小坨。 */
+.btn-wide { display: flex; width: 100%; align-items: center; justify-content: center; }
+
+/* 所有可点的东西都得够大 —— 手机手指没有像素级精度。
+   44px 是底线，主操作按钮（.btn）用 48px。tests/browser.smoke.mjs 会实测。 */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font-size: 12.5px;
+  font-family: inherit;
+  cursor: default;
+}
+button.pill { cursor: pointer; }
+button.pill:hover { border-color: #3d4250; color: var(--text); }
+
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+/* ============================== 头部 ============================== */
+
+.site-header {
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.header-inner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  min-height: 58px;
+  flex-wrap: wrap;
+}
+
+.brand-small { font-size: 15px; font-weight: 600; }
+
+.me { display: flex; align-items: center; gap: 8px; }
+/* 顶栏那一行「你：X · ID Y」（用户要求精简成一行）。
+   ID 按钮和登出按钮已经搬去「设置」栏，这里只留一行字。
+   头像在文字左边，名字再长也不换行（头像本身 flex:none）。 */
+.me-line { font-size: 15px; font-weight: 600; margin-right: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill-id code { color: var(--accent); font-size: 12.5px; }
+
+/* ============================== 面板 ============================== */
+
+main.container { padding: 20px 0 40px; display: flex; flex-direction: column; gap: 18px; }
+
+/* 底部那条切换栏是 position: fixed 的，内容得自己给它让出位置 ——
+   不留这一段，列表最后一张卡片会被压在栏底下（而且滚到底也看不见）。 */
+.app-main { padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px)); }
+
+/* ============================== 底部三栏切换栏 ============================== */
+
+/*
+ * 三栏的容器。栏目之间**没有横向滑动**（用户明确否掉了滑动，嫌晃眼），
+ * 只有淡入淡出（见下面 .is-active / .is-leaving 那两条）。
+ */
+.tab-panels { position: relative; }
+
+.tab-panel { display: none; }
+.tab-panel.is-active {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: frpColIn 0.22s ease both;
+}
+
+/*
+ * 刚被切走的那一栏：**脱离文档流**盖在原处淡出。
+ *
+ * 为什么不写成"旧栏先淡出、淡完再显示新栏"：那样中间会有一小段"两栏都没显示"的窗口，
+ * 用户在这两百毫秒里点什么都点不动（自动化里表现成"点了没反应"，最难查）。
+ * 现在新栏**立刻**就位（能点、能滚），旧栏只是一层 pointer-events:none 的幻影在原地淡掉 ——
+ * 合起来就是"淡入 + 淡出"。
+ */
+.tab-panel.is-leaving {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  pointer-events: none;
+  animation: frpColOut 0.18s ease both;
+}
+
+@keyframes frpColIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes frpColOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* 特效开关关掉（body.no-fx，见 app.js 的 syncPrefsUi）或者系统要求减少动画时：
+   不做淡入淡出，立刻切。 */
+body.no-fx .tab-panel.is-active,
+body.no-fx .tab-panel.is-leaving { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .tab-panel.is-active,
+  .tab-panel.is-leaving { animation: none; }
+}
+
+/*
+ * 底部切换栏本身。
+ * 用 fixed 而不是"塞在文档流末尾"：栏目内容可能很长（好友多的时候），
+ * 切换栏必须一直贴在屏幕底部、手边就能按。
+ */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-soft);
+  border-top: 1px solid var(--line);
+}
+
+/* ⚠️ 提示条（左上角那个 .frp-toasts）的默认位置正好压在底部栏上。
+   它是共用样式（shared/ui/ui.css）里的 fixed 定位，这里只给平台外壳抬高一截 ——
+   不抬的话每次弹提示都会盖住三个图标。 */
+.frp-toasts { bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
+
+/* 图标按钮：**任意一边都不小于 44px**（平台硬指标，手机上手指没精度）。
+   宽靠 flex:1 均分三分之一，高固定 56px。 */
+.tabbar-btn {
+  position: relative;          /* 小红点靠它定位 */
+  flex: 1;
+  min-width: 44px;
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.tabbar-btn:hover { background: rgba(255, 255, 255, 0.04); }
+
+/* 未选中的稍暗 */
+.tabbar-icon {
+  font-size: 22px;
+  line-height: 1;
+  opacity: 0.5;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+/* 选中的：高亮 + 稍微放大 */
+.tabbar-btn.is-active { color: var(--text); background: rgba(106, 169, 255, 0.1); }
+.tabbar-btn.is-active .tabbar-icon { opacity: 1; transform: scale(1.18); }
+
+/* 「好友」图标上那颗小红点（带数字）：有待处理的好友申请时才出现 */
+.tabbar-badge {
+  position: absolute;
+  top: 6px;
+  right: calc(50% - 26px);
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff5d5d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--bg-soft);
+}
+/* ⚠️ 必须显式写 [hidden]：上面设了 display（absolute 也照样生成盒子），
+   和 UA 的 [hidden]{display:none} 同权重，靠后者胜出 —— 不写这条隐藏就会失效。
+   （同样的坑见 .friend-group[hidden]。） */
+.tabbar-badge[hidden] { display: none; }
+
+/* ============================== 设置栏 ============================== */
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--line);
+}
+.setting-label { font-size: 14.5px; }
+
+.setting-block { margin-top: 14px; }
+.setting-block > .setting-label { display: block; margin-bottom: 8px; color: var(--muted); font-size: 13px; }
+
+/* 开关按钮（role="switch"）：做成一颗 44px 高的药丸，字就是当前状态「开 / 关」。
+   为什么不用原生勾选框：勾选框只有十几像素高，平台按"真实点击目标 ≥44px"量会当场报错。 */
+.switch {
+  min-width: 68px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.switch:hover { border-color: #3d4250; }
+.switch.is-on {
+  background: rgba(70, 192, 122, 0.16);
+  border-color: rgba(70, 192, 122, 0.5);
+  color: var(--ok);
+}
+
+/* 身份那一块 */
+.identity { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.identity-name { font-size: 17px; font-weight: 600; }
+.identity-avatar { --frp-avatar-size: 64px; }
+.avatar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.btn-small {
+  min-height: 44px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  cursor: pointer;
+}
+.btn-small:hover { border-color: #3d4250; }
+.friend-top .frp-avatar { flex: none; }
+
+/* 「关于我」卡片 */
+.about-card h2 { margin: 0 0 6px; font-size: 16px; }
+.about-card .muted { margin: 0 0 12px; font-size: 13.5px; }
+.about-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  text-decoration: none;
+  color: var(--accent);
+  border-color: rgba(106, 169, 255, 0.4);
+}
+.about-link:hover { background: rgba(106, 169, 255, 0.12); }
+
+/* ============================== 面板 ============================== */
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 16px;
+}
+
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.panel-head h2 { margin: 0; font-size: 16px; }
+
+/* ============================== 好友 ============================== */
+
+.friend-add { display: flex; gap: 8px; margin-bottom: 12px; }
+.friend-add input { flex: 1; }
+.friend-add .btn { flex: none; min-width: 96px; }
+
+.friend-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+
+/* 好友一行分两段：上面身份、下面状态与按钮。
+   单行塞不下 —— 名字 + 7 位 ID + "正在玩 猛鬼宿舍" + 两个按钮，
+   在 360px 宽的手机上一定会溢出（tests/browser.smoke.mjs 会实测）。 */
+.friend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  border-radius: 11px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+}
+
+.friend-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.friend-bottom { display: flex; align-items: center; gap: 8px; }
+
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #4a4f5c; flex: none; }
+.friend.is-online .dot { background: var(--ok); box-shadow: 0 0 0 3px rgba(70, 192, 122, 0.16); }
+
+.friend-name { font-weight: 600; font-size: 17px; }
+
+.friend-id {
+  border: 0;
+  background: transparent;
+  padding: 0 8px;
+  min-height: 44px;
+  border-radius: 8px;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-id:hover { color: var(--accent); background: rgba(106, 169, 255, 0.1); }
+
+/* 缩小 ID 的占位高度：它只需要 44px 的**点击**高度，视觉上可以紧一点 */
+.friend-top { min-height: 44px; }
+.friend-top .dot { margin-top: 2px; }
+
+.friend-status {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-right: auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend.is-online .friend-status { color: var(--ok); }
+
+.friend-actions { display: flex; gap: 6px; flex: none; }
+
+.friend-join,
+.friend-remove,
+.friend-accept,
+.friend-decline,
+.friend-cancel {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 8px;
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.friend-join { color: var(--accent); border-color: rgba(106, 169, 255, 0.4); }
+.friend-join:hover { background: rgba(106, 169, 255, 0.12); }
+.friend-remove:hover { color: var(--danger, #ff6b6b); border-color: var(--ui-danger); }
+.friend-accept { color: var(--ok); border-color: rgba(70, 192, 122, 0.4); }
+.friend-accept:hover { background: rgba(70, 192, 122, 0.12); }
+.friend-decline:hover,
+.friend-cancel:hover { color: var(--danger, #ff6b6b); border-color: var(--ui-danger); }
+
+/* ============================== 好友申请（面板里的两块） ============================== */
+
+/* 没有待处理申请时整块隐藏（连标题一起）。
+   ⚠️ 必须显式写 [hidden]：下面设了 display，和 UA 的 [hidden]{display:none}
+   同权重，靠后者胜出 —— 不写这条隐藏就会失效。 */
+.friend-group[hidden] { display: none; }
+.friend-group { margin: 0 0 12px; }
+
+.friend-group-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* 申请行上的 ID：名字是单字、可能重名，所以把 ID 也显示出来（不可点，
+   免得跟好友行那个"点一下复制"的按钮混淆）。 */
+.friend-req-id {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================== 游戏卡片 ============================== */
+
+/* 顶部一行：搜索框 + 右侧圆形「筛」按钮（用户要求：一行、右边一个圆形选项框） */
+.games-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.game-search {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px; /* 小于 16px 会让 iOS Safari 聚焦时自动放大页面 */
+  -webkit-appearance: none;
+  appearance: none;
+}
+.game-search:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.game-filter-btn {
+  flex: none;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--muted);
+  font: 600 15px/1 inherit;
+  cursor: pointer;
+}
+.game-filter-btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(106, 169, 255, 0.14);
+}
+
+.game-filter-pop {
+  margin: 0 0 12px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-soft);
+}
+.game-filter-pop[hidden] { display: none; }
+
+.game-filter-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.filter-chip {
+  min-height: 44px;
+  padding: 0 15px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13.5px;
+  cursor: pointer;
+}
+.filter-chip.is-active {
+  border-color: var(--accent);
+  background: rgba(106, 169, 255, 0.14);
+  color: var(--accent);
+}
+
+/* 左边卡片列表 + 最右边一列 A–Z 字母表 */
+.games-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  gap: 8px;
+  align-items: start;
+}
+
+.game-grid { min-width: 0; }
+
+.game-group + .game-group { margin-top: 16px; }
+
+.game-letter {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  scroll-margin-top: 12px;
+}
+
+.game-group-cards { display: grid; gap: 12px; grid-template-columns: 1fr; }
+
+.letter-rail {
+  position: sticky;
+  top: 8px;
+  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.letter-rail::-webkit-scrollbar { display: none; }
+
+.letter-btn {
+  width: 30px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: 700 12px/1 inherit;
+  cursor: pointer;
+}
+.letter-btn.is-active {
+  color: var(--accent);
+  background: rgba(106, 169, 255, 0.12);
+}
+
+/* 没有游戏的字母：保留位置（完整 A–Z），但不可点、不进 tab 顺序 */
+.letter-off {
+  display: block;
+  width: 30px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  font-size: 10px;
+  color: #4a4e59;
+}
+
+.game-card {
+  display: flex;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+.game-card:hover { border-color: #3d4250; }
+.game-card.is-offline { opacity: 0.66; }
+
+.card-icon { font-size: 30px; line-height: 1; flex: none; }
+.card-body { flex: 1; min-width: 0; }
+.card-body h3 { margin: 0 0 4px; font-size: 16px; }
+.card-body p { margin: 0 0 8px; font-size: 13.5px; color: var(--muted); }
+
+.card-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.card-actions { display: flex; gap: 8px; }
+.card-actions .btn { width: auto; }
+
+/* ============================== 注册后的 ID 弹窗 ============================== */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 100;
+  backdrop-filter: blur(3px);
+}
+.modal[hidden] { display: none; }
+
+.modal-card {
+  width: min(100%, 380px);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 22px;
+  box-shadow: var(--shadow);
+}
+.modal-card h2 { margin: 0 0 8px; font-size: 18px; }
+.modal-card .muted { font-size: 13.5px; margin: 0 0 14px; }
+
+.id-big {
+  display: block;
+  width: 100%;
+  min-height: 62px;
+  margin-bottom: 10px;
+  border-radius: 13px;
+  border: 1px dashed var(--accent);
+  background: rgba(106, 169, 255, 0.08);
+  color: var(--accent);
+  font: 700 24px/1 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 3px;
+  cursor: pointer;
+}
+
+/* ============================== 页脚 ============================== */
+
+/* 原来这里有一条 .site-footer（"由你自己的电脑 + SakuraFrp 隧道托管"）。
+   那句话已经搬进「设置」栏的「关于我」卡片，页脚整块删掉 ——
+   底部切换栏是 fixed 的，留着页脚也只是被压在栏底下的死像素。 */
+
+/* ============================== 宽屏 ============================== */
+
+@media (min-width: 640px) {
+  .game-group-cards { grid-template-columns: repeat(2, 1fr); }
+  .header-inner { flex-wrap: nowrap; }
+  /* 宽屏上不让三个图标拉得满屏都是：给整条栏一个和内容一样宽的上限 */
+  .tabbar { justify-content: center; }
+  .tabbar-btn { flex: none; width: 140px; }
+}

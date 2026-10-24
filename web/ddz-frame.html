@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>斗地主</title>
+<style>
+  /*
+   * 伪横屏外壳：手机浏览器是**竖**的，牌桌**横**过来。
+   *
+   * 和无名杀那个外壳同一套做法（web/noname-frame.html）：牌桌是 1280×720 的
+   * Godot 画面，直接塞进竖屏会被压成一条；这里让它在**一个横过来的 iframe** 里跑 ——
+   * iframe 的视口就是横的，Godot 的 stretch（viewport + keep）会按横屏铺满。
+   */
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  #rot {
+    position: fixed; left: 0; top: 0;
+    transform-origin: 0 0;
+    will-change: transform;
+  }
+  #game {
+    display: block; border: 0; background: #000;
+  }
+  #hint {
+    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
+    color: #cfd6e4; font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+    text-align: center; padding: 24px;
+  }
+</style>
+</head>
+<!-- data-frp-fullscreen="landscape"：点全屏时进入真横屏（screen.orientation.lock） -->
+<body data-frp-fullscreen="landscape">
+<div id="rot"><iframe id="game" allow="autoplay; fullscreen; gamepad" allowfullscreen></iframe></div>
+<div id="hint">正在打开斗地主…</div>
+<script type="module">
+  const rot = document.getElementById('rot');
+  const game = document.getElementById('game');
+  const hint = document.getElementById('hint');
+
+  /*
+   * 好友点「进入 / 邀请」时地址上带的是 `?join=<6 位房号>`（平台外壳用这个参数）。
+   * 必须**继续往 iframe 里带** —— 真正读房号的是 /ddz/ 页面里的 FrpRoom。
+   */
+  const joinCode = new URLSearchParams(location.search).get('join');
+  const joinSuffix = joinCode ? '?join=' + encodeURIComponent(joinCode) : '';
+  game.src = '/ddz/' + joinSuffix;
+
+  /*
+   * 只在**手机/平板等粗指针设备**上转。电脑浏览器原样进 /ddz/（地址栏也干净）。
+   * ⚠️ 判据只用 `(pointer: coarse)`：带触摸屏的 Windows 笔记本 maxTouchPoints 是 10，
+   *    会把自己当成手机（无名杀那边踩过）。
+   */
+  const coarse = matchMedia('(pointer: coarse)').matches;
+
+  function layout() {
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const rotate = coarse && vh > vw;
+
+    if (rotate) {
+      const w = vh;
+      const h = vw;
+      game.style.width = w + 'px';
+      game.style.height = h + 'px';
+      rot.style.width = w + 'px';
+      rot.style.height = h + 'px';
+      rot.style.transform = `translate(${vw}px, 0) rotate(90deg)`;
+    } else {
+      game.style.width = vw + 'px';
+      game.style.height = vh + 'px';
+      rot.style.width = vw + 'px';
+      rot.style.height = vh + 'px';
+      rot.style.transform = '';
+    }
+    hint.style.display = 'none';
+  }
+
+  layout();
+  addEventListener('resize', layout);
+  addEventListener('orientationchange', () => setTimeout(layout, 120));
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', layout);
+
+  // 电脑上没必要套一层 iframe：回真页面，地址栏也是干净的 /ddz/
+  if (!coarse) location.replace('/ddz/' + joinSuffix);
+</script>
+<script defer src="/shared/ui/fullscreen.js"></script>
+</body>
+</html>

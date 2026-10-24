@@ -1,0 +1,19 @@
+# 莲花广麻后端（`docker compose up --build`）
+#
+# 源码构建镜像；运行时 `.env` 与 `config/` 均由部署目录提供。
+# 数据库：默认 SQLite（mahjong_data 卷）；设 PG_PASSWORD 即走 PostgreSQL。
+services:
+  backend:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config:ro
+
+volumes:
+  mahjong_data:
+    name: mahjong_data

@@ -1,0 +1,148 @@
+import { defineConfig } from "vite";
+import vue from "@vitejs/plugin-vue";
+import path from "path";
+import { readFileSync } from "node:fs";
+import viteCompression from "vite-plugin-compression";
+import { visualizer } from "rollup-plugin-visualizer";
+import electron from "vite-plugin-electron/simple";
+import pkg from "./package.json";
+import generateMonacoDTS from "./plugins/vite-plugin-generate-monaco-dts";
+import { envPlugin } from "@mine-monopoly/env/vite-plugin";
+
+const APP_VERSION_SHORT = pkg.version.split(".").slice(0, 2).join(".");
+const updatePolicy = JSON.parse(
+	readFileSync(path.resolve(__dirname, "build", "update-policy.json"), "utf-8"),
+) as { minNativeVersion?: string };
+const MIN_NATIVE_VERSION = updatePolicy.minNativeVersion || "0.0.0";
+
+// https://vitejs.dev/config/
+export default defineConfig(({ command, mode }) => {
+	const isCheck = mode === "check";
+	const isCapacitor = mode === "capacitor";
+	const isWeb = mode === "web";
+	const buildTarget = isCapacitor ? "chrome64" : isWeb ? "safari13" : "es2022";
+	// frp-game 自建服：固定挂在 /games/monopoly/ 下（上游默认是 /monopoly/）。
+	// PowerShell 每次 build 都记得设环境变量太容易漏，所以把默认值改掉。
+	const webBasePathRaw = process.env.VITE_WEB_BASE_PATH?.trim() || "/games/monopoly/";
+	const webBasePath = webBasePathRaw.startsWith("/")
+		? (webBasePathRaw.endsWith("/") ? webBasePathRaw : `${webBasePathRaw}/`)
+		: `/${webBasePathRaw.endsWith("/") ? webBasePathRaw : `${webBasePathRaw}/`}`;
+
+	return {
+		base: isWeb ? webBasePath : "./",
+		assetsInclude: ["**/*.d.ts"],
+		define: {
+			// 全局常量注入
+			__APP_VERSION__: JSON.stringify(pkg.version),
+			__BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+			__COMPATIBLE_VERSION__: JSON.stringify(APP_VERSION_SHORT),
+			__MIN_NATIVE_VERSION__: JSON.stringify(MIN_NATIVE_VERSION),
+		},
+		plugins: [
+			vue(),
+			generateMonacoDTS(),
+			// Capacitor 不需要 gzip（Android 会把 .gz 当重复资源报错）
+			!isCapacitor && viteCompression({
+				threshold: 10240, // 只压缩大于 10KB 的文件
+			}),
+			envPlugin({
+				exclude: ["MYSQL_PASSWORD", "TC_KEY"],
+				// frp-game 自建服：用仓库内可提交的配置，不读上游 .env（那是本地开发用的）。
+				envPath: "../../.env.frp",
+			}),
+			// Electron 插件仅在桌面端构建时启用
+			(!isCheck && !isCapacitor && !isWeb) && electron({
+				main: {
+					entry: "electron/main.ts",
+				},
+				preload: {
+					input: path.join(__dirname, "electron/preload.ts"),
+				},
+				renderer: process.env.NODE_ENV === "test" ? undefined : {},
+			}),
+			!isCheck && command === "build" && visualizer({
+				filename: "dist/frontend/stats.html",
+				open: false,
+				gzipSize: true,
+				brotliSize: true,
+			}),
+		].filter(Boolean),
+		build: {
+			outDir: isCheck ? "dist/check" : "dist/frontend",
+			// Web 产物单独兼容旧版 iOS Safari，Capacitor 继续照顾较老的 Android WebView，桌面端保持较高 target。
+			target: buildTarget,
+			minify: isCheck ? false : "terser",
+			sourcemap: isCheck ? "inline" : false,
+			rollupOptions: {
+				output: {
+					manualChunks: isCheck ? undefined : (id: string) => {
+						if (id.includes("node_modules/vue") || id.includes("node_modules/pinia") || id.includes("node_modules/vue-router")) {
+							return "vue-vendor";
+						}
+						if (id.includes("node_modules/three")) {
+							return "three-vendor";
+						}
+						if (id.includes("node_modules/gsap")) {
+							return "gsap-vendor";
+						}
+						if (id.includes("node_modules/@fortawesome")) {
+							return "fa-vendor";
+						}
+						if (id.includes("packages/ui") || id.includes("packages/components")) {
+							return "ui-common";
+						}
+					},
+				},
+			},
+		},
+		css: {
+			preprocessorOptions: {
+				scss: {
+					silenceDeprecations: ['legacy-js-api'],
+				},
+			},
+		},
+		resolve: {
+			alias: [
+				{
+					find: "@src",
+					replacement: path.resolve(path.dirname("./"), "src"),
+				},
+				{
+					find: "@mine-monopoly/env",
+					replacement: path.resolve(__dirname, "../../packages/env/src/browser.ts"),
+				},
+				{
+					find: "@mine-monopoly/style",
+					replacement: path.resolve(__dirname, "../../packages/style/src"),
+				},
+				/*
+				 * frp-game 自建服：把上游的 WebRTC/PeerJS 传输层换成本仓库的 WebSocket 中转。
+				 *
+				 * 为什么：跨网络直连需要 TURN，而隧道只映射了 7891 一个端口；
+				 * 中转只多占一条同源 WS（`/monopoly-relay`），不需要打洞、不需要 coturn，
+				 * 手机流量/严格 NAT 也能连。游戏逻辑仍然是房主浏览器跑，和上游一致。
+				 *
+				 * 只在**构建产物**里换实现；上游源码里的 import 保持 "peerjs"，方便对比。
+				 */
+				{
+					find: /^peerjs$/,
+					replacement: path.resolve(__dirname, "src/frp/relay-peer.ts"),
+				},
+			],
+		},
+		server: {
+			port: 5173,
+		},
+		optimizeDeps: {
+			// @capgo/capacitor-updater 顶层调用 Capacitor registerPlugin()，
+			// Vite dev 预打包时无 native bridge 会失败。生产构建通过
+			// 动态 import() 自动代码分割，不需要 exclude。
+			exclude: ["@capgo/capacitor-updater"],
+		},
+		esbuild: {
+			// 只在生产构建（非 check）时删除 console 和 debugger
+			drop: (command === "build" && !isCheck) ? ["console", "debugger"] : [],
+		},
+	};
+});
