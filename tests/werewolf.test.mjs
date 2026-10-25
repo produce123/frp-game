@@ -274,19 +274,29 @@ describe('狼人杀 · 建房 / 加入 / 开局', () => {
     for (const user of users) {
       const { view } = await status(user);
       const meId = view.self.id;
+      // 狼人眼里：自己 + 狼队友看得到身份（夜里要合刀）；好人一个都看不到。
+      const meIsWolf = view.private.alignment === 'wolf';
+      const peerSeats = new Set((view.private.wolfTeammates || []).map((t) => t.seat));
       for (const player of view.players) {
         if (player.playerId === meId) {
           assert.ok(player.role, '自己的身份要能看到');
           assert.ok(player.alignment, '自己的阵营要能看到');
+        } else if (meIsWolf && peerSeats.has(player.seat)) {
+          assert.ok(player.role, `狼人要看得到 ${player.seat + 1} 号队友的身份`);
+          assert.equal(player.alignment, 'wolf', '狼队友的阵营就是狼');
         } else {
-          assert.equal(player.role, undefined, `不该看到别人的底牌（${player.seat} 号）`);
-          assert.equal(player.alignment, undefined, `不该看到别人的阵营（${player.seat} 号）`);
+          assert.equal(player.role, undefined, `不该看到别人的底牌（${player.seat + 1} 号）`);
+          assert.equal(player.alignment, undefined, `不该看到别人的阵营（${player.seat + 1} 号）`);
         }
       }
-      // 原始报文里也不能出现"别人的角色名"
+      // 原始报文：好人手里连 "role" 字段都不该出现；狼人只多出狼队友那几条
       const raw = JSON.stringify(view.players.filter((p) => p.playerId !== meId));
-      assert.equal(raw.includes('"role"'), false);
-      assert.equal(raw.includes('"alignment"'), false);
+      if (meIsWolf) {
+        assert.equal(raw.split('"role"').length - 1, peerSeats.size, '狼人手里只多出狼队友的身份');
+      } else {
+        assert.equal(raw.includes('"role"'), false);
+        assert.equal(raw.includes('"alignment"'), false);
+      }
     }
 
     app.werewolf.reset();

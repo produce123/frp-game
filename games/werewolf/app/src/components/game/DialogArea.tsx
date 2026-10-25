@@ -4,13 +4,12 @@ import React, { useRef, useEffect, useMemo, useState, useCallback } from "react"
 import { motion, AnimatePresence, LayoutGroup } from "framer-motion";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChatCircleDots, PaperPlaneTilt, CheckCircle, MoonStars, Eye, Drop, Crosshair, Skull, X, ArrowClockwise, CaretRight, UserCircle, Prohibit, ClipboardText } from "@phosphor-icons/react";
+import { ChatCircleDots, PaperPlaneTilt, CheckCircle, Eye, Drop, Crosshair, Skull, X, ArrowClockwise, CaretRight, UserCircle, Prohibit, ClipboardText } from "@phosphor-icons/react";
 import { WerewolfIcon, VillagerIcon, VoteIcon } from "@/components/icons/FlatIcons";
 import { VoteResultCard } from "./VoteResultCard";
 import { VotingProgress } from "./VotingProgress";
 import { WolfPlanningPanel } from "./WolfPlanningPanel";
 import { MentionInput } from "./MentionInput";
-import { TalkingAvatar } from "./TalkingAvatar";
 import { EventLog } from "./EventLog";
 import { buildSimpleAvatarUrl, getModelLogoUrl } from "@/lib/avatar-config";
 import { RoleRevealHistoryCard, type RoleRevealEntry } from "@/components/game/RoleRevealHistoryCard";
@@ -28,7 +27,9 @@ const HISTORY_BOTTOM_THRESHOLD = 24;
 // 职业立绘映射
 const ROLE_PORTRAIT_BASE = process.env.NEXT_PUBLIC_BASE_PATH || "";
 
-// 职业立绘映射
+// 职业立绘映射：**只列真的有图**的角色（`dist/roles/*.png`）。
+// 没有独立立绘的角色（平民 / 恶夜骑士 / 狼王 / 狼美人 / 骑士 / 长老 / 守墓人）就留白 ——
+// 既不要拿同阵营的图冒充，更不要把玩家头像（小圆图）放大挂上去。
 const ROLE_PORTRAIT_MAP: Record<string, string> = {
   Werewolf: `${ROLE_PORTRAIT_BASE}/roles/werewolf.png`,
   WhiteWolfKing: `${ROLE_PORTRAIT_BASE}/roles/white-wolf-king.png`,
@@ -37,14 +38,6 @@ const ROLE_PORTRAIT_MAP: Record<string, string> = {
   Hunter: `${ROLE_PORTRAIT_BASE}/roles/hunter.png`,
   Guard: `${ROLE_PORTRAIT_BASE}/roles/guard.png`,
   Idiot: `${ROLE_PORTRAIT_BASE}/roles/idiot.png`,
-  Villager: `${ROLE_PORTRAIT_BASE}/roles/villager.png`,
-  // 新角色暂时没有独立立绘，先用同阵营的现有图兜底，避免出现破图。
-  EvilKnight: `${ROLE_PORTRAIT_BASE}/roles/werewolf.png`,
-  WolfKing: `${ROLE_PORTRAIT_BASE}/roles/white-wolf-king.png`,
-  WolfBeauty: `${ROLE_PORTRAIT_BASE}/roles/werewolf.png`,
-  Knight: `${ROLE_PORTRAIT_BASE}/roles/hunter.png`,
-  Elder: `${ROLE_PORTRAIT_BASE}/roles/guard.png`,
-  Gravekeeper: `${ROLE_PORTRAIT_BASE}/roles/seer.png`,
 };
 
 // 预加载所有职业立绘
@@ -109,7 +102,7 @@ function renderPlayerMentions(
     
     // 添加标签
     if (player) {
-      const isPlayerReady = player.isHuman ? !!player.displayName?.trim() : !!player.agentProfile?.persona;
+      const isPlayerReady = Boolean(player.displayName?.trim()) || Boolean(player.agentProfile?.persona);
       parts.push(
         <span
           key={`${match.index}-${seatNum}`}
@@ -272,8 +265,8 @@ interface DialogAreaProps {
   // 输入相关
   inputText?: string;
   onInputChange?: (text: string) => void;
-  onSendMessage?: () => void;
-  onFinishSpeaking?: () => void;
+  onSendMessage?: () => void | Promise<void>;
+  onFinishSpeaking?: () => void | Promise<void>;
   // 操作相关 (从 BottomActionPanel 合并)
   selectedSeat?: number | null;
   isWaitingForAI?: boolean;
@@ -409,19 +402,16 @@ export function DialogArea({
   const bottomRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const historyContentRef = useRef<HTMLDivElement>(null);
-  const lastPortraitPlayerRef = useRef<Player | null>(null);
-
-  const [talkingPlayerId] = useState<string | null>(null);
 
   const handleAdvance = useCallback(() => {
     onAdvanceDialogue?.();
   }, [onAdvanceDialogue]);
 
-  const handleFinishSpeaking = useCallback(() => {
-    if (inputText?.trim()) {
-      onSendMessage?.();
-    }
-    onFinishSpeaking?.();
+  const handleFinishSpeaking = useCallback(async () => {
+    // 先把草稿发出去，等它落地再结束发言：两个请求并发时，endSpeech 可能先到，
+    // 最后一句就被服务器以「还没轮到你发言」拒掉了。
+    if (inputText?.trim()) await Promise.resolve(onSendMessage?.());
+    await Promise.resolve(onFinishSpeaking?.());
   }, [inputText, onSendMessage, onFinishSpeaking]);
 
   // 跳过/继续逻辑由 page.tsx 的全局按键处理负责（同时截断语音）
@@ -489,20 +479,6 @@ export function DialogArea({
     return null;
   }, [isHumanTurn, humanPlayer, currentDialogue, displayedText, visibleMessages, gameState.players]);
 
-  const portraitPlayer = useMemo(() => {
-    if (isHumanTurn && humanPlayer) return humanPlayer;
-    if (typeof gameState.currentSpeakerSeat === "number") {
-      return gameState.players.find((p) => p.seat === gameState.currentSpeakerSeat) || null;
-    }
-    return currentSpeaker?.player || null;
-  }, [isHumanTurn, humanPlayer, gameState.currentSpeakerSeat, gameState.players, currentSpeaker?.player?.playerId]);
-
-  useEffect(() => {
-    if (portraitPlayer) lastPortraitPlayerRef.current = portraitPlayer;
-  }, [portraitPlayer?.playerId]);
-
-  const stablePortraitPlayer = portraitPlayer || lastPortraitPlayerRef.current;
-
   // 选中目标后，若确认卡位于滚动容器可视区之外（矮屏/键盘顶起），自动滚入视野
   const actionConfirmRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -514,9 +490,10 @@ export function DialogArea({
   const portraitNode = (
     <AnimatePresence mode="wait" initial={false}>
       {(() => {
-        // 夜晚行动阶段：显示对应职业立绘
+        // 夜晚行动阶段：画"这个阶段正在行动的角色"的立绘。
+        // 阶段本身对全桌公开（顶栏就写着「狼人行动」），画它不算泄漏。
         const phaseRole = getPhaseRole(phase, humanPlayer?.role);
-        const rolePortrait = phaseRole ? encodeURI(ROLE_PORTRAIT_MAP[phaseRole]) : null;
+        const rolePortrait = phaseRole ? ROLE_PORTRAIT_MAP[phaseRole] : undefined;
 
         if (rolePortrait) {
           return (
@@ -546,7 +523,7 @@ export function DialogArea({
               
               {/* 职业立绘 */}
               <img
-                src={rolePortrait}
+                src={encodeURI(rolePortrait)}
                 alt={phaseRole || 'Role'}
                 className="relative z-10 w-[220px] lg:w-[260px] xl:w-[300px] h-auto object-contain"
                 style={{ willChange: "opacity, transform, filter" }}
@@ -554,51 +531,34 @@ export function DialogArea({
             </motion.div>
           );
         }
-        
-        // 非夜晚行动阶段或白天：显示玩家头像
-        if (stablePortraitPlayer) {
+
+        // 白天 / 等待阶段：只画**自己的**职业立绘（自己的身份本来就知道，不算泄漏）。
+        // 绝不按发言者的身份画 —— 那等于把别人的底牌亮给全桌。
+        const selfRole = humanPlayer?.role;
+        const selfPortrait = selfRole ? ROLE_PORTRAIT_MAP[selfRole] : undefined;
+        if (selfPortrait) {
           return (
             <motion.div
-              key={stablePortraitPlayer.playerId}
-              initial={{ opacity: 0, filter: "blur(4px)" }}
+              key={`self-portrait-${selfRole}`}
+              initial={{ opacity: 0, filter: "blur(8px)" }}
               animate={{ opacity: 1, filter: "blur(0px)" }}
-              exit={{ opacity: 0, filter: "blur(4px)" }}
-              transition={{ duration: 0.2, ease: "easeOut" }}
+              exit={{ opacity: 0, filter: "blur(8px)" }}
+              transition={{ duration: 0.35, ease: "easeOut" }}
               className="relative flex flex-col items-center"
             >
-              {/* 光晕效果 */}
-              <div className="absolute bottom-[20%] left-1/2 -translate-x-1/2 w-40 h-40 bg-gradient-radial from-[var(--color-accent)]/20 via-transparent to-transparent rounded-full blur-2xl" />
-              
-              {/* 立绘图片 - 只在字幕播放中时有嘴型动画 */}
-              <TalkingAvatar
-                seed={stablePortraitPlayer.avatarSeed ?? stablePortraitPlayer.playerId}
-                gender={stablePortraitPlayer.agentProfile?.persona?.gender}
-                modelRef={stablePortraitPlayer.agentProfile?.modelRef}
-                useModelLogo={isGenshinMode && !stablePortraitPlayer.isHuman}
-                isTalking={talkingPlayerId === stablePortraitPlayer.playerId || (isTyping && !talkingPlayerId)}
-                alt={stablePortraitPlayer.displayName}
+              <img
+                src={encodeURI(selfPortrait)}
+                alt={selfRole || 'Role'}
                 className="relative z-10 w-[220px] lg:w-[260px] xl:w-[300px] h-auto object-contain"
-                scale={120}
-                translateY={-5}
+                style={{ willChange: "opacity, transform, filter" }}
               />
             </motion.div>
           );
         }
-        
-        return (
-          <motion.div
-            key="empty-portrait"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.3 }}
-            className="flex items-end justify-center h-full pb-6"
-          >
-            {isNight ? (
-              <MoonStars size={64} className="opacity-20 text-[var(--text-primary)]" />
-            ) : (
-              <ChatCircleDots size={64} className="opacity-15" />
-            )}
-          </motion.div>
-        );
+
+        // 没有立绘的角色（平民 / 恶夜骑士 / 狼王 / 狼美人 / 骑士 / 长老 / 守墓人）→ 直接空白。
+        // 原来这里会把自己的头像放大 220px 挂在左边，又糊又丑，用户要求去掉。
+        return null;
       })()}
     </AnimatePresence>
   );
@@ -969,7 +929,6 @@ export function DialogArea({
     && humanPlayer?.alive
     && typeof gameState.badge.signup?.[humanPlayer.playerId] !== "boolean";
   const showBadgeSignupWaiting = phase === "DAY_BADGE_SIGNUP"
-    && isWaitingForAI
     && humanPlayer?.alive
     && typeof gameState.badge.signup?.[humanPlayer.playerId] === "boolean";
   const showBadgeTransferOption = phase === "BADGE_TRANSFER"
@@ -1000,7 +959,10 @@ export function DialogArea({
   const showDaySkill = Boolean(can.knight || can.wolfSelfDestruct || can.wwkBoom);
   const graveInfo = gameState.roleAbilities.grave;
   const showGraveInfo = Boolean(isNight && humanPlayer?.role === "Gravekeeper" && graveInfo);
-  const showHumanInput = isHumanTurn && phase !== "GAME_END" && phase !== "DAY_BADGE_SIGNUP";
+  // 猎人中枪 / 警长移交时 g.speaker 还停在"刚出局那个人"身上，
+  // 不排除这两个阶段就会给出局的人弹一个会报错的发言框。
+  const showHumanInput = isHumanTurn
+    && !["GAME_END", "DAY_BADGE_SIGNUP", "HUNTER_SHOOT", "BADGE_TRANSFER", "WHITE_WOLF_KING_BOOM"].includes(phase);
   const showDialogueBlock = !isHumanTurn
     && (currentSpeaker || waitingForNextRound)
     && shouldShowDialogue
@@ -1357,9 +1319,39 @@ export function DialogArea({
                 </motion.div>
               )}
 
+              {/* 猎人被票出/被刀之后的「不开枪」。
+                  以前它是塞在"对话块"里的，而对话块要求 !isHumanTurn —— 猎人出局时
+                  引擎把发言人仍然算成他，于是这个按钮永远不显示。放到这里就不受影响了。 */}
+              {showHunterPassOption && (
+                <motion.div
+                  key="hunter-pass"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="flex items-center justify-end"
+                >
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onConfirmAction?.();
+                    }}
+                    className="wc-action-btn wc-action-btn--danger text-sm h-9 px-4"
+                    type="button"
+                  >
+                    {t("dialog.hunter.skipShoot" as any)}
+                    <CaretRight size={14} weight="bold" />
+                  </button>
+                </motion.div>
+              )}
+
               {/* 白天特殊技能：骑士决斗 / 狼王自爆 / 白狼王自爆 */}
               {(can.knight || can.wolfSelfDestruct || can.wwkBoom) && selectedSeat === null && (
                 <div className="flex flex-wrap items-center justify-end gap-2">
+                  {phase === "WHITE_WOLF_KING_BOOM" && can.wwkBoom && (
+                    <span className="text-xs font-bold text-[var(--color-danger)]">
+                      你已自爆：点头像选一个人带走（不选就没人被带走）
+                    </span>
+                  )}
                   {can.knight && (
                     <button
                       type="button"
@@ -1381,14 +1373,14 @@ export function DialogArea({
                       狼王自爆
                     </button>
                   )}
-                  {can.wwkBoom && (
+                  {can.wwkBoom && phase !== "WHITE_WOLF_KING_BOOM" && (
                     <button
                       type="button"
                       onClick={onWhiteWolfKingBoom}
                       className="flex h-9 items-center gap-1.5 rounded-lg bg-red-600 px-3 text-xs font-bold text-white"
                     >
                       <Skull size={14} weight="fill" />
-                      白狼王自爆（先选人）
+                      白狼王自爆
                     </button>
                   )}
                 </div>
@@ -1728,20 +1720,6 @@ export function DialogArea({
                       ) : null}
                     </div>
                     <div className="flex items-center justify-end gap-3">
-                      {showHunterPassOption && !isTyping && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onConfirmAction?.();
-                          }}
-                          className="wc-action-btn wc-action-btn--danger text-sm h-9 px-4"
-                          type="button"
-                        >
-                          {t("dialog.hunter.skipShoot" as any)}
-                          <CaretRight size={14} weight="bold" />
-                        </button>
-                      )}
-
                       <div className="h-7 flex items-center justify-end">
                       <AnimatePresence initial={false}>
                         {!isTyping && needsManualContinue ? (
@@ -1815,7 +1793,9 @@ function ChatMessageItem({
   const t = useTranslations();
   const player = players.find(p => p.playerId === msg.playerId);
   const isHuman = msg.playerId === humanPlayerId;
-  const isPlayerReady = player ? (player.isHuman ? !!player.displayName?.trim() : !!player.agentProfile?.persona) : false;
+  const isPlayerReady = player
+    ? Boolean(player.displayName?.trim()) || Boolean(player.agentProfile?.persona)
+    : false;
   const isSystem = msg.isSystem;
 
   if (isSystem) {

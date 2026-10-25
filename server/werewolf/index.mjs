@@ -219,6 +219,8 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
         password: body.password,
         roles: body.roles,
         sheriff: body.sheriff,
+        // 'side' = 屠边（默认）/ 'wipe' = 屠城
+        winMode: body.winMode,
       });
       return envelope(res, res.ok ? { room: presenceOf(user.id) } : null);
     }
@@ -238,6 +240,12 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
     if (suffix === '/room/leave') {
       const res = engine.leaveRoom(user.id);
       return envelope(res, res.ok ? { room: null } : null);
+    }
+
+    // 一局打完，房主点「再来一局」：房间退回等候区，座位和人都不动
+    if (suffix === '/room/restart') {
+      const res = engine.restartRoom(user.id);
+      return envelope(res, res.ok ? { room: presenceOf(user.id) } : null);
     }
 
     if (suffix === '/room/init') {

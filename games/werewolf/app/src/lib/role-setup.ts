@@ -2,9 +2,25 @@
  * 建房时的角色配置（只在这个文件里放"默认值"和中文名）。
  *
  * 真正的校验在服务器（`games/werewolf/engine/index.mjs` 的 `validateRoleSetup`）：
- * 总数必须等于座位数、至少 1 只狼；这里只是提前把同样的规则显示给房主，
- * 避免点了「开房」才被服务器拒绝。
+ * 总数必须等于座位数、至少 1 个狼阵营角色、屠边局必须同时有平民和神职；
+ * 这里只是提前把同样的规则显示给房主，避免点了「开房」才被服务器拒绝。
  */
+
+/** 胜利条件：屠边（默认，经典）/ 屠城。和引擎的 WIN_MODE_* 一一对应。 */
+export type WinMode = "side" | "wipe";
+
+export const WIN_MODE_OPTIONS: { key: WinMode; label: string; hint: string }[] = [
+  {
+    key: "side",
+    label: "屠边（经典）",
+    hint: "狼人杀光所有平民、或杀光所有神职，就算狼人赢",
+  },
+  {
+    key: "wipe",
+    label: "屠城",
+    hint: "狼人必须把所有好人全部杀光才算赢，局会更长",
+  },
+];
 
 export const SETUP_ROLES = [
   { key: "Werewolf", label: "狼人", wolf: true, hint: "每只狼各投一票，按多数刀人" },
@@ -68,13 +84,24 @@ export function wolfCount(counts: RoleCounts): number {
   return counts.Werewolf + counts.WhiteWolfKing + counts.EvilKnight + counts.WolfKing + counts.WolfBeauty;
 }
 
+/** 神职 = 所有"不是狼、也不是平民"的角色（和引擎的 `isGoodGod` 一致）。 */
+export function godCount(counts: RoleCounts): number {
+  return SETUP_ROLES.filter((role) => !role.wolf && role.key !== "Villager").reduce(
+    (sum, role) => sum + counts[role.key],
+    0,
+  );
+}
+
 /** 返回给房主看的错误；空字符串 = 可以开房。 */
-export function checkCounts(seats: number, counts: RoleCounts): string {
+export function checkCounts(seats: number, counts: RoleCounts, winMode: WinMode = "side"): string {
   const total = totalCount(counts);
   if (total !== seats) {
     return total < seats ? `还差 ${seats - total} 个角色` : `多出 ${total - seats} 个角色`;
   }
-  if (wolfCount(counts) < 1) return "至少要放 1 只狼人（或白狼王）";
+  if (wolfCount(counts) < 1) return "至少要放 1 个狼阵营角色（狼人/白狼王/狼王/狼美人/恶夜骑士）";
+  if (winMode === "side" && (counts.Villager < 1 || godCount(counts) < 1)) {
+    return `屠边局要同时有平民和神职（现在：平民 ${counts.Villager} 个、神职 ${godCount(counts)} 个）`;
+  }
   return "";
 }
 

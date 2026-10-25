@@ -1333,8 +1333,8 @@
       "select": "选择"
     },
     "input": {
-      "lastWordsPlaceholder": "有什么想说的？（可点「AI助我」生成；也可先写几个字引导方向再点）",
-      "defaultPlaceholder": "你怎么看？（可点「AI助我」生成；也可先写几个字引导方向再点）",
+      "lastWordsPlaceholder": "有什么想说的？写几句，回车发送；说完了点「结束发言」",
+      "defaultPlaceholder": "你怎么看？写几句，回车发送；说完了点「结束发言」",
       "send": "发送",
       "finishSpeech": "结束发言",
       "aiAssist": "AI助我",

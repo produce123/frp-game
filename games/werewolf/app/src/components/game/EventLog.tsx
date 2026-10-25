@@ -189,6 +189,23 @@ export function EventLog({ gameState }: EventLogProps) {
       }
     });
 
+    // 联机模式没有结构化的 nightHistory/dayHistory（引擎只下发公开消息），
+    // 这时退化成"把公开的系统消息按天列出来"，至少不会是空白。
+    if (entries.length === 0) {
+      gameState.messages
+        .filter((m) => m.isSystem && !String(m.content).startsWith("["))
+        .forEach((m, index) => {
+          entries.push({
+            id: `msg-${m.id}`,
+            day: m.day || 1,
+            order: 10 + index,
+            text: m.content,
+            tone: "default",
+            icon: "end",
+          });
+        });
+    }
+
     if (gameState.winner) {
       const day = Math.max(gameState.day, 1);
       entries.push({

@@ -55,7 +55,9 @@ export function PlayerCardCompact({
   const t = useTranslations();
   const isDead = !player.alive;
   const isMe = player.isHuman;
-  const isReady = isMe ? !!player.displayName?.trim() : !!player.agentProfile?.persona;
+  // 联机局每个座位都是真人，没有 agentProfile：有昵称就算就绪。
+  // （AI 模式的座位靠 agentProfile.persona 判断，这条仍然兼容。）
+  const isReady = Boolean(player.displayName?.trim()) || Boolean(player.agentProfile?.persona);
   const isDisabledInSelection = isInSelectionPhase && !canClick && isReady && !isDead;
 
   const prevAliveRef = useRef<boolean>(player.alive);
@@ -85,10 +87,13 @@ export function PlayerCardCompact({
     prevAliveRef.current = player.alive;
   }, [player.alive]);
   
-  const isWolfTeammate = humanPlayer && isWolfRole(humanPlayer.role) && 
-    isWolfRole(player.role) && 
-    !player.isHuman;
-  const showWolfTeamBadge = humanPlayer && isWolfRole(humanPlayer.role) && isWolfRole(player.role);
+  // 狼阵营可见的队友：服务器会把队友的身份一起下发（狼人本来就该知道彼此的牌），
+  // 页面另外用 `private.wolfTeammates` 传一份 `showWolfBadge` 兜底，两个来源都认。
+  const isWolfPeer = Boolean(
+    humanPlayer && isWolfRole(humanPlayer.role) && (isWolfRole(player.role) || showWolfBadge),
+  );
+  const showWolfTeamBadge = isWolfPeer;
+  const isWolfTeammate = isWolfPeer && !isMe;
   const selectionClass = (() => {
     if (!isSelected) return "";
     switch (selectionTone) {

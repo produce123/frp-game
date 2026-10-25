@@ -411,7 +411,7 @@ export function createMatch(players, options) { … }
 | --- | --- | --- |
 | `GET /werewolf/`、`/werewolf/<深链>` | `http.mjs` 的 `MOUNTS` + `isWerewolfDocument` | 先查登录（没登录 302 `/?return=…`），再发 `games/werewolf/dist/index.html` |
 | `GET /werewolf/_next/*`、`/werewolf/{roles,avatars,brand}/*` | 同上 | 静态导出产物（带 hash 的长缓存；入口页 no-store） |
-| `POST /api/werewolf/room/*`、`/game/*` | `server/werewolf/index.mjs` → 引擎 `act()` | 建房/进房/离开/开局/操作/状态；**身份来自会话 cookie** |
+| `POST /api/werewolf/room/*`、`/game/*` | `server/werewolf/index.mjs` → 引擎 `act()` | 建房/进房/离开/**再来一局**/开局/操作/状态；**身份来自会话 cookie** |
 | `GET /api/werewolf/me` `/friends` `/records` `/records/<id>` | 平台这一层 | 我是谁 + 我在哪间房；邀请弹窗好友；对局记录与复盘 |
 | `werewolf.event`（平台 WS） | `hub.deliver` | 房间广播。**只是"叮咚"**，客户端收到后自己再拉 `/game/status` |
 
@@ -441,9 +441,12 @@ export function createMatch(players, options) { … }
 - 开局后**不能进人**（用户明确要求，不做中途加入 / 观战）、不能退房、不能邀请；
   好友列表里"正在玩狼人杀"那条会变成"已开局"且不可点。
 
-**隐藏信息只在 `viewFor()` 裁剪**：别人的 `role`/`alignment` 不出现；夜晚结果只发给当事人
+**隐藏信息只在 `viewFor()` 裁剪**：别人的 `role`/`alignment` 不出现 —— **唯一的例外是"狼队友给狼人"**
+（夜里要合刀；前端靠它给队友卡挂「狼队」标记、把协作面板的队友列全，2026-10-25 修的）；
+夜晚结果只发给当事人
 （双预言家各看各的 `seerHistory`）；`WW_EVENT` 的 `data` 永远是 `null`。
-这是唯一的防作弊手段，改视图时先问"这是不是别人的底牌"。
+这是唯一的防作弊手段，改视图时先问"这是不是别人的底牌"（狼人知道狼队友不算别人的底牌）。
+`tests/werewolf.test.mjs` + `tests/werewolf.engine.test.mjs` 钉着"好人一个都拿不到，狼人只多出狼队友"。
 新增角色（D39）也守这条：`private.grave` 只给守墓人、`private.wolfBeauty` 只给狼美人、
 `can.knight / can.wolfBeauty / can.wolfSelfDestruct` 只给当前轮到的人。
 警长开关在 `createRoom({ sheriff })` 和 `view.sheriffEnabled` 里；关掉后没有警徽阶段。
@@ -456,11 +459,43 @@ export function createMatch(players, options) { … }
 复盘**只对参与者**开放（快照里有全员身份）。
 
 **角色配置**：`createRoom({ seats, roles })` 的 `roles` 是 `{ Werewolf: 3, Seer: 1, ... }`；
-校验只要求"总数 = 座位数 + 至少 1 狼"，允许双女巫/双预言家。等候区快照带 `lobby.roles`。
+校验只要求"总数 = 座位数 + 至少 1 个**狼阵营**角色"（`isWolfRole`：狼人 / 白狼王 / 狼王 / 狼美人 / 恶夜骑士，
+2026-10-25 起不再强制必须是狼人或白狼王），允许双女巫/双预言家。等候区快照带 `lobby.roles`。
+
+**胜利条件（`winMode`，房主建房时选，默认屠边）**：
+
+| 值 | 名字 | 狼人怎么赢 |
+| --- | --- | --- |
+| `side`（默认） | 屠边 | 杀光所有**平民**，或杀光所有**神职**（`isGoodGod`：所有非平民的好人） |
+| `wipe` | 屠城 | 杀光所有**好人** |
+
+- 好人胜 = 狼人全灭；**同一刻双方全灭时好人优先**（`checkWinner` 里 `aliveWolves === 0` 最先判）。
+- 屠边的两条边在 `g.winModeSides` 里按开局配置记下来；哪边开局没配就不作为条件
+  （正常开房时屠边要求"平民 ≥ 1 且 神职 ≥ 1"，`validateRoleSetup(seats, roles, winMode)` 会拒绝）。
+- **死讯一结算就判**：`announceDeaths` 里 `kill()` 完死人之后立刻 `checkWinner`，
+  中了直接 `endGame` —— 死人不再开枪、不再移交警徽、也不进白天。
+  所以"1 狼 1 猎人、狼刀猎人"是当场狼胜，猎人开不了枪；而"1 狼 1 平民 + 1 骑士"被打掉平民后，
+  屠城局会继续打下去（骑士还能翻牌决斗），屠边局则因为"平民全灭"当场狼胜。
+- **不再有"存活狼人 ≥ 存活好人"的狼控场判定**（2026-10-25 用户拍板改掉）。
+- `winMode` 从 `createRoom`/`startGame` 到 `g.winMode`、`view.winMode`、`lobby.winMode`；
+  开局第一条系统消息会写明本局规则，`restartRoom` 不变更模式。
 
 **状态倒计时可以按比例缩放**（`timeoutScale`，只有测试会传）：
 `0.01` 时 180 秒发言变 1.8 秒，整套集成测试几秒能跑完一次状态推进。
-发给客户端的 `deadline` 仍然是真实时间戳。
+发给客户端的 `deadline` 仍然是真实时间戳；**前端不用这个绝对时间**，
+它记住"拿到视图时的本地时刻"，再用 `view.duration` 减本地流逝（`view.phaseStartedAt` 只是 key），
+免得两边时钟有偏差时倒计时直接显示 00:00。
+
+**两处"人已经死了还要行动"的特例**（改 `legalActions` 时别把顺序弄反）：
+`can.hunter`（猎人开枪）、`can.transfer`（警长移交警徽）、`can.wwkBoom`（白狼王自爆后挑人）
+都必须在 `if (!me.alive) return can;` **之前**给出，否则出事的人自己永远拿不到这个动作。
+白狼王是**先自爆、再挑人**两步：`wwkBoom`（不带 seat）→ 自己出局、进 `WHITE_WOLF_KING_BOOM`；
+带 `seat` 的那次才是挑人（`seat: null` = 不带走），超时就没人被带走，然后直接天黑。
+
+**判完一局之后**：`restartRoom(hostId)` 把 `room.game` 清空、阶段退回 `waiting`、座位不动
+（只有房主、只在 `over` 阶段可用，`POST /api/werewolf/room/restart`）；
+离开房间仍然走 `leaveRoom`（`POST /room/leave`）—— 前端「返回大厅」必须真的调它，
+只清本地 state 会被下一次拉状态拉回结算画面。
 
 ## 斗地主（`/ddz/`）
 

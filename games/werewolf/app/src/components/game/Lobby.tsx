@@ -28,12 +28,14 @@ import type { NetGame } from "@/hooks/useNetGame";
 import { api, type Lobby as LobbyData } from "@/lib/net/platform";
 import {
   SETUP_ROLES,
+  WIN_MODE_OPTIONS,
   checkCounts,
   defaultCounts,
   totalCount,
   wolfCount,
   type RoleCounts,
   type SetupRole,
+  type WinMode,
 } from "@/lib/role-setup";
 
 const SEAT_CHOICES = Array.from({ length: 15 }, (_, i) => i + 4);
@@ -357,6 +359,12 @@ function WaitingRoom({ net, lobby }: { net: NetGame; lobby: LobbyData }) {
         <p data-testid="sheriff-setting" className="mb-3 text-xs text-[var(--text-secondary)]">
           警长：{lobby.sheriff === false ? "本局无警长" : "本局有警长（第一天竞选，1.5 票）"}
         </p>
+        <p data-testid="win-mode-setting" className="mb-3 text-xs text-[var(--text-secondary)]">
+          胜利条件：
+          {lobby.winMode === "wipe"
+            ? "屠城（狼人杀光所有好人才算赢）"
+            : "屠边（狼人杀光所有平民或所有神职即赢）"}
+        </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           {Array.from({ length: lobby.seats }).map((_, index) => {
             const player = lobby.players.find((p) => p.seat === index);
@@ -417,6 +425,7 @@ function Entry({ net }: { net: NetGame }) {
   const [counts, setCounts] = useState<RoleCounts>(() => defaultCounts(8));
   const [createPassword, setCreatePassword] = useState("");
   const [sheriff, setSheriff] = useState(true);
+  const [winMode, setWinMode] = useState<WinMode>("side");
   const [code, setCode] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
   const [recordsOpen, setRecordsOpen] = useState(false);
@@ -426,7 +435,7 @@ function Entry({ net }: { net: NetGame }) {
 
   const total = totalCount(counts);
   const wolves = wolfCount(counts);
-  const setupError = checkCounts(seats, counts);
+  const setupError = checkCounts(seats, counts, winMode);
 
   const pickSeats = (n: number) => {
     setSeats(n);
@@ -461,7 +470,7 @@ function Entry({ net }: { net: NetGame }) {
   const createRoom = () => {
     if (setupError) return;
     setCreateOpen(false);
-    void net.createRoom(seats, createPassword, counts, sheriff);
+    void net.createRoom(seats, createPassword, counts, sheriff, winMode);
   };
 
   const joinRoom = () => {
@@ -677,6 +686,34 @@ function Entry({ net }: { net: NetGame }) {
               </div>
             </div>
 
+            <div data-testid="win-mode-picker" className="mb-3 rounded-xl border border-[var(--glass-border)] p-3">
+              <p className="mb-2 text-sm font-bold text-[var(--text-primary)]">胜利条件</p>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {WIN_MODE_OPTIONS.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    data-testid={`win-mode-${option.key}`}
+                    onClick={() => setWinMode(option.key)}
+                    className={`rounded-lg border px-3 py-2 text-left ${
+                      winMode === option.key
+                        ? "border-[var(--color-accent)] bg-[var(--color-accent-bg)]"
+                        : "border-[var(--glass-border)] bg-[var(--glass-bg-weak)]"
+                    }`}
+                  >
+                    <span
+                      className={`block text-sm font-bold ${
+                        winMode === option.key ? "text-[var(--color-accent)]" : "text-[var(--text-primary)]"
+                      }`}
+                    >
+                      {option.label}
+                    </span>
+                    <span className="block text-[10px] leading-4 text-[var(--text-muted)]">{option.hint}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <label className="mb-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg-weak)] px-3 py-3">
               <span>
                 <span className="block text-sm font-medium text-[var(--text-primary)]">本局有警长</span>
@@ -786,7 +823,11 @@ function Entry({ net }: { net: NetGame }) {
                 <li>天黑后按顺序行动：守卫 → 狼人 → 狼美人 → 女巫 → 预言家。</li>
                 <li>天亮公布死讯；第一天先竞选警长（房主关掉警长就没有这一步）。</li>
                 <li>白天依次发言，然后投票放逐；平票会进入 PK 发言再投一次。</li>
-                <li>狼人杀光好人（存活狼人 ≥ 存活好人），或好人杀光所有狼，游戏结束。</li>
+                <li>
+                  胜利条件由房主建房时选：<b>屠边</b>（杀光所有平民或所有神职，狼人赢）/
+                  <b>屠城</b>（杀光所有好人，狼人赢）；好人杀光所有狼就赢。
+                </li>
+                <li>死讯一结算就立刻判输赢：某一方死光了，当场结束（死人不补发言、不补开枪）。</li>
               </ol>
             </section>
 

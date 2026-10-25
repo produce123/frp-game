@@ -82,6 +82,7 @@ export default function WerewolfPage() {
   const [revealOpen, setRevealOpen] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const revealedRef = useRef<string>("");
+  const clockRef = useRef<{ key: string; at: number }>({ key: "", at: 0 });
 
   /* ------------------------------ 错误提示 ------------------------------ */
 
@@ -99,12 +100,19 @@ export default function WerewolfPage() {
     return () => clearInterval(timer);
   }, [view?.deadline]);
 
-  const remainMs = view?.deadline ? Math.max(0, view.deadline - now) : 0;
+  // 倒计时不能用「服务器绝对 deadline − 本机 Date.now()」：远端玩家的系统钟歪几分钟，
+  // 就会一直显示 00:00 或者从 08:00 开始。改成「阶段开始的那一刻记本机时间 + duration 倒推」。
+  const phaseClockKey = view ? `${view.code}:${view.phase}:${view.day}:${view.phaseStartedAt}` : "";
+  if (view && clockRef.current.key !== phaseClockKey) {
+    clockRef.current = { key: phaseClockKey, at: Date.now() };
+  }
+
+  const remainMs = view?.duration ? Math.max(0, view.duration - (now - clockRef.current.at)) : 0;
   const remainText = useMemo(() => {
-    if (!view?.deadline) return "";
+    if (!view?.duration) return "";
     const seconds = Math.ceil(remainMs / 1000);
     return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-  }, [remainMs, view?.deadline]);
+  }, [remainMs, view?.duration]);
 
   /* ------------------------------ 阶段切换：清空选择 ------------------------------ */
 
@@ -165,15 +173,21 @@ export default function WerewolfPage() {
         case "HUNTER_SHOOT":
           return Boolean(can.hunter) && player.seat !== humanPlayer.seat;
         case "DAY_VOTE":
-          return Boolean(can.vote) && player.seat !== humanPlayer.seat;
+          // 平票 PK 复投时只能投台上的人（台下的人点了也没用）
+          return Boolean(can.vote) && player.seat !== humanPlayer.seat
+            && (view.pkTargets.length === 0 || view.pkTargets.includes(player.seat));
         case "DAY_BADGE_ELECTION":
           return Boolean(can.badgeVote) && view.badge.candidates.includes(player.seat);
         case "BADGE_TRANSFER":
           return Boolean(can.transfer) && player.seat !== humanPlayer.seat;
+        // 白狼王自爆之后：先自爆，再点一个人带走
+        case "WHITE_WOLF_KING_BOOM":
+          return Boolean(can.wwkBoom) && player.seat !== humanPlayer.seat;
         case "DAY_BADGE_SPEECH":
         case "DAY_SPEECH":
         case "DAY_PK_SPEECH":
-          return Boolean(can.wwkBoom || can.knight) && player.seat !== humanPlayer.seat;
+          // 白狼王/狼王自爆不需要选人（先自爆再带人），白天这里只有骑士翻牌决斗要选人
+          return Boolean(can.knight) && player.seat !== humanPlayer.seat;
         default:
           return false;
       }
@@ -216,6 +230,7 @@ export default function WerewolfPage() {
     else if (phase === "NIGHT_WOLF_BEAUTY_ACTION") await submit({ type: "charm", seat: selectedSeat });
     else if (phase === "NIGHT_SEER_ACTION") await submit({ type: "seer", seat: selectedSeat });
     else if (phase === "HUNTER_SHOOT") await submit({ type: "hunter", seat: selectedSeat });
+    else if (phase === "WHITE_WOLF_KING_BOOM") await submit({ type: "wwkBoom", seat: selectedSeat });
     else if (phase === "DAY_SPEECH" || phase === "DAY_PK_SPEECH") {
       if (view.can.knight) await submit({ type: "knight", seat: selectedSeat });
     }
@@ -260,12 +275,9 @@ export default function WerewolfPage() {
   );
 
   const handleWhiteWolfKingBoom = useCallback(async () => {
-    if (selectedSeat === null) {
-      toast.error("先点一个人，再自爆带走他");
-      return;
-    }
-    await net.act({ type: "wwkBoom", seat: selectedSeat });
-  }, [net, selectedSeat]);
+    if (!window.confirm("确定自爆吗？自爆会立刻出局并结束白天，之后你还能带走一个人（不选就没人被带走）。")) return;
+    await net.act({ type: "wwkBoom" });
+  }, [net]);
 
   const handleKnightDuel = useCallback(async () => {
     if (selectedSeat === null) {
@@ -409,7 +421,7 @@ export default function WerewolfPage() {
               onWhiteWolfKingBoom={handleWhiteWolfKingBoom}
               onKnightDuel={handleKnightDuel}
               onWolfKingSelfDestruct={handleWolfKingSelfDestruct}
-              onRestart={() => net.backToLobby()}
+              onRestart={() => void net.restartGame()}
               isEventLogOpen={isEventLogOpen}
               onEventLogOpenChange={setIsEventLogOpen}
             />

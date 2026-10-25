@@ -84,6 +84,24 @@ export const ROLE_CONFIG = {
 export const MIN_SEATS = 4;
 export const MAX_SEATS = 18;
 
+/**
+ * 胜利条件（房主建房时选，用户 2026-10-25 拍板）：
+ *   `side` 屠边 —— 狼人杀光所有**平民**或所有**神职**即胜（经典规则）
+ *   `wipe` 屠城 —— 狼人必须杀光所有**好人**才胜
+ * 好人胜永远是"狼人全部死亡"；同一夜双方全灭时好人优先胜。
+ */
+export const WIN_MODE_SIDE = 'side';
+export const WIN_MODE_WIPE = 'wipe';
+export const WIN_MODES = [WIN_MODE_SIDE, WIN_MODE_WIPE];
+
+export function normalizeWinMode(value) {
+  return value === WIN_MODE_WIPE ? WIN_MODE_WIPE : WIN_MODE_SIDE;
+}
+
+export function winModeName(mode) {
+  return normalizeWinMode(mode) === WIN_MODE_WIPE ? '屠城' : '屠边';
+}
+
 /** 各阶段倒计时（毫秒，标称值；`timeoutScale` 会按比例缩）。 */
 export const DURATION = {
   NIGHT_START: 4_000,
@@ -153,7 +171,7 @@ export function isGoodGod(role) {
  * @returns {{ok: true, counts: Record<string, number>, roles: string[]}
  *          | {ok: false, message: string}}
  */
-export function validateRoleSetup(seats, roles) {
+export function validateRoleSetup(seats, roles, winMode = WIN_MODE_SIDE) {
   const total = Number(seats);
   if (!Number.isInteger(total) || total < MIN_SEATS || total > MAX_SEATS) {
     return { ok: false, message: `座位数要 ${MIN_SEATS}–${MAX_SEATS} 之间` };
@@ -188,8 +206,22 @@ export function validateRoleSetup(seats, roles) {
   if (sum !== total) {
     return { ok: false, message: `角色总数 ${sum} 个，和 ${total} 个座位对不上` };
   }
-  const wolfCount = counts.Werewolf + counts.WhiteWolfKing;
-  if (wolfCount < 1) return { ok: false, message: '至少要放 1 只狼人（或白狼王）' };
+  // 狼阵营：狼人 / 白狼王 / 狼王 / 狼美人 / 恶夜骑士，任意一种都行（用户 2026-10-25 拍板）
+  const wolfCount = ROLE_KEYS.filter((role) => isWolfRole(role)).reduce((n, role) => n + counts[role], 0);
+  if (wolfCount < 1) {
+    return { ok: false, message: '至少要放 1 个狼阵营角色（狼人 / 白狼王 / 狼王 / 狼美人 / 恶夜骑士）' };
+  }
+  // 屠边局：两边（平民、神职）都得有人，否则"屠边"没法判 —— 直接不让开房
+  if (normalizeWinMode(winMode) === WIN_MODE_SIDE) {
+    const villagerCount = counts.Villager;
+    const godCount = ROLE_KEYS.filter((role) => isGoodGod(role)).reduce((n, role) => n + counts[role], 0);
+    if (villagerCount < 1 || godCount < 1) {
+      return {
+        ok: false,
+        message: `屠边局要同时有平民和神职（现在：平民 ${villagerCount} 个、神职 ${godCount} 个）`,
+      };
+    }
+  }
 
   const list = [];
   for (const key of ROLE_KEYS) {
@@ -386,11 +418,22 @@ export function createWerewolfEngine(options = {}) {
   }
 
   function checkWinner(room) {
-    const players = room.game.players;
+    const g = room.game;
+    const players = g.players;
     const aliveWolves = players.filter((p) => p.alive && p.alignment === 'wolf').length;
-    const aliveVillage = players.filter((p) => p.alive && p.alignment === 'village').length;
+    // 狼全死 → 好人胜。放在最前面：同一夜"女巫毒死最后一只狼、自己也被刀"时双方全灭，
+    // 按用户定的规则判好人胜。
     if (aliveWolves === 0) return 'village';
-    if (aliveWolves >= aliveVillage) return 'wolf';
+    const aliveGood = players.filter((p) => p.alive && p.alignment === 'village');
+    if (aliveGood.length === 0) return 'wolf';
+
+    if (normalizeWinMode(g.winMode) === WIN_MODE_WIPE) return null;
+
+    // 屠边：平民、神职任一边被杀光就判狼胜（哪边开局没配，开房时就已经被拦住了）。
+    const godsAlive = aliveGood.some((p) => isGoodGod(p.role));
+    const villagersAlive = aliveGood.some((p) => p.role === 'Villager');
+    if (g.winModeSides?.gods && !godsAlive) return 'wolf';
+    if (g.winModeSides?.villagers && !villagersAlive) return 'wolf';
     return null;
   }
 
@@ -404,10 +447,11 @@ export function createWerewolfEngine(options = {}) {
     throw new Error('房号用光了（这不正常）');
   }
 
-  function createRoom({ host, seats = 8, password = '', roles = null, sheriff = true }) {
+  function createRoom({ host, seats = 8, password = '', roles = null, sheriff = true, winMode = WIN_MODE_SIDE }) {
     if (!host || !host.id) return { ok: false, message: '还没登录' };
     const seatCount = Number(seats);
-    const setup = validateRoleSetup(seatCount, roles);
+    const mode = normalizeWinMode(winMode);
+    const setup = validateRoleSetup(seatCount, roles, mode);
     if (!setup.ok) return setup;
     const existing = seatOf.get(host.id);
     if (existing) {
@@ -422,6 +466,7 @@ export function createWerewolfEngine(options = {}) {
       seats: seatCount,
       roles: setup.counts,
       sheriff: sheriff !== false,
+      winMode: mode,
       password: String(password || ''),
       members: new Map(),
       order: [],
@@ -504,6 +549,26 @@ export function createWerewolfEngine(options = {}) {
     return { ok: true };
   }
 
+  /**
+   * 一局打完之后房主点「再来一局」：房间退回等候区，座位、人、配置全部保留。
+   * 没有这个接口的话，结算页的两个按钮都只能把玩家留在原地（H3）。
+   */
+  function restartRoom(userId) {
+    const code = seatOf.get(userId);
+    const room = code ? rooms.get(code) : null;
+    if (!room) return { ok: false, message: '你不在任何房间里' };
+    if (room.phase !== 'over') return { ok: false, message: '这一局还没结束' };
+    if (room.hostId !== userId) return { ok: false, message: '只有房主能开下一局' };
+    clearTimer(room);
+    room.game = null;
+    room.phase = 'waiting';
+    room.deadline = null;
+    room.startedAt = null;
+    room.endedAt = null;
+    changed(room);
+    return { ok: true };
+  }
+
   function destroyRoom(room) {
     clearTimer(room);
     rooms.delete(room.code);
@@ -532,7 +597,7 @@ export function createWerewolfEngine(options = {}) {
       };
     }
 
-    const setup = validateRoleSetup(room.seats, room.roles);
+    const setup = validateRoleSetup(room.seats, room.roles, room.winMode);
     if (!setup.ok) return setup;
     const roles = shuffle(setup.roles, rng);
     const players = room.order.map((id, seat) => {
@@ -581,6 +646,12 @@ export function createWerewolfEngine(options = {}) {
       day: 0,
       players,
       roles: setup.counts,
+      winMode: normalizeWinMode(room.winMode),
+      // 屠边要判"平民全死""神职全死"，哪边开局没配就不作为条件（正常开房时两边必有）
+      winModeSides: {
+        villagers: setup.counts.Villager > 0,
+        gods: ROLE_KEYS.filter((role) => isGoodGod(role)).reduce((n, role) => n + setup.counts[role], 0) > 0,
+      },
       sheriffEnabled: room.sheriff,
       goodSkillsDisabled: false,
       evilReflectUsed: false,
@@ -608,6 +679,12 @@ export function createWerewolfEngine(options = {}) {
     };
 
     system(room, `游戏开始：${room.seats} 人局（${roleSetupSummary(setup.counts)}），身份已随机分配。`);
+    system(
+      room,
+      normalizeWinMode(room.winMode) === WIN_MODE_WIPE
+        ? '本局规则：屠城 —— 狼人杀光所有好人才算赢；好人杀光所有狼即赢。'
+        : '本局规则：屠边 —— 狼人杀光所有平民、或杀光所有神职即算赢；好人杀光所有狼即赢。',
+    );
     enterNight(room, 1);
     changed(room);
     return { ok: true };
@@ -921,7 +998,9 @@ export function createWerewolfEngine(options = {}) {
     const poisonVictim = deaths.find((d) => d.reason === 'poison');
     const shooters = [];
 
-    if (deaths.length === 0 && (g.night.survived || []).length === 0) {
+    // 长老第一刀不死也算平安夜：如果播"X 被袭击但活了下来"，等于当众亮长老
+    // （守卫救/女巫救都是平安夜，只有长老会留下这种痕迹）。
+    if (deaths.length === 0) {
       system(room, '昨晚是平安夜。');
     } else {
       for (const death of deaths) {
@@ -944,12 +1023,16 @@ export function createWerewolfEngine(options = {}) {
         if (canShootNow(p) && !shooters.includes(p)) shooters.push(p);
       }
     }
-    for (const survived of g.night.survived || []) {
-      const p = bySeat(room, survived.seat);
-      if (p) system(room, `昨晚，${seatLabel(p.seat)} ${p.name} 被狼人袭击，但活了下来。`);
-    }
     g.night.pendingWolfVictim = wolfVictim ? wolfVictim.seat : undefined;
     g.night.pendingPoisonVictim = poisonVictim ? poisonVictim.seat : undefined;
+
+    // 死讯一结算完就判输赢：某一方已经死光 → 立刻结束，
+    // 死人不再开枪、不再移交警徽、也不进白天（用户 2026-10-25 定的"立刻"）。
+    const decided = checkWinner(room);
+    if (decided) {
+      endGame(room, decided);
+      return;
+    }
 
     // 留一点时间给客户端播死亡提示，再进开枪/警徽/讨论
     setPhase(room, PHASE.DAY_START, DURATION.DAY_DEATH_GAP, () =>
@@ -1535,20 +1618,17 @@ export function createWerewolfEngine(options = {}) {
 
   /* ------------------------------ 白狼王自爆 ------------------------------ */
 
-  function whiteWolfKingBoom(room, player, targetSeat) {
+  /**
+   * 规矩是「**先自爆、再带人**」：点自爆当场出局，然后给他 WWK_DECISION 秒点一个人带走；
+   * 不点（或超时）就没人被带走。带走的人没有遗言，警长死了警徽直接撕毁。
+   */
+  function whiteWolfKingDetonate(room, player) {
     const g = room.game;
     player.abilities.wwkUsed = true;
     kill(room, player.seat, 'selfDestruct');
-    g.phase = PHASE.WHITE_WOLF_KING_BOOM;
-    const target = bySeat(room, targetSeat);
-    if (target && target.alive && target.seat !== player.seat) {
-      kill(room, target.seat, 'wwk');
-      system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 自爆，带走了 ${seatLabel(target.seat)} ${target.name}。`);
-    } else {
-      system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 自爆。`);
-    }
+    g.speaker = null;
+    g.pending = { type: 'wwkBoom', seat: player.seat };
 
-    // 白狼王自爆带走的人没有遗言；如果警长死了，警徽直接撕毁（不转移）
     const sheriffSeat = g.badge.holderSeat;
     if (sheriffSeat !== null) {
       const sheriff = bySeat(room, sheriffSeat);
@@ -1559,8 +1639,27 @@ export function createWerewolfEngine(options = {}) {
     }
 
     const winner = checkWinner(room);
-    if (winner) return endGame(room, winner);
+    if (winner) {
+      g.pending = null;
+      return endGame(room, winner);
+    }
+    const seconds = Math.round(DURATION.WWK_DECISION / 1000);
+    system(
+      room,
+      `白狼王 ${seatLabel(player.seat)} ${player.name} 自爆出局，他还能带走一个人（${seconds} 秒内选择，不选就没人被带走）。`,
+    );
+    setPhase(room, PHASE.WHITE_WOLF_KING_BOOM, DURATION.WWK_DECISION, () => {
+      g.pending = null;
+      system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 没有带走任何人。`);
+      whiteWolfKingBoomDone(room, player, null);
+    });
+  }
 
+  /** 白狼王这一轮全部结束：检查输赢 → 被带走的猎人/狼王开枪 → 直接进下一夜。 */
+  function whiteWolfKingBoomDone(room, player, target) {
+    const g = room.game;
+    const winner = checkWinner(room);
+    if (winner) return endGame(room, winner);
     // 被带走的猎人/狼王可以开枪（开完枪就进夜晚）
     if (canShootNow(target)) {
       shootPlayers(room, [target], () => {
@@ -1572,6 +1671,20 @@ export function createWerewolfEngine(options = {}) {
     }
     // 自爆结束白天，直接进入下一夜（跳过放逐投票）
     enterNight(room, g.day + 1);
+  }
+
+  /** 自爆之后点人要带走谁（`seat === null` = 谁也不带）。 */
+  function whiteWolfKingPick(room, player, seat) {
+    const g = room.game;
+    g.pending = null;
+    const target = seat === null || seat === undefined ? null : bySeat(room, Number(seat));
+    if (target && target.alive && target.seat !== player.seat) {
+      kill(room, target.seat, 'wwk');
+      system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 带走了 ${seatLabel(target.seat)} ${target.name}。`);
+      return whiteWolfKingBoomDone(room, player, target);
+    }
+    system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 没有带走任何人。`);
+    return whiteWolfKingBoomDone(room, player, null);
   }
 
   /* ------------------------------ 结束 ------------------------------ */
@@ -1686,7 +1799,8 @@ export function createWerewolfEngine(options = {}) {
       }
       me.charmedSeat = target.seat;
       me.abilities.lastCharmTarget = target.seat;
-      system(room, `${seatLabel(me.seat)} ${me.name} 魅惑了 ${seatLabel(target.seat)} ${target.name}。`);
+      // 魅惑是暗牌：只写进她自己的私有视图，**不许**发系统消息
+      // （以前这里 system("X 魅惑了 Y") 是全房广播，等于每晚把狼美人亮出来）
       g.night.actor = null;
       g.night.wolfBeautyIndex += 1;
       nextWolfBeauty(room);
@@ -1782,11 +1896,7 @@ export function createWerewolfEngine(options = {}) {
       }
       if (type === 'wwkBoom' && me.alive && me.role === 'WhiteWolfKing') {
         if (me.abilities.wwkUsed) return { ok: false, message: '已经自爆过了' };
-        const target = bySeat(room, Number(action.seat || 0));
-        if (!target || !target.alive || target.seat === me.seat) {
-          return { ok: false, message: '自爆要带走一名存活玩家' };
-        }
-        whiteWolfKingBoom(room, me, target.seat);
+        whiteWolfKingDetonate(room, me);
         return { ok: true };
       }
       if (!me.alive) return { ok: false, message: '你已经出局' };
@@ -1800,6 +1910,10 @@ export function createWerewolfEngine(options = {}) {
         const target = bySeat(room, Number(action.seat));
         if (!target || !target.alive) return { ok: false, message: '这个座位不能投' };
         if (target.seat === me.seat) return { ok: false, message: '不能投自己' };
+        // PK 复投只能投台上的人（以前能投台下第三人，还真能把他投出去）
+        if (g.pkTargets.length > 0 && !g.pkTargets.includes(target.seat)) {
+          return { ok: false, message: '这一轮只能投 PK 台上的玩家' };
+        }
         g.votes[me.id] = target.seat;
       }
       changed(room);
@@ -1899,16 +2013,25 @@ export function createWerewolfEngine(options = {}) {
       return { ok: true };
     }
 
-    // 白狼王自爆
+    // 白狼王自爆之后：点一个人带走（也可以选"不带走"）。
+    // 注意要放在"自爆"判断之前：这时候他人已经死了，`me.alive` 是 false。
+    if (g.phase === PHASE.WHITE_WOLF_KING_BOOM) {
+      if (!g.pending || g.pending.type !== 'wwkBoom' || g.pending.seat !== me.seat) {
+        return { ok: false, message: '现在不是你的行动' };
+      }
+      if (type !== 'wwkBoom') return { ok: false, message: '请选择要带走的人' };
+      whiteWolfKingPick(room, me, action.seat ?? null);
+      return { ok: true };
+    }
+
+    // 白狼王自爆（先自爆，之后在 WHITE_WOLF_KING_BOOM 阶段点人）
     if (type === 'wwkBoom') {
       if (!me.alive || me.role !== 'WhiteWolfKing') return { ok: false, message: '只有白狼王能自爆' };
       if (me.abilities.wwkUsed) return { ok: false, message: '已经自爆过了' };
       if (![PHASE.DAY_SPEECH, PHASE.DAY_BADGE_SPEECH, PHASE.DAY_PK_SPEECH, PHASE.DAY_VOTE].includes(g.phase)) {
         return { ok: false, message: '现在不能自爆' };
       }
-      const target = bySeat(room, Number(action.seat));
-      if (!target || !target.alive) return { ok: false, message: '选择要带走的人' };
-      whiteWolfKingBoom(room, me, target.seat);
+      whiteWolfKingDetonate(room, me);
       return { ok: true };
     }
 
@@ -1943,6 +2066,7 @@ export function createWerewolfEngine(options = {}) {
       seats: room.seats,
       roles: { ...room.roles },
       sheriff: room.sheriff !== false,
+      winMode: normalizeWinMode(room.winMode),
       hostId: room.hostId,
       started: room.phase !== 'waiting',
       phase: room.phase,
@@ -1977,6 +2101,15 @@ export function createWerewolfEngine(options = {}) {
     if (!me) return null;
 
     const ended = g.phase === PHASE.GAME_END;
+    /*
+     * 谁看得到谁的身份：
+     *   · 自己 —— 当然看得到；
+     *   · 终局 —— 全部公开；
+     *   · **狼队友给狼人** —— 夜里要合刀，这是狼人本来就该知道的信息
+     *     （前端靠它给队友挂「狼队」标记、把协作面板的队友列全）。
+     * 好人一律只拿得到自己的那张牌。
+     */
+    const meIsWolf = isWolfRole(me.role);
     const players = g.players
       .slice()
       .sort((a, b) => a.seat - b.seat)
@@ -1988,8 +2121,9 @@ export function createWerewolfEngine(options = {}) {
         alive: p.alive,
         isHost: p.isHost,
         isHuman: true,
-        // 只有自己（和终局）才看得到身份
-        ...(ended || p.id === userId ? { role: p.role, alignment: p.alignment } : {}),
+        ...(ended || p.id === userId || (meIsWolf && isWolfRole(p.role))
+          ? { role: p.role, alignment: p.alignment }
+          : {}),
       }));
 
     const base = {
@@ -2009,7 +2143,11 @@ export function createWerewolfEngine(options = {}) {
         candidates: g.badge.candidates.slice(),
       },
       aliveCount: players.filter((p) => p.alive).length,
+      // 平票 PK 时台上的人，前端据此把其他人置灰
+      pkTargets: g.pkTargets.slice(),
       sheriffEnabled: g.sheriffEnabled,
+      // 本局胜利条件（公开信息，顶栏/结算页都要显示）
+      winMode: normalizeWinMode(g.winMode),
       goodSkillsDisabled: g.goodSkillsDisabled,
       self: {
         id: me.id,
@@ -2085,6 +2223,15 @@ export function createWerewolfEngine(options = {}) {
       g.pending.seat === me.seat
     ) {
       can.transfer = true;
+    }
+    // 白狼王自爆之后挑人：动作发生在"人已经死了"之后
+    if (
+      g.phase === PHASE.WHITE_WOLF_KING_BOOM &&
+      g.pending &&
+      g.pending.type === 'wwkBoom' &&
+      g.pending.seat === me.seat
+    ) {
+      can.wwkBoom = true;
     }
     if (!me.alive) return can;
     if (isSpeechPhase(g.phase) && g.speaker === me.seat) {
@@ -2278,6 +2425,7 @@ export function createWerewolfEngine(options = {}) {
     joinRoom,
     leaveRoom,
     startGame,
+    restartRoom,
     destroyRoom,
     // 游戏
     act,

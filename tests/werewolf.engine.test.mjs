@@ -30,12 +30,12 @@ function makeEngine(scale = SCALE) {
   return { engine, ended };
 }
 
-async function makeRoom(engine, count, { seats = count, password = '', roles, sheriff = true } = {}) {
+async function makeRoom(engine, count, { seats = count, password = '', roles, sheriff = true, winMode } = {}) {
   const users = [];
   for (let i = 0; i < count; i++) {
     users.push({ id: `u${i + 1}`, name: `玩家${i + 1}`, avatar: '' });
   }
-  const created = engine.createRoom({ host: users[0], seats, password, roles, sheriff });
+  const created = engine.createRoom({ host: users[0], seats, password, roles, sheriff, winMode });
   assert.equal(created.ok, true, JSON.stringify(created));
   for (let i = 1; i < count; i++) {
     const joined = engine.joinRoom({ user: users[i], code: created.code });
@@ -354,14 +354,49 @@ describe('狼人杀引擎 · 发牌与开局', () => {
     engine.reset();
   });
 
-  it('角色配置的硬性校验：总数、狼人、非法角色', () => {
+  it('角色配置的硬性校验：总数、狼阵营、非法角色', () => {
     assert.equal(validateRoleSetup(6, { Werewolf: 2, Villager: 3 }).ok, false, '总数不够');
-    assert.equal(validateRoleSetup(6, { Werewolf: 0, Villager: 6 }).ok, false, '一只狼都没有');
+    assert.equal(validateRoleSetup(6, { Werewolf: 0, Villager: 6 }).ok, false, '一个狼阵营角色都没有');
     assert.equal(validateRoleSetup(6, { Werewolf: 1, Villager: 5, Dragon: 0 }).ok, false, '不认识的角色');
     assert.equal(validateRoleSetup(6, { Werewolf: 1.5, Villager: 4.5 }).ok, false, '不是整数');
-    assert.equal(validateRoleSetup(6, { Werewolf: 1, Villager: 5 }).ok, true);
     assert.equal(validateRoleSetup(4, { Werewolf: 1, Seer: 1, Villager: 2 }).ok, true);
-    assert.equal(validateRoleSetup(18, { Werewolf: 4, Villager: 14 }).ok, true);
+  });
+
+  it('狼阵营五种都算：狼美人 / 狼王 / 恶夜骑士 单独也能当唯一的狼', () => {
+    for (const wolf of ['Werewolf', 'WhiteWolfKing', 'WolfKing', 'WolfBeauty', 'EvilKnight']) {
+      const res = validateRoleSetup(4, { [wolf]: 1, Seer: 1, Witch: 1, Villager: 1 });
+      assert.equal(res.ok, true, `${wolf} 应该能当唯一的狼阵营角色：${res.message || ''}`);
+    }
+    const none = validateRoleSetup(4, { Seer: 1, Witch: 1, Villager: 2 });
+    assert.equal(none.ok, false, '一个狼阵营角色都没有时不许开房');
+    assert.match(none.message, /至少.*狼阵营角色/);
+  });
+
+  it('屠边局必须同时有平民和神职，否则不让开房；屠城局没这个限制', () => {
+    const noVillager = validateRoleSetup(4, { Werewolf: 1, Seer: 1, Witch: 1, Knight: 1 });
+    assert.equal(noVillager.ok, false, '屠边局一个平民都没有 → 不让开房');
+    assert.match(noVillager.message, /平民 0 个/);
+    const noGod = validateRoleSetup(4, { Werewolf: 1, Villager: 3 });
+    assert.equal(noGod.ok, false, '屠边局一个神职都没有 → 不让开房');
+    assert.match(noGod.message, /神职 0 个/);
+    // 同一个配置换成屠城就合法
+    assert.equal(validateRoleSetup(4, { Werewolf: 1, Villager: 3 }, 'wipe').ok, true);
+    assert.equal(validateRoleSetup(4, { Werewolf: 1, Seer: 1, Witch: 1, Knight: 1 }, 'wipe').ok, true);
+  });
+
+  it('胜利条件落到房间上：默认屠边，可以选屠城', async () => {
+    const { engine } = makeEngine();
+    const host = { id: 'h1', name: '房主' };
+    const made = engine.createRoom({ host, seats: 4 });
+    assert.equal(made.ok, true, JSON.stringify(made));
+    assert.equal(engine.viewFor(host.id).lobby.winMode, 'side', '默认是屠边');
+    assert.equal(engine.createRoom({ host, seats: 4, winMode: 'wipe' }).ok, true);
+    assert.equal(engine.viewFor(host.id).lobby.winMode, 'wipe');
+    // 屠边 + 只有平民没有神职 → 建房被拒
+    const rejected = engine.createRoom({ host, seats: 4, roles: { Werewolf: 1, Villager: 3 } });
+    assert.equal(rejected.ok, false);
+    assert.match(rejected.message, /神职 0 个/);
+    engine.reset();
   });
 
   it('座位 4–18 之外不许建房；人没坐满不许开局', async () => {
@@ -382,7 +417,8 @@ describe('狼人杀引擎 · 发牌与开局', () => {
 describe('狼人杀引擎 · 夜晚流程', () => {
   it('狼人刀人 → 天亮公布死讯；预言家拿到的是私有结果', async () => {
     const { engine } = makeEngine();
-    const { code, users } = await makeRoom(engine, 6);
+    // 这里测的是夜间结算，不测胜负：用屠城，免得屠边默认规则在第一晚就把村民杀光
+    const { code, users } = await makeRoom(engine, 6, { winMode: 'wipe' });
     const wolf = seatOfRole(engine, users, 'Werewolf');
     const villager = seatOfRole(engine, users, 'Villager');
     const seer = seatOfRole(engine, users, 'Seer');
@@ -530,15 +566,13 @@ describe('狼人杀引擎 · 夜晚流程', () => {
 /* ============================== 新角色 ============================== */
 
 describe('狼人杀引擎 · 新角色与无警长', () => {
-  const byRole = (users, engine, role) => users.find((u) => roleOf(engine, u) === role);
-
   it('房主可以关掉警长：第一天不竞选，直接发言', async () => {
     const { engine } = makeEngine();
     const { users } = await makeRoom(engine, 6, {
       sheriff: false,
       roles: { Werewolf: 2, Seer: 1, Witch: 1, Villager: 2 },
     });
-    const villager = byRole(users, engine, 'Villager');
+    const villager = seatOfRole(engine, users, 'Villager');
     assert.ok(villager);
     await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager) });
     const speech = await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 6000);
@@ -559,9 +593,9 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
       Villager: 2,
     };
     const { users } = await makeRoom(engine, 8, { roles, sheriff: false });
-    const evil = byRole(users, engine, 'EvilKnight');
-    const seer = byRole(users, engine, 'Seer');
-    const witch = byRole(users, engine, 'Witch');
+    const evil = seatOfRole(engine, users, 'EvilKnight');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const witch = seatOfRole(engine, users, 'Witch');
     assert.ok(evil && seer && witch);
 
     await playNightAuto(engine, users, {
@@ -589,9 +623,9 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
       Villager: 2,
     };
     const { users } = await makeRoom(engine, 8, { roles, sheriff: false });
-    const evil = byRole(users, engine, 'EvilKnight');
-    const seer = byRole(users, engine, 'Seer');
-    const witch = byRole(users, engine, 'Witch');
+    const evil = seatOfRole(engine, users, 'EvilKnight');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const witch = seatOfRole(engine, users, 'Witch');
     assert.ok(evil && seer && witch);
 
     await playNightAuto(engine, users, {
@@ -610,8 +644,8 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Elder: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
     const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const elder = byRole(users, engine, 'Elder');
-    const seer = byRole(users, engine, 'Seer');
+    const elder = seatOfRole(engine, users, 'Elder');
+    const seer = seatOfRole(engine, users, 'Seer');
     assert.ok(elder && seer);
 
     await playNightAuto(engine, users, { wolfSeat: seatOf(engine, elder), seerSeat: seatOf(engine, elder) });
@@ -631,11 +665,11 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Elder: 1, Seer: 1, Witch: 1, Villager: 3 };
     const { users } = await makeRoom(engine, 8, { roles, sheriff: false });
-    const elder = byRole(users, engine, 'Elder');
-    const seer = byRole(users, engine, 'Seer');
-    const witch = byRole(users, engine, 'Witch');
-    const villager = byRole(users, engine, 'Villager');
-    const wolf = byRole(users, engine, 'Werewolf');
+    const elder = seatOfRole(engine, users, 'Elder');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const witch = seatOfRole(engine, users, 'Witch');
+    const villager = seatOfRole(engine, users, 'Villager');
+    const wolf = seatOfRole(engine, users, 'Werewolf');
     assert.ok(elder && seer && witch && villager && wolf);
 
     await playNightAuto(engine, users, {
@@ -655,10 +689,10 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 1, WolfBeauty: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 2 };
     const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const beauty = byRole(users, engine, 'WolfBeauty');
-    const hunter = byRole(users, engine, 'Hunter');
-    const villager = byRole(users, engine, 'Villager');
-    const seer = byRole(users, engine, 'Seer');
+    const beauty = seatOfRole(engine, users, 'WolfBeauty');
+    const hunter = seatOfRole(engine, users, 'Hunter');
+    const villager = seatOfRole(engine, users, 'Villager');
+    const seer = seatOfRole(engine, users, 'Seer');
     assert.ok(beauty && hunter && villager && seer);
 
     await playNightAuto(engine, users, {
@@ -681,8 +715,8 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 1, WolfKing: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 2 };
     const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const wolfKing = byRole(users, engine, 'WolfKing');
-    const villager = byRole(users, engine, 'Villager');
+    const wolfKing = seatOfRole(engine, users, 'WolfKing');
+    const villager = seatOfRole(engine, users, 'Villager');
     assert.ok(wolfKing && villager);
 
     await playNightAuto(engine, users, {
@@ -700,7 +734,7 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 1, WolfKing: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 2 };
     const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const wolfKing = byRole(users, engine, 'WolfKing');
+    const wolfKing = seatOfRole(engine, users, 'WolfKing');
     const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
     assert.ok(wolfKing && villagers.length === 2);
 
@@ -721,10 +755,11 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
 it('骑士：决斗到狼，狼立刻死并进入黑夜（跳过投票）', async () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Knight: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
-    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const knight = byRole(users, engine, 'Knight');
-    const wolf = byRole(users, engine, 'Werewolf');
-    const villager = byRole(users, engine, 'Villager');
+    // 只有 1 个村民，屠边会在第一晚就判狼胜 → 用屠城，专心测决斗
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false, winMode: 'wipe' });
+    const knight = seatOfRole(engine, users, 'Knight');
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    const villager = seatOfRole(engine, users, 'Villager');
     assert.ok(knight && wolf && villager);
 
     await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager) });
@@ -741,10 +776,10 @@ it('骑士：决斗到狼，狼立刻死并进入黑夜（跳过投票）', asyn
   it('骑士：决斗到好人，骑士出局，白天继续', async () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Knight: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
-    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const knight = byRole(users, engine, 'Knight');
-    const seer = byRole(users, engine, 'Seer');
-    const villager = byRole(users, engine, 'Villager');
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false, winMode: 'wipe' });
+    const knight = seatOfRole(engine, users, 'Knight');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const villager = seatOfRole(engine, users, 'Villager');
     assert.ok(knight && seer && villager);
 
     await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager) });
@@ -761,10 +796,10 @@ it('骑士：决斗到狼，狼立刻死并进入黑夜（跳过投票）', asyn
   it('守墓人：看到昨天公投放逐者的阵营；没有放逐就没有信息', async () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Gravekeeper: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
-    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
-    const grave = byRole(users, engine, 'Gravekeeper');
-    const wolf = byRole(users, engine, 'Werewolf');
-    const villager = byRole(users, engine, 'Villager');
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false, winMode: 'wipe' });
+    const grave = seatOfRole(engine, users, 'Gravekeeper');
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    const villager = seatOfRole(engine, users, 'Villager');
     assert.ok(grave && wolf && villager);
 
     await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager), seerSeat: seatOf(engine, wolf) });
@@ -785,19 +820,33 @@ it('骑士：决斗到狼，狼立刻死并进入黑夜（跳过投票）', asyn
 /* ============================== 视图裁剪 ============================== */
 
 describe('狼人杀引擎 · 视图裁剪（防作弊）', () => {
-  it('别人的身份字段根本不在你的报文里；终局才公开', async () => {
+  it('别人的身份字段根本不在你的报文里；狼队友除外；终局才公开', async () => {
     const { engine } = makeEngine();
     const { users } = await makeRoom(engine, 8);
-    const view = engine.viewFor(users[0].id);
-    const meSeat = view.self.seat;
-    for (const p of view.players) {
-      if (p.seat === meSeat) assert.ok(p.role, '自己的身份要能看到');
-      else assert.equal(p.role, undefined, `不该看到 ${p.seat} 号的底牌`);
+
+    // 好人：除了自己，谁的身份都拿不到。
+    const good = users.find((u) => !isWolfRole(roleOf(engine, u)));
+    const goodView = engine.viewFor(good.id);
+    for (const p of goodView.players) {
+      if (p.seat === goodView.self.seat) assert.ok(p.role, '自己的身份要能看到');
+      else assert.equal(p.role, undefined, `好人拿不到 ${p.seat + 1} 号的底牌`);
     }
-    // 狼人能看到队友，但看不到好人的身份
+
+    // 狼人：队友的身份要看得到（夜里要合刀，前端靠它给队友挂「狼队」标记），好人的照样拿不到。
     const wolf = seatOfRole(engine, users, 'Werewolf');
     const wolfView = engine.viewFor(wolf.id);
     assert.ok(wolfView.private.wolfTeammates.length >= 1);
+    const peerSeats = new Set([
+      wolfView.self.seat,
+      ...wolfView.private.wolfTeammates.map((t) => t.seat),
+    ]);
+    for (const p of wolfView.players) {
+      if (peerSeats.has(p.seat)) {
+        assert.ok(isWolfRole(p.role), `${p.seat + 1} 号是狼阵营，狼人要看得到它的身份`);
+      } else {
+        assert.equal(p.role, undefined, `狼人也拿不到 ${p.seat + 1} 号好人的底牌`);
+      }
+    }
     engine.reset();
   });
 });
@@ -862,6 +911,376 @@ describe('狼人杀引擎 · 白天与投票', () => {
     const { users } = await makeRoom(engine, 6);
     const me = users[0];
     await waitPhase(engine, me, PHASE.DAY_BADGE_SIGNUP, 8000);
+    engine.reset();
+  });
+});
+
+/* ==================== 白狼王两步 / 平票复投 / 长老与狼美人的公开信息 ==================== */
+
+describe('狼人杀引擎 · 白狼王（先自爆再带人）', () => {
+  /** 走到白天发言：6 人 2 狼 4 好，首夜刀一个村民不会直接结束 */
+  async function upToDaySpeech(engine, users, wwkSeat, villagerSeat) {
+    await playNightAuto(engine, users, { wolfSeat: villagerSeat, seerSeat: wwkSeat });
+    await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+  }
+
+  it('点自爆立刻出局并进入挑人阶段；带走后直接进夜晚', async () => {
+    const { engine } = makeEngine();
+    const roles = { WhiteWolfKing: 1, Werewolf: 1, Seer: 1, Villager: 3 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const wwk = seatOfRole(engine, users, 'WhiteWolfKing');
+    const villager = seatOfRole(engine, users, 'Villager');
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    assert.ok(wwk && villager && wolf);
+    const wwkSeat = seatOf(engine, wwk);
+
+    await upToDaySpeech(engine, users, wwkSeat, seatOf(engine, villager));
+
+    const boom = engine.act(wwk.id, { type: 'wwkBoom' });
+    assert.equal(boom.ok, true, JSON.stringify(boom));
+    const afterBoom = engine.viewFor(wwk.id);
+    assert.equal(afterBoom.phase, PHASE.WHITE_WOLF_KING_BOOM, '自爆后立刻进入挑人阶段');
+    assert.equal(afterBoom.self.alive, false, '自爆的人当场出局');
+    assert.equal(afterBoom.can.wwkBoom, true, '他还能挑一个人');
+    assert.notEqual(engine.viewFor(wolf.id).can.wwkBoom, true, '别的狼不能替他挑');
+    assert.equal(engine.act(wolf.id, { type: 'wwkBoom', seat: wwkSeat }).ok, false);
+
+    const pick = engine.act(wwk.id, { type: 'wwkBoom', seat: seatOf(engine, villager) });
+    assert.equal(pick.ok, true, JSON.stringify(pick));
+    const afterPick = await waitFor(engine, wwk, (v) => v.phase.startsWith('NIGHT_'), 4000);
+    assert.equal(engine.viewFor(villager.id).self.alive, false, '被带走的人出局');
+    assert.ok(afterPick.phase.startsWith('NIGHT_'), '带走之后直接天黑');
+    engine.reset();
+  });
+
+  it('挑人阶段超时（20 秒）就没人被带走，照样天黑', async () => {
+    const { engine } = makeEngine();
+    const roles = { WhiteWolfKing: 1, Werewolf: 1, Seer: 1, Villager: 3 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const wwk = seatOfRole(engine, users, 'WhiteWolfKing');
+    const villager = seatOfRole(engine, users, 'Villager');
+    await upToDaySpeech(engine, users, seatOf(engine, wwk), seatOf(engine, villager));
+
+    assert.equal(engine.act(wwk.id, { type: 'wwkBoom' }).ok, true);
+    const v = await waitFor(engine, wwk, (x) => x.phase.startsWith('NIGHT_'), 6000);
+    assert.ok(v.phase.startsWith('NIGHT_'), '超时后自动进入夜晚');
+    const otherVillager = users.filter((u) => roleOf(engine, u) === 'Villager' && u.id !== villager.id)[0];
+    assert.equal(engine.viewFor(otherVillager.id).self.alive, true, '没选人就没人被带走');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 平票复投', () => {
+  it('PK 复投只能投台上的人，投台下会被拒', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 2, Seer: 1, Witch: 1, Villager: 3 };
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
+    const wolves = users.filter((u) => isWolfRole(roleOf(engine, u)));
+    const good = users.filter((u) => !isWolfRole(roleOf(engine, u)));
+    assert.equal(wolves.length, 2);
+
+    // 夜里刀一个好人，白天剩 6 人
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, good[0]),
+      seerSeat: seatOf(engine, wolves[0]),
+    });
+    await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+
+    // 直接推到投票阶段（发言全部结束）
+    const me = users[0];
+    for (let i = 0; i < 400; i++) {
+      const v = engine.viewFor(me.id);
+      if (v.phase === PHASE.DAY_VOTE || v.phase === PHASE.GAME_END) break;
+      if (v.phase === PHASE.DAY_SPEECH || v.phase === PHASE.DAY_LAST_WORDS) {
+        const speaker = users.find((u) => engine.viewFor(u.id).self.seat === v.currentSpeakerSeat);
+        if (speaker) {
+          const r = engine.act(speaker.id, { type: 'endSpeech' });
+          if (r.ok) continue;
+        }
+      }
+      await sleep(5);
+    }
+    assert.equal(engine.viewFor(me.id).phase, PHASE.DAY_VOTE);
+
+    // 制造 2:2 平票：两只狼投好甲，两个好人投狼甲，剩下的弃票
+    const alive = users.filter((u) => engine.viewFor(u.id).self.alive);
+    const targetGood = seatOf(engine, alive.find((u) => !isWolfRole(roleOf(engine, u))));
+    const targetWolf = seatOf(engine, alive.find((u) => isWolfRole(roleOf(engine, u))));
+    const voters = alive.filter((u) => engine.viewFor(u.id).can.vote);
+    const plan = new Map();
+    for (const u of voters) plan.set(u.id, null);
+    const wolfVoters = voters.filter((u) => isWolfRole(roleOf(engine, u)));
+    const goodVoters = voters.filter((u) => !isWolfRole(roleOf(engine, u)));
+    wolfVoters.slice(0, 2).forEach((u) => plan.set(u.id, targetGood));
+    goodVoters.slice(0, 2).forEach((u) => plan.set(u.id, targetWolf));
+
+    for (const [id, seat] of plan) {
+      const r = engine.act(id, { type: 'vote', seat });
+      assert.equal(r.ok, true, `投票失败：${JSON.stringify(r)}`);
+    }
+
+    const pk = await waitFor(engine, me, (v) => v.phase === PHASE.DAY_PK_SPEECH, 5000);
+    assert.ok(pk.pkTargets.includes(targetGood) && pk.pkTargets.includes(targetWolf), '台上就是平票的两个人');
+
+    // 跳到复投
+    for (let i = 0; i < 400; i++) {
+      const v = engine.viewFor(me.id);
+      if (v.phase === PHASE.DAY_VOTE) break;
+      if (v.phase === PHASE.GAME_END) break;
+      if (v.phase === PHASE.DAY_PK_SPEECH || v.phase === PHASE.DAY_LAST_WORDS) {
+        const speaker = users.find((u) => engine.viewFor(u.id).self.seat === v.currentSpeakerSeat);
+        if (speaker) {
+          const r = engine.act(speaker.id, { type: 'endSpeech' });
+          if (r.ok) continue;
+        }
+      }
+      await sleep(5);
+    }
+    const revote = engine.viewFor(me.id);
+    assert.equal(revote.phase, PHASE.DAY_VOTE, 'PK 之后回到投票');
+
+    const outsider = alive
+      .map((u) => seatOf(engine, u))
+      .find((s) => !revote.pkTargets.includes(s));
+    const voter = users.find((u) => engine.viewFor(u.id).can.vote);
+    assert.ok(voter && outsider !== undefined);
+    const outsiderSeat = alive
+      .map((u) => seatOf(engine, u))
+      .find((s) => !revote.pkTargets.includes(s) && s !== engine.viewFor(voter.id).self.seat);
+    assert.notEqual(outsiderSeat, undefined, '台下还有别人可以试投');
+    const rejected = engine.act(voter.id, { type: 'vote', seat: outsiderSeat });
+    assert.equal(rejected.ok, false, '投台下应该被拒');
+    assert.match(rejected.message || '', /PK/);
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 公开消息不泄露身份', () => {
+  it('长老挨第一刀：公开说的是"平安夜"，不会说"被袭击但活了下来"', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 2, Elder: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
+    const elder = seatOfRole(engine, users, 'Elder');
+    const villager = seatOfRole(engine, users, 'Villager');
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, elder),
+      seerSeat: seatOf(engine, villager),
+    });
+    await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+    await sleep(30);
+
+    const texts = engine.viewFor(villager.id).messages.map((m) => m.content).join('\n');
+    assert.match(texts, /平安夜/, '公开消息里是平安夜');
+    assert.doesNotMatch(texts, /活了下来/, '不能公开暗示长老没死');
+    assert.equal(engine.viewFor(elder.id).self.alive, true);
+    assert.equal(engine.viewFor(elder.id).private.elderLives, 1);
+    engine.reset();
+  });
+
+  it('狼美人魅惑谁：别人的消息里一个字都没有', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 1, WolfBeauty: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 2 };
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false });
+    const beauty = seatOfRole(engine, users, 'WolfBeauty');
+    const villager = seatOfRole(engine, users, 'Villager');
+    const hunter = seatOfRole(engine, users, 'Hunter');
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, hunter),
+      charmSeat: seatOf(engine, villager),
+      seerSeat: seatOf(engine, beauty),
+    });
+    await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+    await sleep(30);
+
+    const others = users.filter((u) => u.id !== beauty.id);
+    for (const u of others) {
+      const texts = engine.viewFor(u.id).messages.map((m) => m.content).join('\n');
+      assert.doesNotMatch(texts, /魅惑了/, `${engine.viewFor(u.id).self.role} 不该看到魅惑信息`);
+    }
+    assert.equal(engine.viewFor(beauty.id).private.wolfBeauty?.charmedSeat ?? null, seatOf(engine, villager), '狼美人自己看得到');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 胜利条件（屠边 / 屠城）', () => {
+  it('屠城：刀掉平民后不结束，骑士翻牌决斗照样翻盘', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 1, Knight: 1, Villager: 2 },
+      sheriff: false,
+      winMode: 'wipe',
+    });
+    const wolf = seatOf(engine, seatOfRole(engine, users, 'Werewolf'));
+    const knight = seatOf(engine, seatOfRole(engine, users, 'Knight'));
+    const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+
+    // 第 1 夜：刀村民甲；白天全员弃票
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]) });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: {} });
+
+    // 第 2 夜：刀村民乙 → 只剩 1 狼 1 骑士，屠城局不能结束
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[1]) });
+    const alive = await waitFor(
+      engine,
+      users[0],
+      (v) => v.phase === PHASE.DAY_SPEECH || v.phase === PHASE.GAME_END,
+      8000,
+    );
+    assert.equal(alive.phase, PHASE.DAY_SPEECH, '屠城局里只剩骑士也不该提前判狼胜');
+    assert.deepEqual(
+      alive.players.filter((p) => p.alive).map((p) => p.seat).sort((a, b) => a - b),
+      [wolf, knight].sort((a, b) => a - b),
+    );
+
+    // 骑士翻牌决斗唯一那只狼 → 狼全死，好人胜
+    const duel = engine.act(seatOfRole(engine, users, 'Knight').id, { type: 'knight', seat: wolf });
+    assert.equal(duel.ok, true, JSON.stringify(duel));
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 6000);
+    assert.equal(end.winner, 'village');
+    engine.reset();
+  });
+
+  it('屠边：同一个局面平民被杀光就立刻狼胜，骑士来不及翻牌', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 1, Knight: 1, Villager: 2 },
+      sheriff: false,
+    });
+    assert.equal(engine.viewFor(users[0].id).winMode, 'side');
+    const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]) });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: {} });
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[1]) });
+
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+    assert.equal(end.winner, 'wolf', '屠边局杀光平民即狼胜');
+    engine.reset();
+  });
+
+  it('屠城：1 狼 1 猎人，刀死猎人就立刻狼胜，猎人开不了枪', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 1, Hunter: 1, Villager: 2 },
+      sheriff: false,
+      winMode: 'wipe',
+    });
+    const wolf = seatOf(engine, seatOfRole(engine, users, 'Werewolf'));
+    const hunter = seatOf(engine, seatOfRole(engine, users, 'Hunter'));
+    const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]) });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: votesFor(engine, users, seatOf(engine, villagers[1])) });
+    await playNightAuto(engine, users, { wolfSeat: hunter });
+
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+    assert.equal(end.winner, 'wolf');
+    const texts = end.messages.map((m) => m.content).join('\n');
+    assert.doesNotMatch(texts, /请选择要带走的人/, '死讯一结算就结束，猎人没有开枪机会');
+    engine.reset();
+  });
+
+  it('屠城：1 狼 1 女巫同归于尽 → 狼全死，判好人胜', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 1, Witch: 1, Villager: 2 },
+      sheriff: false,
+      winMode: 'wipe',
+    });
+    const wolf = seatOf(engine, seatOfRole(engine, users, 'Werewolf'));
+    const witchUser = seatOfRole(engine, users, 'Witch');
+    const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]), witch: 'pass' });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: votesFor(engine, users, seatOf(engine, villagers[1])) });
+
+    // 第 2 夜：狼刀女巫，女巫毒狼 → 天亮双方都死了
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, witchUser),
+      witch: { action: 'poison', seat: wolf },
+    });
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+    assert.equal(end.winner, 'village', '同时全灭时好人优先胜（狼先死光）');
+    assert.equal(end.players.filter((p) => p.alive).length, 0);
+    engine.reset();
+  });
+
+  it('屠边：神职被杀光也立刻狼胜，平民还活着也救不了', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 1, Seer: 1, Villager: 2 },
+      sheriff: false,
+    });
+    const seer = seatOfRole(engine, users, 'Seer');
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, seer), seerSeat: seatOf(engine, wolf) });
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+    assert.equal(end.winner, 'wolf');
+    assert.equal(end.players.filter((p) => p.alive).length, 3, '狼 + 2 个平民都还活着，死的只有神职');
+    engine.reset();
+  });
+
+  it('屠边：放逐掉最后一个平民就立刻狼胜（屠城局不会）', async () => {
+    const side = makeEngine();
+    {
+      const { engine } = side;
+      const { users } = await makeRoom(engine, 4, {
+        roles: { Werewolf: 1, Knight: 1, Villager: 2 },
+        sheriff: false,
+      });
+      const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+      await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]) });
+      await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+      await playDay(engine, users, { votes: votesFor(engine, users, seatOf(engine, villagers[1])) });
+      const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+      assert.equal(end.winner, 'wolf');
+      engine.reset();
+    }
+
+    const wipe = makeEngine();
+    {
+      const { engine } = wipe;
+      const { users } = await makeRoom(engine, 4, {
+        roles: { Werewolf: 1, Knight: 1, Villager: 2 },
+        sheriff: false,
+        winMode: 'wipe',
+      });
+      const villagers = users.filter((u) => roleOf(engine, u) === 'Villager');
+      await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villagers[0]) });
+      await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+      await playDay(engine, users, { votes: votesFor(engine, users, seatOf(engine, villagers[1])) });
+      const after = engine.viewFor(users[0].id);
+      assert.equal(after.phase.startsWith('NIGHT_'), true, `屠城局平民死光还要继续打，现在是 ${after.phase}`);
+      engine.reset();
+    }
+  });
+});
+
+describe('狼人杀引擎 · 打完再来一局', () => {
+  it('只有房主能开下一局；开了之后回到等候区、座位还在', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 4, {
+      roles: { Werewolf: 2, Seer: 1, Villager: 1 },
+      sheriff: false,
+    });
+    const villager = seatOfRole(engine, users, 'Villager');
+    // 屠边局（默认）：2 狼 + 1 预言家 + 1 民，首夜刀掉唯一的民 → 平民全灭即狼胜
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager) });
+    const end = await waitFor(engine, users[0], (v) => v.phase === PHASE.GAME_END, 8000);
+    assert.equal(end.winner, 'wolf');
+
+    assert.equal(engine.restartRoom(users[1].id).ok, false, '非房主不能开');
+    const restarted = engine.restartRoom(users[0].id);
+    assert.equal(restarted.ok, true, JSON.stringify(restarted));
+    const after = engine.viewFor(users[0].id);
+    assert.equal(after.phase, 'WAITING');
+    assert.equal(after.lobby.players.length, 4, '4 个座位都还在');
+    assert.equal(after.winner ?? null, null);
+    assert.equal(engine.leaveRoom(users[1].id).ok, true, '打完能正常退房回大厅');
     engine.reset();
   });
 });

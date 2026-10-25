@@ -49,8 +49,12 @@ export interface ServerView {
   speechOrder: number[];
   badge: { holderSeat: number | null; candidates: number[] };
   aliveCount: number;
+  /** 平票 PK 时台上的座位；非空时"复投"只允许投这些人 */
+  pkTargets: number[];
   sheriffEnabled?: boolean;
   goodSkillsDisabled?: boolean;
+  /** 本局胜利条件：'side' 屠边 / 'wipe' 屠城 */
+  winMode?: "side" | "wipe";
   self: {
     id: string;
     seat: number;
@@ -114,6 +118,8 @@ export interface Lobby {
   seats: number;
   roles?: Record<string, number>;
   sheriff?: boolean;
+  /** 胜利条件：'side' 屠边（默认）/ 'wipe' 屠城 */
+  winMode?: "side" | "wipe";
   hostId: string;
   started: boolean;
   phase: string;

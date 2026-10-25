@@ -188,6 +188,39 @@ async function main() {
       10_000,
       '减回去之后应该重新配满',
     );
+
+    /* ---------- 3.1 胜利条件：屠边要同时有平民和神职，屠城不限 ---------- */
+    const winModeDefault = await page.eval(`return (() => {
+      const picker = document.querySelector('[data-testid="win-mode-picker"]');
+      return picker ? picker.innerText : '';
+    })()`);
+    assert.match(winModeDefault, /屠边/, '建房弹窗要有胜利条件选择器，且默认屠边');
+    assert.match(winModeDefault, /屠城/, '建房弹窗要有屠城选项');
+    // 6 人标准 = 2 狼 + 预言家 + 女巫 + 猎人 + 平民：把平民换成长老 → 0 平民
+    await page.click('[data-testid="role-dec-Villager"]');
+    await page.click('[data-testid="role-inc-Elder"]');
+    await page.waitFor(
+      `return document.querySelector('[data-testid="create-room"]').disabled === true`,
+      10_000,
+      '屠边局没有平民时不许开房',
+    );
+    const rejectText = await page.eval(`return document.querySelector('[data-testid="create-modal"]').innerText`);
+    assert.match(rejectText, /屠边局要同时有平民和神职/, '要告诉房主为什么不让开');
+    await page.click('[data-testid="win-mode-wipe"]');
+    await page.waitFor(
+      `return document.querySelector('[data-testid="create-room"]').disabled === false`,
+      10_000,
+      '切成屠城后同一个配置就能开',
+    );
+    // 回到"屠边 + 标准配置"，继续原来的建房流程
+    await page.click('[data-testid="win-mode-side"]');
+    await page.click('[data-testid="role-reset"]');
+    await page.waitFor(
+      `return document.querySelector('[data-testid="create-room"]').disabled === false`,
+      10_000,
+      '切回屠边并套用标准配置后可以开房',
+    );
+
     await page.click('[data-testid="create-room"]');
     await page.waitFor(`return !!document.querySelector('[data-testid="room-code"]')`, 15_000, '等候区出现');
     const roomCode = await page.eval(`return document.querySelector('[data-testid="room-code"]').textContent.trim()`);
@@ -195,6 +228,10 @@ async function main() {
     const composition = await page.eval(`return document.querySelector('[data-testid="role-composition"]').textContent`);
     assert.match(composition, /2 狼人/, '等候区要显示房主配的角色');
     assert.match(composition, /预言家/, '等候区要显示房主配的角色');
+    const winModeSetting = await page.eval(
+      `return document.querySelector('[data-testid="win-mode-setting"]').innerText`,
+    );
+    assert.match(winModeSetting, /屠边/, '等候区要把本局胜利条件写出来');
     const startDisabled = await page.eval(`return document.querySelector('[data-testid="start-game"]').disabled`);
     assert.equal(startDisabled, true, '人没坐满时「开始」必须是灰的');
 

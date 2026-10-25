@@ -11,6 +11,134 @@
 > 新地址 **https://<你的公网地址>**（旧地址 `https://<你的域名>/` 已停用保留）。
 > 这一轮最大的坑是"**国内节点拦截明文 HTTP**"—— 见下一节，以及 `docs/TUNNEL.md` 坑五。
 
+## 2026-10-25 狼人杀：胜利条件改成屠边 / 屠城（✅ 已完成）
+
+**用户的要求**（原话拆成两条）：
+1. 现在"狼阵营 = 好人阵营就判狼人获胜（狼控场）"不对：**1 狼 2 好人**、其中一个是**没翻过牌的骑士**，
+   狼夜里刀掉另一个好人后，骑士本该在投票前翻牌决斗把狼带走 → 好人能赢。所以**不许提前结束**，
+   要一直打到一方死光，而且"立刻"是指**死讯一结算就判**（1 狼 1 猎人被刀死 → 当场狼胜，猎人开不了枪）。
+2. 开房不再强制"至少 1 个狼人 / 白狼王"，改成**至少 1 个狼阵营角色**。
+3. 顺带引入新概念：房主建房时选 **屠边局 / 屠城局**。
+
+**最终规则**
+
+| 模式 | 狼人怎么赢 |
+| --- | --- |
+| 屠边（默认，经典） | 杀光所有**平民**，或杀光所有**神职**（所有非平民的好人） |
+| 屠城 | 杀光所有**好人** |
+
+- 好人胜 = 狼人全灭；**双方同一刻全灭时判好人胜**（典型：1 狼 1 女巫，狼刀女巫、女巫毒狼）。
+- 删掉了"存活狼人 ≥ 存活好人"的狼控场判定。
+- 屠边局建房时**必须同时配 ≥1 平民和 ≥1 神职**，少一边直接**不让开房**并提示；
+  屠城局不限（0 平民也行）。校验在引擎 `validateRoleSetup(seats, roles, winMode)` + 前端 `checkCounts` 各做一遍。
+- 开房门槛：`isWolfRole` 五种（狼人 / 白狼王 / 狼王 / 狼美人 / 恶夜骑士）任意一种即可。
+
+**改在哪**
+
+| 文件 | 改动 |
+| --- | --- |
+| `games/werewolf/engine/index.mjs` | `checkWinner` 重写（狼全灭优先 → 屠边/屠城）；`WIN_MODE_SIDE/WIPE` + `normalizeWinMode`；`createRoom({ winMode })`、`startGame` 里 `g.winMode` / `g.winModeSides`；`announceDeaths` 死讯结算完立刻 `checkWinner` → 中了 `endGame`（跳过开枪/移交警徽/进白天）；`validateRoleSetup` 狼阵营门槛 + 屠边两边校验；开局系统消息写本局规则；`view.winMode`、`lobby.winMode` |
+| `server/werewolf/index.mjs` | `/room/create` 透传 `winMode` |
+| `games/werewolf/app/src/lib/role-setup.ts` | `WinMode` 类型 + `WIN_MODE_OPTIONS`、`godCount()`、`checkCounts(seats, counts, winMode)` 加屠边校验 |
+| `games/werewolf/app/src/components/game/Lobby.tsx` | 建房弹窗加「胜利条件：屠边/屠城」选择器（`data-testid="win-mode-picker"`）、等候区显示「胜利条件：…」、规则介绍改写成两种模式 + "死讯即判" |
+| `games/werewolf/app/src/hooks/useNetGame.ts` / `lib/net/platform.ts` | `createRoom(..., winMode)`；`Lobby.winMode`、`ServerView.winMode` |
+| `tests/werewolf.engine.test.mjs` | 新增 6 条胜利条件用例 + 3 条角色配置/门槛用例（30 → 39 条）；3 条只测夜间/技能的旧用例改成 `winMode:'wipe'`（它们只配了 1 个平民，屠边会在第一晚就结束） |
+
+**证据**
+
+- `node --test tests/werewolf.engine.test.mjs` → 39/39；`npm run test:werewolf` → 50/50（含浏览器）；
+  `npm test` → 171 条、170 过、1 跳过。
+- 真机（真实 7891 + 真实 dist，4 个新账号）：
+  屠边缺平民 → 弹窗红字 + 「创建房间」置灰；同一配置切屠城 → 立刻可建；
+  **只放 1 个狼美人**（没有狼人/白狼王）→ 开房成功、等候区显示"屠边"；
+  屠边第一夜刀掉唯一的平民 → **立刻狼胜**（女巫/预言家/狼美人还活着）；
+  屠城第一夜刀掉平民 → **没结束**，进入 `DAY_BADGE_SIGNUP`、还剩 3 人（旧规则这里当场狼胜）。
+  截图 `tests/screenshots/fix-winmode-{reject,picker,waiting,side-win,wipe-continue}.png`。
+
+**踩的坑**
+
+1. 老用例用"配 1 个平民的 7 人局"测骑士/守墓人，屠边默认规则让第一晚就结束 → 报 `等状态超时，最后是 GAME_END`。
+   这些用例的目的是测技能，给它们显式传 `winMode: 'wipe'` 就行，不要为此改引擎。
+2. `DAY_START` 只是"给客户端播死讯的 4 秒缓冲"，**死讯要到 `announceDeaths` 才真正 `kill()`**；
+   实测脚本里用 `phase.startsWith('DAY_')` 当"天亮后"来断言，会读到"还没有人死"的中间态。
+   要等 `phase !== DAY_START`（或者直接等 `GAME_END`）。
+3. 真机上 `document.cookie` 读不到 `sid`（HttpOnly），房主的 API 身份得走 CDP `Network.getAllCookies`；
+   而且注册完会跳回 `/werewolf/`，那里没有平台外壳的 `window.GameNet`，别等它连上。
+
+## 2026-10-25 狼人杀：再扫一遍 bug + 全部角色技能复核（✅ 已完成）
+
+**用户的要求**：修掉第 4 轮之后又查出来的 bug，把**每个角色的技能逻辑**过一遍有没有漏洞
+（尤其是新加的狼美人 / 恶夜骑士 / 狼王 / 白狼王 / 长老 / 守墓人），并且
+**白狼王要"先自爆、再带人"**（原先是先选人再自爆）；最后把所有"操作要等多久"列成表给他看。
+
+**技能复核结论**：引擎里 12 个角色的判定都对（合刀多数 / 平票空刀、恶夜骑士反伤只一次且优先预言家、
+狼王自爆不开枪、狼美人一晚只能魅惑一次且不能连魅、骑士决斗一次、长老两条命只在被刀时生效、
+白痴翻牌免死且不投票、守卫不能连守且"奶穿"、女巫一晚只一瓶、警长 1.5 票、平票 PK 二平无人出局）。
+**没有发现规则漏洞**，这一轮抓到的都是"逻辑正确但展示 / 交互错了"的问题：
+
+| 问题 | 根因 | 改在哪 |
+| --- | --- | --- |
+| 狼美人魅惑了谁，**全桌都看得见**（"1号 魅惑了 5号。"） | `act` 的魅惑分支里调了 `system()` 广播 | 删掉那条广播，魅惑只留在她自己的 `private` 里 |
+| **白狼王在联机版根本点不动**（按钮不显示 / 点了报错） | 引擎只在"他还没死"时才给 `can.wwkBoom`，而自爆本身就要求他已经死了 | 拆成两步：`whiteWolfKingDetonate`（自爆出局 + 进 `WHITE_WOLF_KING_BOOM` 挑人）和 `whiteWolfKingBoomDone`（带走 → 直接天黑），`legalActions` 在 `!me.alive` **之前**给出 `can.wwkBoom` |
+| 长老第一次被刀，公开消息是"**X 被狼人袭击，但活了下来**"→ 全场立刻知道谁是长老 | `announceDeaths` 为"有守卫救人"写的 `survived` 广播 | 删掉 `survived` 广播；这一夜没人死就统一说"**平安夜**" |
+| 平票 PK 的**复投可以投台下的人**，还能把人投出去 | `act` 的投票分支没看 `g.pkTargets` | 复投阶段只允许投台上的人（"这一轮只能投 PK 台上的玩家"），`viewFor` 带上 `pkTargets` 供前端过滤 |
+| 打完一局点「返回大厅」**又被弹回结算页**；「再来一局」也没反应 | 前端 `backToLobby` 只清本地 state，从不调 `/room/leave`，下一次拉状态又拿到 GAME_END | `backToLobby` 先 `await /room/leave` 再拉状态；引擎新增 `restartRoom`（房主、只在结束后）→ 房间退回等候区、座位不动 |
+| 被票出去的猎人 / 狼王还能看见发言框（发出去必被拒），且**看不到「不开枪」** | `g.speaker` 在进 `HUNTER_SHOOT`/`BADGE_TRANSFER` 时仍停在死者身上 → `isHumanTurn` 为真；「不开枪」按钮又塞在"非本人发言"才显示的对话块里，还额外要求 `!isTyping` | `showHumanInput` 排除这两个阶段（+白狼王挑人）；把「不开枪」挪到动作区（不受发言状态影响） |
+| 联机局点「不竞选警长」后，**45 秒里整块面板是空的** | 那个"正在统计竞选人数…"的提示要求 `isWaitingForAI`（联机模式恒为 false） | 去掉这个条件，联机也会显示提示 |
+| 「事件」日志面板**永远是空的** | 它只按 `nightHistory`/`dayHistory` 生成，联机模式这两个字段是空的 | 空的时候退化成"把公开系统消息按天列出来" |
+| 发言最后一句可能丢：点「结束发言」时"发送"和"结束"两个请求并发 | `handleFinishSpeaking` 同时发 | 先 `await` 发送、再结束 |
+| 顶部倒计时可能显示 00:00（用服务器绝对时间减本地时钟） | 用 `view.deadline - Date.now()` | 改成"记住拿到视图的本地时刻，用 `duration` 减本地流逝" |
+
+**白狼王的完整流程**（现在的规则）：白天任何发言/投票阶段点「白狼王自爆」→ 自己立刻出局、白天结束、
+进入 `WHITE_WOLF_KING_BOOM`（20 秒）→ 点头像选一个人带走（也可以不选）→ 被带走的人出局 → 直接天黑。
+他是狼王，**自爆不算被刀/被毒，所以不能再开枪**；已经死掉的狼王也不能自爆。
+
+**实测证据**（真引擎 + 8 个真账号 + 真 Chrome，`tests/screenshots/fix-wwk-pick.png`）：
+自爆后阶段变 `WHITE_WOLF_KING_BOOM`、页面出现"你已自爆：点头像选一个人带走"、倒计时 00:19、
+点卡 → "你选择自爆带走 2号" → 确认 → 2 号出局且进入 `NIGHT_START`；
+联机局点「返回大厅」后 `room=null` 且回到大厅（不再被拉回），房主点「再来一局」后
+`room.phase=waiting`、8 个座位都在；「事件」面板列出"公开事件 7 件"；
+被票出局的猎人页面只剩「不开枪」（没有发送/结束发言），点了直接天黑。
+引擎侧另跑：长老第一刀→"平安夜"且无"活了下来"、平民看不到"魅惑了"、复投投台下被拒。
+测试：`npm run test:werewolf`（引擎新增 6 条：白狼王两步 / 挑人超时不带走 / 复投限制 / 平安夜 / 魅惑保密 / 再来一局）、`npm test`（156 条）全绿。
+
+**两个坑**：
+
+- **`dist/` 是给用户看的产物，`pnpm build` 出的是 `games/werewolf/app/out/`**：
+  这次差点把旧包当成新包（`robocopy out dist` 在 `app/` 目录下执行会复制到 `app\dist`），
+  结果浏览器里跑的还是旧代码 —— 判断办法：`dist\_next\static\chunks\app\page-*.js` 里能不能
+  搜到新文案（例如"你已自爆"），以及 `dist\index.html` 引用的 hash 变没变。
+- **别人的操作要靠 5 秒轮询才到前端**：自己点的按钮会立刻刷新，但"别人把我票出去了"最多要等 5 秒，
+  实测脚本里等 1.5 秒就断言会误判成"按钮没出现"。
+
+## 2026-10-25 狼人杀：8 个真人号的实测，抓出并修掉 4 个问题（✅ 已完成）
+
+**用户的要求**：拿 8 个临时账号真开局，把狼人 / 好人 / 预言家 / 女巫 / 白狼王的各种视角
+截图给他看（第一、二、三轮都是这个），然后把测出来的问题修掉 + "没有立绘的角色别放大头像"。
+
+**测出 4 个问题 → 4 个改法**：
+
+| 问题 | 根因 | 改在哪 |
+| --- | --- | --- |
+| 狼人看不见队友（队友卡没有「狼队」标记、协作面板只列自己） | `viewFor` 只把 `role` 发给"自己 + 终局"，前端 `WolfPlanningPanel`/`PlayerCardCompact` 却按 `player.role` 认队友 | 引擎 `viewFor` 把**狼队友的 `role`** 发给狼人（ARCHITECTURE 里那条"别人身份不出现"的唯一例外）；`PlayerCardCompact` 再用 `private.wolfTeammates` 兜一层 |
+| 8 张牌每张都挂「你」 | 联机层 `viewToGameState` 把 **所有人** 的 `isHuman` 写成 `true`，而上游 `isHuman` 的语义是"这张卡就是我" | `isHuman: p.playerId === meId`；同时把两处 `isHuman ? 昵称 : persona` 的"就绪"判断改成"有昵称或有 persona"（联机局没有 `agentProfile`，不改会把别人的头像变成灰圆） |
+| 发言框提示"可点「AI助我」生成"，但联机版没这个按钮 | 这是上游单人 AI 模式的文案，被一起搬过来了 | `zh.json`/`en.json` 的 `dialog.input.defaultPlaceholder` / `lastWordsPlaceholder` 改成"写几句，回车发送；说完了点「结束发言」"（`aiAssist*` 那几条 `useGameLogic` 还在用，**不能删**） |
+| 没有立绘的角色（恶夜骑士、平民、狼王…）在输入框上方挂一个巨大的自己头像 | `DialogArea` 白天分支把当前发言者的 `TalkingAvatar` 放大到 220–300px；`ROLE_PORTRAIT_MAP` 还拿同阵营立绘冒充新角色 | 立绘映射只留**真有图**的 7 个角色；白天只画"**自己的**角色立绘"（自己的身份不算泄漏），没图就**留白**，头像不再放大；夜晚阶段照旧按阶段角色画（阶段本身公开） |
+
+**实测证据**：4 条都跑过真机（8 个真账号 + 真 Chrome，截图在 `tests/screenshots/fix-*.png`）：
+狼人页面「狼队」3 张 + 协作面板 3 行（`2 你 / 6 狼测6 / 8 狼测8 思考中`）；
+每页只有 1 张牌挂「你」；发言框提示无 AI 字样；狼人自己发言时立绘是 `roles/werewolf.png`，
+恶夜骑士发言时立绘区 `imgs: 0`（空白）。
+测试：`npm run test:werewolf`（35 条，含真浏览器）与 `npm test`（156 条）全绿。
+
+**两个坑**：
+
+- **改了引擎必须重启服务**：`server/` 是常驻进程，`games/werewolf/engine/index.mjs` 启动时就读进内存了；
+  前端是静态产物、刷新即生效，所以"卡片有狼队标记但面板还是 1 行"这种半生效状态就是这么来的。
+  改引擎后 `node tools/service.mjs restart`，再做实测。
+- **恶夜骑士会反杀预言家**：验证脚本里让预言家随便查人，查到恶夜骑士 → 预言家当场死 →
+  首夜死两个好人 → 狼人直接赢。实测脚本要避开恶夜骑士（`role-check` 时排除）。
+
 ## 2026-11 AI 小镇接入 + 多人化身（✅ 已完成）
 
 **用户的要求**：把 `github.com/mewamew/my_ai_town` 下载（**不是 fork**）接进平台；

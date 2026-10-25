@@ -37,7 +37,7 @@ export interface NetGame {
   humanPlayer: Player | null;
   isNight: boolean;
   refresh: () => Promise<void>;
-  createRoom: (seats: number, password?: string, roles?: Record<string, number>, sheriff?: boolean) => Promise<void>;
+  createRoom: (seats: number, password?: string, roles?: Record<string, number>, sheriff?: boolean, winMode?: "side" | "wipe") => Promise<void>;
   joinRoom: (code: string, password?: string) => Promise<void>;
   leaveRoom: () => Promise<void>;
   startGame: () => Promise<void>;
@@ -46,7 +46,9 @@ export interface NetGame {
   incomingInvite: IncomingInvite | null;
   dismissInvite: () => void;
   clearError: () => void;
-  backToLobby: () => void;
+  backToLobby: () => Promise<void>;
+  /** 结算页「再来一局」：房主把房间退回等候区，座位都不动 */
+  restartGame: () => Promise<void>;
 }
 
 /** 服务器视图 → 上游 UI 组件认识的 `GameState`（只填真实的字段，其余给空默认值）。 */
@@ -59,7 +61,9 @@ export function viewToGameState(view: ServerView, meId: string): GameState {
     alive: p.alive,
     role: (p.role || "Villager") as Role,
     alignment: p.alignment || "village",
-    isHuman: true,
+    // 上游语义：isHuman = "这张卡就是我自己"。
+    // 联机局里每个座位都是真人，写死 true 会让 8 张卡都挂上「你」。
+    isHuman: p.playerId === meId,
   }));
 
   const messages: ChatMessage[] = view.messages.map((m) => ({
@@ -255,13 +259,20 @@ export function useNetGame(): NetGame {
   );
 
   const createRoom = useCallback(
-    (seats: number, password?: string, roles?: Record<string, number>, sheriff?: boolean) =>
+    (
+      seats: number,
+      password?: string,
+      roles?: Record<string, number>,
+      sheriff?: boolean,
+      winMode?: "side" | "wipe",
+    ) =>
       run(async () => {
         await api("/room/create", {
           seats,
           password: password || "",
           roles,
           sheriff: sheriff !== false,
+          winMode: winMode === "wipe" ? "wipe" : "side",
         });
       }),
     [run],
@@ -300,12 +311,25 @@ export function useNetGame(): NetGame {
     [run],
   );
 
-  const backToLobby = useCallback(() => {
+  const backToLobby = useCallback(async () => {
+    // 必须先退出房间：只清本地 state 的话，下一次拉状态又会被拉回这张结算画面。
+    try {
+      await api("/room/leave", {});
+    } catch {
+      /* 房间可能已经被回收了，照常回大厅 */
+    }
     setView(null);
     setRoom(null);
     setLobby(null);
-    void load();
+    await load();
   }, [load]);
+
+  const restartGame = useCallback(async () => {
+    await run(async () => {
+      await api("/room/restart", {});
+      await load();
+    });
+  }, [load, run]);
 
   const invite = useCallback(
     (ids: string[]) => {
@@ -347,5 +371,6 @@ export function useNetGame(): NetGame {
     dismissInvite: () => setIncomingInvite(null),
     clearError: () => setError(""),
     backToLobby,
+    restartGame,
   };
 }

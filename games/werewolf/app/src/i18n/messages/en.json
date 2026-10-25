@@ -1333,8 +1333,8 @@
       "select": "Select"
     },
     "input": {
-      "lastWordsPlaceholder": "Any last words? (Tap AI help to draft, or write a few words first to steer it)",
-      "defaultPlaceholder": "What do you think? (Tap AI help to draft, or write a few words first to steer it)",
+      "lastWordsPlaceholder": "Any last words? Write a few lines, press Enter to send, then tap End speech.",
+      "defaultPlaceholder": "What do you think? Write a few lines, press Enter to send, then tap End speech.",
       "send": "Send",
       "finishSpeech": "End speech",
       "aiAssist": "AI help",
