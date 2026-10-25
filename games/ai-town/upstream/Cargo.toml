@@ -1,0 +1,11 @@
+[workspace]
+resolver = "2"
+members = ["crates/protocol", "crates/kernel", "crates/agent", "crates/host", "crates/manager"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.88.0"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

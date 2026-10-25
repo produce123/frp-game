@@ -1,0 +1,6 @@
+[
+  {"id": "test:bed", "version": 1, "name": "单人床", "description": "", "actions": [{"id": "sleep", "label": "睡觉", "duration_minutes": 480, "during": [{"kind": "restore_need", "need": "energy", "per_minute": 0.15625, "pause_decay": true}], "completion": "sleep", "conditions": [], "rest": true}]},
+  {"id": "test:water", "version": 1, "name": "饮用水桶", "description": "", "actions": [{"id": "drink", "label": "饮水", "duration_minutes": 3, "during": [], "completion": "activity", "conditions": [], "on_complete": [{"kind": "restore", "need": "water", "amount": 35}], "recipient": true, "supply": {"initial": 200, "cost": 1}}]},
+  {"id": "test:rations", "version": 1, "name": "干粮袋", "description": "", "actions": [{"id": "eat", "label": "吃干粮", "duration_minutes": 10, "during": [], "completion": "activity", "conditions": [], "on_complete": [{"kind": "restore", "need": "fullness", "amount": 25.0}], "recipient": true, "supply": {"initial": 100, "cost": 1}}]},
+  {"id": "test:flower", "version": 1, "name": "野花", "description": "可拾取、赠予和摆放的花。", "portable": true, "stack_limit": 5, "actions": []}
+]

@@ -10,7 +10,7 @@
  */
 
 import { createServer } from 'node:http';
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,10 +26,12 @@ import { createMonopolyRelay } from './monopoly/relay.mjs';
 import { createMahjong, MAHJONG_BACKEND_PORT } from './mahjong/index.mjs';
 import { createMahjongPresence } from './mahjong-presence.mjs';
 import { createMonopolyPresence } from './monopoly-presence.mjs';
+import { createHorizonRelay } from './horizon/relay.mjs';
 import { SWEEP_MS, createRooms } from './rooms.mjs';
 import { openStore } from './store.mjs';
 import { createWerewolfGame } from './werewolf/index.mjs';
 import { attachWebSocket } from './ws.mjs';
+import { createAiTown } from './ai-town/index.mjs';
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const DEFAULT_PORT = 7891;
@@ -109,6 +111,13 @@ export async function startServer({
     onSeatChange: (playerId) => hub && hub.pushFriendsOf(playerId),
   });
   /*
+   * 地平线赛车：联机时的**高频车位置**走这条独立 WS（`/horizon-relay`）。
+   * 为什么不用平台房间层的 act：那会让房间面板按位置频率重画。
+   * 它只认"你真在这间地平线房、而且已经开局"，不模拟物理。
+   */
+  const horizonRelay = createHorizonRelay({ rooms });
+
+  /*
    * 狼人杀：**游戏核心在同一个进程里**（不是又起一个服务）。
    *
    * 接线顺序是 `werewolf → hub → werewolf.attachHub(hub)`：
@@ -116,7 +125,13 @@ export async function startServer({
    * 所以先造 werewolf（它的 hub 是后插的），再造 hub，最后补上 hub。
    */
   const werewolf = createWerewolfGame({ store, timeoutScale: werewolfTimeoutScale });
-  hub = createHub({ store, rooms, nonamePresence, werewolf, monopolyPresence, mahjongPresence });
+  /*
+   * AI 小镇：房间/心跳对象先放一个"占位"，hub 和 aiTown 互相需要 ——
+   * hub 要查"他正在玩哪个镇"，aiTown 要在进/出镇时推好友列表。
+   * 占位对象的字段在 aiTown 造好之后立刻补上。
+   */
+  const aiTownHolder = { presence: null, rooms: null };
+  hub = createHub({ store, rooms, nonamePresence, werewolf, monopolyPresence, mahjongPresence, aiTown: aiTownHolder });
   werewolf.attachHub(hub);
 
   /*
@@ -140,6 +155,15 @@ export async function startServer({
     dbPath: mahjongDbPath,
   });
 
+  /*
+   * AI 小镇：Rust manager 子进程 + 每个用户一个存档根。不在这里启动，
+   * 第一次有人开镇时才按需拉起（没人玩的时候不占内存）。
+   */
+  const aiTown = createAiTown({ store, hub });
+  aiTownHolder.presence = aiTown.presence;
+  aiTownHolder.rooms = aiTown.rooms;
+  aiTown.setUserResolver((req) => currentUser(store, req));
+
   const handler = createRequestHandler({
     store,
     availableGames: () => [...games.keys()],
@@ -152,6 +176,7 @@ export async function startServer({
     monopoly,
     mahjong,
     mahjongPresence,
+    aiTown,
   });
 
   const server = createServer((req, res) => { handler(req, res); });
@@ -199,6 +224,18 @@ export async function startServer({
         return { ok: true, data: { user } };
       },
       onConnection: monopolyRelay.onConnection,
+    }, {
+      /*
+       * 地平线赛车的联机车位置中继。**握手期同样要平台登录**：
+       * 没登录升不上来；连上之后还要在 hello 里核对平台房号/座位/阶段。
+       */
+      path: '/horizon-relay',
+      verify: (req) => {
+        const user = currentUser(store, req);
+        if (!user) return { ok: false, code: 401 };
+        return { ok: true, data: { user } };
+      },
+      onConnection: horizonRelay.onConnection,
     }],
     /*
      * 莲花广麻的实时对局：`/mahjong/ws/room/{id}` → Python 的 `/ws/room/{id}`。
@@ -213,6 +250,15 @@ export async function startServer({
         if (!user) return { ok: false, code: 401 };
         return { ok: true, data: { user } };
       },
+    }, {
+      /*
+       * AI 小镇：`/ai-town/ws?room=<房间号>&sid=<票据>` → 某个 host 的随机端口。
+       * 端口在 upgrade 时才查（host 重启会换端口，浏览器 URL 不变），
+       * 票据 + 平台会话双重确认"这个人被允许进这个镇"。
+       */
+      prefix: '/ai-town/ws',
+      verify: (req) => aiTown.wsVerify(req),
+      target: (req, verdict) => aiTown.wsTarget(req, verdict),
     }],
   });
 
@@ -241,6 +287,12 @@ export async function startServer({
     try { mahjongPresence.sweep(); } catch { /* 同上 */ }
   }, 15_000);
   if (typeof mahjongSweeper.unref === 'function') mahjongSweeper.unref();
+
+  // AI 小镇：票据过期、房间空闲、manager 空闲，都在这条里收
+  const aiTownSweeper = setInterval(() => {
+    try { aiTown.sweep(); } catch { /* 同上 */ }
+  }, 15_000);
+  if (typeof aiTownSweeper.unref === 'function') aiTownSweeper.unref();
 
   await new Promise((resolvePromise, reject) => {
     server.once('error', reject);
@@ -280,9 +332,13 @@ export async function startServer({
     clearInterval(nonameSweeper);
     clearInterval(monopolySweeper);
     clearInterval(mahjongSweeper);
+    clearInterval(aiTownSweeper);
+    // 先让 AI 小镇把房间保存并关掉（房主退出 = 保存），再收 WS / HTTP。
+    try { await aiTown.close(); } catch { /* 子进程停不掉不该拦住进程退出 */ }
     try { await mahjong.stop(); } catch { /* 后端停不掉不该拦住进程退出 */ }
     monopoly.stop();
     monopolyRelay.closeAll();
+    horizonRelay.closeAll();
     ws.closeAll();
     hub.closeAll();
     if (relay) {
@@ -295,8 +351,9 @@ export async function startServer({
 
   return {
     server, store, rooms, hub, games, avatars, nonamePresence, werewolf,
-    monopoly, monopolyPresence, monopolyRelay,
+    monopoly, monopolyPresence, monopolyRelay, horizonRelay,
     mahjong, mahjongPresence,
+    aiTown,
     /** 加载失败的游戏模块（正常是空数组）。启动时打日志，测试断言它是空的。 */
     gameFailures: loaded.failures,
     host,
@@ -329,6 +386,12 @@ if (isMain) {
     app.mahjong?.ready
       ? `莲花广麻后端：127.0.0.1:${app.mahjong.port}（公网走 /mahjong/api 与 /mahjong/ws）`
       : '⚠️  莲花广麻后端没起来（页面会提示后端未就绪，见 games/mahjong/README.md）'
+  );
+  const aiTownOk = app.aiTown?.managers?.binReady?.() && existsSync(join(ROOT, 'data', 'ai-town', 'models', 'model.gguf'));
+  console.log(
+    aiTownOk
+      ? `AI 小镇：最多 ${app.aiTown.maxRooms} 个世界，公网走 /ai-town/（内置模型在服务器跑）`
+      : '⚠️  AI 小镇缺 bin/ 或内置模型，页面能进但会报错；见 DEPLOY.md 的《AI 小镇》'
   );
   console.log('公网地址由 SakuraFrp 隧道决定，见 docs/TUNNEL.md');
 

@@ -1,0 +1,432 @@
+//! 互动的世界入口：邀请、回应、取消与聊天命令；同意交谈后才中断双方的普通活动。
+//! 只读检查用 `Interactions` 的规则方法，改动只发生在检查全部通过之后。
+use super::{check_message, check_pair_here, Interactions, LeaveKind, GIVE_MINUTES, TALK_MINUTES};
+use crate::error::{KernelError, Result};
+use crate::{
+    action_check::check_conditions,
+    activity::{ActKind, Activity},
+    intent::StopCond,
+    physiology::check_body_use,
+    World, ID_MAX_BYTES,
+};
+use protocol::{Interaction, InteractionCommand, InteractionKind, InteractionStatus as Status};
+
+impl World {
+    pub fn talk_available(&self, actor: &str) -> bool {
+        self.actors.get(actor).is_some_and(|a| a.talk_available())
+            && self.check_weather_chat(actor).is_ok()
+    }
+
+    pub fn prop_occupants(&self, prop: &str) -> Vec<String> {
+        self.interactions
+            .prop_occupants(&self.actors, self.minutes, prop)
+    }
+
+    pub fn active_chat(&self, actor: &str) -> Option<&Interaction> {
+        self.interactions.active_chat(self.actors.get(actor)?)
+    }
+
+    pub fn chat_turn(&self, actor: &str) -> bool {
+        self.actors
+            .get(actor)
+            .is_some_and(|a| self.interactions.chat_turn(a, self.minutes))
+    }
+
+    pub fn nearby_chats(&self, actor: &str) -> Vec<protocol::NearbyChat> {
+        self.actors
+            .get(actor)
+            .map(|a| self.interactions.nearby_chats(a))
+            .unwrap_or_default()
+    }
+
+    pub fn chat_history(
+        &self,
+        resident: &str,
+        request_id: String,
+        chat_id: Option<String>,
+        offset: usize,
+    ) -> protocol::ServerMsg {
+        self.interactions
+            .chat_history(&self.actors, resident, request_id, chat_id, offset)
+    }
+
+    pub fn interact(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        revision: u64,
+        command: &InteractionCommand,
+    ) -> Result<Interaction> {
+        self.interact_from(actor, command_id, revision, command, false)
+    }
+
+    pub(crate) fn interact_from(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        revision: u64,
+        command: &InteractionCommand,
+        player: bool,
+    ) -> Result<Interaction> {
+        let a = self
+            .actors
+            .get(actor)
+            .ok_or_else(|| KernelError::NoSuchActor(actor.into()))?;
+        ensure!(
+            a.player_controlled() == player
+                && a.controllable()
+                && a.actions.revision == revision
+                && !a.needs.incapacitated(),
+            KernelError::interaction("安排或身体状态已改变，请重新观察")
+        );
+        if matches!(
+            command,
+            InteractionCommand::Join { .. } | InteractionCommand::Say { .. }
+        ) {
+            self.check_weather_chat(actor)?;
+        }
+        if let InteractionCommand::Join { interaction_id, .. } = command {
+            if let Some(chat) = self
+                .interactions
+                .get(interaction_id)
+                .and_then(|i| i.chat.as_ref())
+            {
+                let reach = crate::avatar::Reach::new(self);
+                for member in &chat.members {
+                    reach.pair(actor, member)?;
+                }
+            }
+        }
+        let now = self.minutes;
+        match command {
+            InteractionCommand::Offer {
+                partner_id,
+                interaction,
+                message,
+            } => self.offer(actor, command_id, partner_id, interaction, message),
+            InteractionCommand::Reply {
+                interaction_id,
+                accept,
+                message,
+            } => self.reply(actor, interaction_id, *accept, message),
+            InteractionCommand::Cancel { interaction_id } => self.cancel(actor, interaction_id),
+            InteractionCommand::Join { .. }
+            | InteractionCommand::Say { .. }
+            | InteractionCommand::Listen { .. }
+            | InteractionCommand::Leave { .. } => {
+                self.interactions
+                    .chat_command(&mut self.actors, now, actor, command)
+            }
+        }
+    }
+
+    fn offer(
+        &mut self,
+        actor: &str,
+        command_id: &str,
+        partner: &str,
+        kind: &InteractionKind,
+        message: &str,
+    ) -> Result<Interaction> {
+        check_message(message)?;
+        ensure!(
+            !command_id.is_empty() && command_id.len() <= ID_MAX_BYTES,
+            KernelError::interaction("互动编号无效")
+        );
+        let kind = normalize_kind(&self.topo, kind);
+        if let Some(old) = self
+            .interactions
+            .resent_offer(command_id, actor, partner, &kind, message)?
+        {
+            return Ok(old);
+        }
+        ensure!(
+            self.actors[actor].interaction_available(),
+            KernelError::interaction("请先完成当前活动，再发起邀请")
+        );
+        check_pair_here(self, actor, partner)?;
+        self.interactions.check_new_offer(actor, partner, &kind)?;
+        let duration_minutes = check_kind(self, actor, partner, &kind)?;
+        let item = Interactions::new_offer(
+            command_id,
+            &self.actors[actor],
+            partner,
+            kind,
+            message,
+            duration_minutes,
+            self.minutes,
+        );
+        let now = self.minutes;
+        self.interactions
+            .record_offer(&mut self.actors, now, &item, message);
+        Ok(item)
+    }
+
+    fn reply(
+        &mut self,
+        actor: &str,
+        interaction_id: &str,
+        accept: bool,
+        message: &str,
+    ) -> Result<Interaction> {
+        check_message(message)?;
+        let old = self
+            .interactions
+            .of(actor, interaction_id)
+            .ok_or_else(|| KernelError::interaction("没有收到这项邀请"))?
+            .clone();
+        ensure!(
+            old.partner == actor,
+            KernelError::interaction("只有受邀者可以回应，不能代替对方同意")
+        );
+        if old.accepted.is_some() {
+            ensure!(
+                old.accepted == Some(accept) && old.reply.as_deref() == Some(message),
+                KernelError::interaction("这项邀请已经回应，不能改写原回应")
+            );
+            return Ok(old);
+        }
+        ensure!(
+            old.status == Status::Offered && self.minutes < old.expires_at,
+            KernelError::interaction("邀请已结束或过期")
+        );
+        if accept {
+            self.check_accept(actor, &old)?;
+        }
+        let now = self.minutes;
+        // 所有距离、身体与同意校验通过后才中断，不把未完成的工作算作完成。
+        if accept && old.kind == InteractionKind::Talk {
+            for id in [&old.initiator, &old.partner] {
+                self.actor_mut(id)
+                    .interrupt_actions(now, "接受交谈，结束原活动安排");
+            }
+        }
+        let item = self
+            .interactions
+            .record_reply(interaction_id, accept, message, now);
+        self.interactions
+            .speech(&mut self.actors, now, &item, actor, message);
+        if accept {
+            self.start_pair_activity(&item);
+        } else {
+            self.interactions.end(
+                &mut self.actors,
+                now,
+                interaction_id,
+                Status::Declined,
+                Some("受邀者拒绝了邀请".into()),
+            );
+        }
+        Ok(self.interactions[interaction_id].clone())
+    }
+
+    /// 接受邀请前再查一遍：双方仍在邀请地点、能够回应，互动内容本身仍然可行。
+    fn check_accept(&self, actor: &str, old: &Interaction) -> Result<()> {
+        check_pair_here(self, &old.initiator, actor)?;
+        ensure!(
+            self.actors[actor].locus.locale == old.locale,
+            KernelError::interaction("双方已离开邀请地点，请重新发起")
+        );
+        if old.kind == InteractionKind::Talk {
+            ensure!(
+                self.talk_available(actor) && self.talk_available(&old.initiator),
+                KernelError::interaction("双方须能够回应，并先结束已有的共同互动")
+            );
+        } else {
+            ensure!(
+                self.actors[actor].interaction_available()
+                    && self.actors[&old.initiator].interaction_available(),
+                KernelError::interaction("双方须先结束当前活动，才能共同开始")
+            );
+        }
+        check_kind(self, &old.initiator, actor, &old.kind)?;
+        Ok(())
+    }
+
+    /// 双方同意后安装同一参与者集合的身体活动；交谈另有轮次机制。
+    fn start_pair_activity(&mut self, item: &Interaction) {
+        let now = self.minutes;
+        for id in [&item.initiator, &item.partner] {
+            let verb = match &item.kind {
+                InteractionKind::Serve { verb, .. } if id == &item.partner => verb.as_str(),
+                _ => item.kind.label(),
+            };
+            let a = self.actor_mut(id);
+            // 对方在途请求同样作废，不能覆盖双方刚同意的活动。
+            a.actions.bump_revision();
+            a.current = Activity::new(
+                id,
+                now,
+                item.locale.clone(),
+                verb,
+                ActKind::Timed {
+                    cond: StopCond::Duration(item.duration_minutes),
+                },
+            );
+            a.current.participants = [item.initiator.clone(), item.partner.clone()].into();
+            a.current.interaction = Some(item.id.clone());
+        }
+        if item.chat.is_some() {
+            self.interactions
+                .start_chat(&mut self.actors, now, &item.id);
+        } else {
+            self.interactions.fact(
+                &mut self.actors,
+                now,
+                item,
+                &format!("双方已同意，开始{}；尚未完成", item.kind.label()),
+            );
+        }
+    }
+
+    fn cancel(&mut self, actor: &str, interaction_id: &str) -> Result<Interaction> {
+        let now = self.minutes;
+        let item = self
+            .interactions
+            .of(actor, interaction_id)
+            .ok_or_else(|| KernelError::interaction("互动不存在或不属于自己"))?;
+        if item.status == Status::Running && item.chat.is_some() {
+            self.interactions.leave_chat(
+                &mut self.actors,
+                now,
+                actor,
+                interaction_id,
+                LeaveKind::Voluntary,
+                "取消交谈",
+            )?;
+        } else if !item.status.terminal() {
+            self.interactions.end(
+                &mut self.actors,
+                now,
+                interaction_id,
+                Status::Cancelled,
+                Some("参与者取消互动".into()),
+            );
+        }
+        Ok(self.interactions[interaction_id].clone())
+    }
+
+    pub(crate) fn expire_interactions(&mut self) {
+        let now = self.minutes;
+        self.interactions.expire(&mut self.actors, now);
+    }
+
+    pub(crate) fn interrupt_interaction(&mut self, actor: &str, reason: &str) {
+        let now = self.minutes;
+        if let Some(log) = self
+            .interactions
+            .interrupt(&mut self.actors, now, actor, reason)
+        {
+            self.log(self.actors[actor].event_info(), log);
+        }
+    }
+
+    /// 双人活动到时：赠品转移或餐饮结算，成功即完成，失败按中断结束。
+    pub(crate) fn complete_interaction(&mut self, id: &str) {
+        if self.interactions[id].status != Status::Running {
+            return;
+        }
+        let now = self.minutes;
+        let partner = self.interactions[id].partner.clone();
+        if let InteractionKind::Give { items } = self.interactions[id].kind.clone() {
+            let from = self.interactions[id].initiator.clone();
+            if let Err(reason) = self.finish_gift(&from, &partner, &items) {
+                self.interactions.end(
+                    &mut self.actors,
+                    now,
+                    id,
+                    Status::Interrupted,
+                    Some(reason.to_string()),
+                );
+                return;
+            }
+            let names = items
+                .iter()
+                .map(|id| self.props.item(&self.topo, id).map(|p| p.name.clone()))
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap_or_default();
+            self.interactions
+                .items
+                .get_mut(id)
+                .expect("互动存在")
+                .changes
+                .push(format!("赠品已转移：{}", names.join("、")));
+        }
+        if matches!(self.interactions[id].kind, InteractionKind::Serve { .. }) {
+            match self.finish_body_use(&partner) {
+                Ok(changes) => self
+                    .interactions
+                    .items
+                    .get_mut(id)
+                    .expect("互动存在")
+                    .changes
+                    .extend(changes),
+                Err(reason) => {
+                    self.interactions.end(
+                        &mut self.actors,
+                        now,
+                        id,
+                        Status::Interrupted,
+                        Some(reason.to_string()),
+                    );
+                    return;
+                }
+            }
+            self.affordances.rebuild_if_dirty(&self.topo);
+        }
+        self.interactions
+            .end(&mut self.actors, now, id, Status::Succeeded, None);
+    }
+}
+
+/// 校验互动内容，返回活动时长。天气、背包、可供性与身体都要查，所以放在世界这一层。
+fn check_kind(w: &World, actor: &str, partner: &str, kind: &InteractionKind) -> Result<f64> {
+    let locale = &w.actors[actor].locus.locale;
+    match kind {
+        InteractionKind::Talk => {
+            w.check_weather_chat(actor)?;
+            w.check_weather_chat(partner)?;
+            Ok(TALK_MINUTES)
+        }
+        InteractionKind::Give { items } => {
+            w.inventory
+                .check_gift(&w.topo, &w.props, actor, partner, items)?;
+            Ok(GIVE_MINUTES)
+        }
+        InteractionKind::Serve { prop_id, verb } => {
+            let spot = w
+                .affordances
+                .for_prop(prop_id, verb)
+                .ok_or_else(|| KernelError::interaction("道具不支持这项餐饮服务"))?;
+            ensure!(
+                spot.restores_fullness(),
+                KernelError::interaction("餐饮服务需要能恢复饱腹的道具动作")
+            );
+            ensure!(
+                w.topo.prop(prop_id).is_some_and(|p| p.locale == *locale),
+                KernelError::interaction("双方须到餐饮道具所在地点")
+            );
+            ensure!(
+                w.prop_occupants(prop_id).is_empty(),
+                KernelError::interaction("餐饮道具正被使用")
+            );
+            if let Some(action) = &spot.action {
+                let users = [actor, partner];
+                check_conditions(&w.topo, &w.actors, w.minutes, action, locale, &users)?;
+                check_body_use(w, partner, locale, prop_id, action, None)?;
+            }
+            Ok(spot.minutes)
+        }
+    }
+}
+
+/// 招待用餐的动词允许写动作编号，与动作组一样归一成动作词。
+fn normalize_kind(topo: &crate::topology::Topology, kind: &InteractionKind) -> InteractionKind {
+    match kind {
+        InteractionKind::Serve { prop_id, verb } => InteractionKind::Serve {
+            prop_id: prop_id.clone(),
+            verb: crate::action_check::normalize_verb(topo, Some(prop_id), verb),
+        },
+        other => other.clone(),
+    }
+}

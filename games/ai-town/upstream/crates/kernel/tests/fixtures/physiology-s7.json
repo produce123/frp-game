@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "source": "physiology-v1 single-room validation",
+  "locales": [
+    {
+      "id": "lab_room",
+      "name": "他人救助与复活",
+      "kind": "dwell"
+    }
+  ],
+  "passages": [],
+  "stations": [
+    {
+      "id": "resident_spot",
+      "locale": "lab_room",
+      "name": "小禾的位置",
+      "kind": "arrival"
+    },
+    {
+      "id": "helper_spot",
+      "locale": "lab_room",
+      "name": "小安的位置",
+      "kind": "slot"
+    }
+  ],
+  "places": [
+    {
+      "name": "他人救助与复活",
+      "locale": "lab_room",
+      "arrival_station": "resident_spot",
+      "type": "住家",
+      "summary": "独立封闭房间；只有这里列出的道具和资源，没有其他补给地点。",
+      "visible_features": [],
+      "residential": true
+    }
+  ],
+  "props": [
+    {
+      "id": "food",
+      "definition": "test:rations@1",
+      "name": "干粮",
+      "locale": "lab_room"
+    },
+    {
+      "id": "water",
+      "definition": "test:water@1",
+      "name": "饮用水",
+      "locale": "lab_room"
+    },
+    {
+      "id": "bed",
+      "definition": "test:bed@1",
+      "name": "床",
+      "locale": "lab_room"
+    },
+    {
+      "id": "medical",
+      "definition": "test:medical_kit@1",
+      "name": "药箱",
+      "locale": "lab_room"
+    },
+    {
+      "id": "revive",
+      "definition": "test:revival_stone@1",
+      "name": "复苏石",
+      "locale": "lab_room"
+    }
+  ],
+  "meals": []
+}

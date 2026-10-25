@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_po",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿婆",
+    "age": "71",
+    "gender": "女",
+    "intro": "渡口看船人，坐在竹椅上，谁家孩子放学她都认得。",
+    "tags": [
+      "渡口",
+      "老街坊",
+      "活地图"
+    ],
+    "personality": "全镇的人事都在她心里；嘴上念叨，手里的针线活从没停。",
+    "speech": "慢悠悠，开口先喊人小名。",
+    "background": "在渡口边住了一辈子，丈夫走后她还是每天把竹椅搬到老位置，说船来了要有人看着。",
+    "drives": "看着渡口的船，看着镇上的娃。",
+    "interests": "渡口、晒太阳、纳鞋底；全镇的掌故都能讲。",
+    "occupation": "看船人",
+    "appearance": {
+      "marker": "wave",
+      "color": "#37455c",
+      "profile": "rigged-granny"
+    }
+  }
+}

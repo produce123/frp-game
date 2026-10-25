@@ -1,0 +1,119 @@
+/* 地面像素图只按最近邻放大；镜头保证放大倍数是整数 */
+.pixel-terrain {
+  image-rendering: pixelated;
+}
+/* 立体像素场景画在 SVG 下面；它接手地面后隐藏平面像素图 */
+.hd2d-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.orbit,
+.orbit svg,
+.orbit svg * {
+  cursor: grabbing !important;
+}
+svg.hd2d .pixel-terrain,
+svg.hd2d .roofed,
+svg.hd2d .vcovered .vmark {
+  display: none;
+}
+/* 立体场景里村民是像素小人；头像留作透明的点击区，大小和小人差不多 */
+svg.hd2d .vportrait {
+  opacity: 0;
+  filter: none;
+  pointer-events: auto;
+}
+/* 村民头像是像素图，放大时不插值 */
+.vportrait,
+.rv-portrait {
+  image-rendering: pixelated;
+}
+/* 俯角滑杆：放在缩放按钮组最上面，竖向，往上接近正俯视 */
+.map-pitch {
+  --pitch-color: var(--accent);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0 6px;
+  border-bottom: 1px solid var(--line);
+  cursor: ns-resize;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.map-pitch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* 细轨、下半段着色、圆形把手，位置由 --pitch-t（0 最斜，1 最接近正俯视）决定 */
+.map-pitch-track {
+  position: relative;
+  width: 4px;
+  height: 88px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.map-pitch-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(var(--pitch-t, 0.5) * 100%);
+  border-radius: inherit;
+  background: var(--pitch-color);
+}
+.map-pitch-thumb {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--pitch-t, 0.5) * 100%);
+  width: 16px;
+  height: 16px;
+  margin: 0 0 -8px -8px;
+  border-radius: 50%;
+  background: var(--pitch-color);
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 1px 3px rgb(0 0 0 / 0.25);
+}
+/* 俯角和缩放的数字玩家用不着：只留滑杆和「整图」，数字给读屏 */
+.map-pitch output {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+/* 取景入口和俯角共用一组控件，触屏打开俯角弹层后同样可用。 */
+.map-view-presets {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--line);
+}
+.map-zoom .map-view-presets button {
+  width: 100%;
+  min-height: 34px;
+  font-size: 12px;
+  font-weight: 600;
+}
+:is([data-layout='compact'], [data-input='touch']) .map-view-presets button {
+  min-height: 42px;
+}
+/* 地面随俯角倾斜时 SVG 纵向被压扁，立着的文字由 map/upright.ts 的 standUpright 用 transform 属性拉回；
+   别给这些文字写 CSS transform，会盖掉它 */
+/* 立体场景里道具是立牌，SVG 里的道具图只留作透明的点击区（仍要加载，加载完才隐藏简约图形） */
+svg.hd2d .prop-art-image {
+  opacity: 0;
+}
+/* 立体场景里道具名字不常驻，指到或选中才出现（见 TownMap.nameHoveredProps）；
+   选择器要压过 zoom-detail 与 single-place 下的常显规则 */
+svg.hd2d .pl:not(.named) {
+  opacity: 0;
+}
+svg.hd2d .pl.named {
+  opacity: 1;
+}

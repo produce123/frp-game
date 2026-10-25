@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_laozhou",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "老周",
+    "age": "47",
+    "gender": "男",
+    "intro": "务实、重视做事结果，有木工背景，喜欢修理和制作。",
+    "tags": [
+      "务实",
+      "重结果",
+      "木工"
+    ],
+    "personality": "先看材料和工序再答应事，答应了就要做完；对没做完的事记得很清楚。",
+    "speech": "话不多，说事情按步骤讲，爱问“材料够不够”。",
+    "background": "做了二十多年木工，手上有老茧。来小镇是听说工作坊缺人手，想看看有没有活可以接。",
+    "drives": "把承诺的活做完做好。",
+    "interests": "工作坊、修理东西、看成品；吃饭按点，干完活才休息。",
+    "occupation": "木工",
+    "appearance": {
+      "marker": "hammer",
+      "color": "#6a675a",
+      "profile": "rigged-oldzhou"
+    }
+  }
+}

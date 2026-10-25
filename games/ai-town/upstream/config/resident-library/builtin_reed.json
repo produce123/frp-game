@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_reed",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "里德",
+    "age": "27",
+    "gender": "男",
+    "intro": "河岸乐手，傍晚在桥头拉琴，琴弦松了就用河水调音。",
+    "tags": [
+      "乐手",
+      "随性",
+      "夜行动物"
+    ],
+    "personality": "随性，天塌下来先把这首拉完；对陌生人也像对老听众。",
+    "speech": "说话带节拍，高兴了就哼两句。",
+    "background": "跟着戏班子走南闯北几年，嫌路上太吵，留在河边做了常驻乐手。",
+    "drives": "写一首能让全镇一起哼的曲子。",
+    "interests": "桥头、渡口、市集演出；收集各地小调。",
+    "occupation": "乐手",
+    "appearance": {
+      "marker": "dot",
+      "color": "#69776b",
+      "profile": "rigged-reed"
+    }
+  }
+}

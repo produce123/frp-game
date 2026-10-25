@@ -1,0 +1,234 @@
+//! 会话与世界结果的观察仪投影，保持有界并保留可追溯的原始事件。
+mod memory_page;
+use crate::{
+    event, interaction,
+    memory::{self, MemoryStatus, TEXT_PREVIEW_CHARS},
+    runtime::ResidentRuntime,
+    session::{PendingTool, Session},
+};
+use kernel::{world::Actor, World};
+use protocol::{
+    AgentState, ResidentAgentView, ResidentGoalView, ResidentMemoryView, ResidentUsage,
+};
+
+/// 观察仪各列表的上限。
+const GOALS_SHOWN: usize = 12;
+const RESULTS_SHOWN: usize = 6;
+const INTERACTIONS_SHOWN: usize = 6;
+const MEMORIES_SHOWN: usize = 8;
+const EVENTS_PER_MEMORY: usize = 4;
+const EVENT_TEXT_SHOWN: usize = 600;
+
+/// 村民姓名；世界里没有这个人时退回编号。
+pub(crate) fn actor_name(world: &World, id: &str) -> String {
+    world
+        .actor(id)
+        .map_or_else(|| id.to_string(), |a| a.name.clone())
+}
+
+/// 村民此刻的状态与说明；按严重程度从前往后判断。状态是枚举，前端按值查文案。
+fn state_label(world: &World, s: &Session, a: &Actor) -> (AgentState, String) {
+    let actor = s.actor_id.as_str();
+    if a.needs.body.dead {
+        return (AgentState::Dead, "停止决策；需要明确的复活手段".into());
+    }
+    if a.possession.is_some() {
+        return (AgentState::Manual, "玩家正在附身，AI 暂停决策".into());
+    }
+    if let Some(reason) = s.pause_reason() {
+        return (AgentState::paused(s.pause_kind()), reason.into());
+    }
+    if a.needs.incapacitated() {
+        return (AgentState::Rescue, a.needs.limitation().into());
+    }
+    if world.active_chat(actor).is_some() {
+        let doing = if world.chat_turn(actor) {
+            "正在考虑如何回应"
+        } else {
+            "正在听其他人说话"
+        };
+        return (AgentState::Chatting, doing.into());
+    }
+    if a.current.interaction.is_some() {
+        return (
+            AgentState::Interacting,
+            format!("{}；等待双方活动结束", a.current.verb),
+        );
+    }
+    if s.in_flight.is_some() {
+        return if s.notebook.request.is_some() {
+            (
+                AgentState::Reflecting,
+                "正在根据新增经历总结并提炼主题".into(),
+            )
+        } else {
+            (AgentState::Thinking, "正在等待模型响应".into())
+        };
+    }
+    match s.pending.first() {
+        Some(PendingTool::Actions { .. }) => {
+            return (AgentState::Acting, "等待世界返回动作结果".into())
+        }
+        Some(PendingTool::Interaction { .. }) => {
+            return (AgentState::Interacting, "等待世界返回双方活动结果".into())
+        }
+        Some(PendingTool::Wait {
+            until,
+            call,
+            invitation,
+            ..
+        }) => {
+            let reason = if invitation.is_some() {
+                "等待对方回应邀请"
+            } else {
+                call.arguments["reason"].as_str().unwrap_or("等待事件")
+            };
+            let text = format!("{reason} · 最迟 {} 再看", kernel::clock_string(*until));
+            return (AgentState::Waiting, text);
+        }
+        None => {}
+    }
+    if let Some(sleep) = s.sleep() {
+        let text = format!(
+            "{} · {} 再看",
+            sleep.reason,
+            kernel::clock_string(sleep.until)
+        );
+        return (AgentState::Waiting, text);
+    }
+    (AgentState::Undecided, "等世界继续后决定下一步".into())
+}
+
+impl Session {
+    /// 消耗页与额度页的按人一行。姓名要查世界，所以不是 `From`。
+    pub fn usage(&self, world: &World) -> ResidentUsage {
+        ResidentUsage {
+            id: self.actor_id.clone(),
+            name: actor_name(world, &self.actor_id),
+            daily_calls: self.daily.calls,
+            daily_tokens: self.daily.tokens,
+            daily_input_tokens: self.daily.input_tokens,
+            daily_cache_hit_tokens: self.daily.cache_hit_tokens,
+            replies: self.tally.replies,
+            stale_replies: self.tally.stale_replies,
+            in_flight: self.in_flight.is_some(),
+            paused: self
+                .pause_reason()
+                .map(|reason| format!("{}：{reason}", self.pause_kind().label())),
+        }
+    }
+}
+
+/// 进行中和暂停的目标在前，其余按更新时间倒序。
+fn goal_views(s: &Session) -> Vec<ResidentGoalView> {
+    let mut goals: Vec<_> = s.goals.values().collect();
+    goals.sort_by(|l, r| {
+        r.status
+            .is_open()
+            .cmp(&l.status.is_open())
+            .then_with(|| r.updated_at.total_cmp(&l.updated_at))
+    });
+    goals
+        .into_iter()
+        .take(GOALS_SHOWN)
+        .map(|g| ResidentGoalView {
+            id: g.id.clone(),
+            title: g.title.clone(),
+            status: g.status,
+            reason: g.reason.clone(),
+            commitment: g.commitment.clone(),
+            next_steps: g.next_steps.clone(),
+            updated_at: g.updated_at,
+        })
+        .collect()
+}
+
+fn recent_results(a: &Actor) -> Vec<protocol::ActionResultView> {
+    let mut results: Vec<_> = a
+        .actions
+        .groups
+        .values()
+        .flat_map(|g| g.results.iter().map(move |r| (g, r)))
+        .collect();
+    results.sort_by(|(_, a), (_, b)| {
+        b.ended_at
+            .total_cmp(&a.ended_at)
+            .then_with(|| b.event_ids.cmp(&a.event_ids))
+    });
+    results
+        .into_iter()
+        .take(RESULTS_SHOWN)
+        .map(|(g, r)| protocol::ActionResultView {
+            result: r.clone(),
+            verb_kind: kernel::action_state::result_verb_kind(g, r),
+        })
+        .collect()
+}
+
+/// 最新的有效记忆，同一件事只出现一次；每条附上来源事件的节选。
+fn memory_views(s: &Session, a: &Actor) -> Vec<ResidentMemoryView> {
+    let mut memories: Vec<_> = s
+        .memory
+        .records
+        .iter()
+        .filter(|m| m.status != MemoryStatus::Superseded)
+        .collect();
+    memories.sort_by(|a, b| {
+        b.at.total_cmp(&a.at)
+            .then_with(|| b.memory_id.cmp(&a.memory_id))
+    });
+    memory::distinct_records(memories, MEMORIES_SHOWN)
+        .into_iter()
+        .map(|m| ResidentMemoryView {
+            memory_id: m.memory_id,
+            kind: m.kind,
+            source: m.source,
+            status: m.status,
+            confidence: m.confidence,
+            text: m.text.chars().take(TEXT_PREVIEW_CHARS).collect(),
+            at: m.at,
+            replaces: m.replaces.clone(),
+            events: m
+                .event_ids
+                .iter()
+                .rev()
+                .take(EVENTS_PER_MEMORY)
+                .filter_map(|id| event(a, *id))
+                .cloned()
+                .map(|mut e| {
+                    e.text = e.text.chars().take(EVENT_TEXT_SHOWN).collect();
+                    e
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+impl ResidentRuntime {
+    pub fn view(&self, world: &World, actor: &str) -> Option<ResidentAgentView> {
+        let s = self.session(actor)?;
+        let a = world.actor(actor)?;
+        let (state, reason) = state_label(world, s, a);
+        Some(ResidentAgentView {
+            state,
+            reason,
+            goals: goal_views(s),
+            results: recent_results(a),
+            interactions: world
+                .interactions()
+                .for_actor(actor)
+                .into_iter()
+                .take(INTERACTIONS_SHOWN)
+                .map(|i| interaction::summary(world, i))
+                .collect(),
+            memories: memory_views(s, a),
+            daily_calls: s.daily.calls,
+            daily_limit: self.state().limits.calls_per_day,
+            daily_tokens: s.daily.tokens,
+            daily_input_tokens: s.daily.input_tokens,
+            daily_cache_hit_tokens: s.daily.cache_hit_tokens,
+            replies: s.tally.replies,
+            stale_replies: s.tally.stale_replies,
+        })
+    }
+}

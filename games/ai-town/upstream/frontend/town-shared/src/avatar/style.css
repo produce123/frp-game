@@ -1,0 +1,973 @@
+/* 化身界面：底部居中的入口与操作条、右侧面板、居中的进入对话框、地图上的提示标签。 */
+.avatar-ui {
+  --avatar-ink: var(--text);
+  --avatar-dim: var(--text-2);
+  --avatar-paper: var(--surface);
+  --avatar-line: var(--line);
+  --avatar-green: var(--accent);
+  --avatar-green-soft: var(--ok-soft);
+  --avatar-primary: var(--accent-fill);
+  --avatar-danger: var(--danger);
+  --avatar-hover: var(--surface-hover);
+  --avatar-shadow: var(--elev-2);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 12;
+  color: var(--avatar-ink);
+  font:
+    13px/1.5 'Noto Sans SC',
+    'PingFang SC',
+    sans-serif;
+}
+.avatar-ui[hidden],
+.avatar-ui [hidden] {
+  display: none !important;
+}
+.avatar-ui button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.avatar-ui button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.avatar-ui :focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.avatar-ui kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 0 4px;
+  border: 1px solid var(--avatar-line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--avatar-green);
+  font:
+    600 10.5px/1.5 ui-monospace,
+    Menlo,
+    monospace;
+  text-align: center;
+}
+.avatar-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--avatar-color, var(--accent));
+  box-shadow: inset 0 0 0 2px var(--avatar-paper);
+  outline: 2px solid var(--avatar-color, var(--accent));
+}
+/* 有像素外观时圆点换成所选小人的头像 */
+.avatar-dot.avatar-look-dot {
+  width: 22px;
+  height: 22px;
+  background: var(--surface) var(--avatar-portrait) center / cover no-repeat;
+  box-shadow: none;
+  outline: 1px solid var(--avatar-line);
+  image-rendering: pixelated;
+}
+.avatar-danger {
+  color: var(--avatar-danger);
+}
+
+/* ---- 观察模式的入口 ---- */
+.avatar-enter {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px 9px 12px;
+  border: 1px solid var(--avatar-green);
+  border-radius: var(--r-pill);
+  background: var(--avatar-paper);
+  color: var(--avatar-green);
+  box-shadow: var(--avatar-shadow);
+  white-space: nowrap;
+}
+.avatar-enter strong {
+  font-weight: 600;
+}
+.avatar-enter small {
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+.avatar-enter small:empty {
+  display: none;
+}
+
+/* ---- 操作条 ---- */
+.avatar-hud {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 6px 12px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--avatar-paper);
+  box-shadow: var(--avatar-shadow);
+  white-space: nowrap;
+}
+.avatar-me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-right: 4px;
+  padding-right: 12px;
+  border-right: 1px solid var(--avatar-line);
+}
+.avatar-me b {
+  display: block;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.avatar-me small {
+  display: block;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--avatar-dim);
+  font-size: 11px;
+  line-height: 1.3;
+}
+.avatar-mid {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.avatar-act {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+}
+.avatar-act:hover:not(:disabled) {
+  background: var(--avatar-hover);
+}
+.avatar-act.main {
+  background: var(--avatar-green-soft);
+  color: var(--avatar-green);
+  font-weight: 600;
+}
+.avatar-act small {
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+.avatar-more {
+  padding: 6px 8px;
+  color: var(--avatar-dim);
+  font-size: 16px;
+  line-height: 1;
+}
+.avatar-busy {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+  color: var(--text);
+  font-size: 12px;
+}
+.avatar-hud-hint {
+  padding: 0 6px;
+  color: var(--avatar-dim);
+  font-size: 12px;
+}
+.avatar-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  min-width: 160px;
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--avatar-paper);
+  box-shadow: var(--elev-2);
+}
+.avatar-menu button {
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  text-align: left;
+}
+.avatar-menu button:hover {
+  background: var(--avatar-hover);
+}
+
+/* ---- 提示条与回到化身 ---- */
+.avatar-toast {
+  pointer-events: auto;
+  position: absolute;
+  left: 50%;
+  top: 12px;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 14px;
+  border-radius: var(--r-pill);
+  background: #354c3ce6;
+  color: #fff;
+  font-size: 12px;
+  box-shadow: var(--avatar-shadow);
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.avatar-toast.sticky {
+  background: #7a3b2fee;
+}
+.avatar-return {
+  pointer-events: auto;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  padding: 5px 12px;
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  background: var(--avatar-paper);
+  color: var(--accent);
+  font-size: 12px;
+  box-shadow: var(--avatar-shadow);
+}
+
+/* ---- 右侧面板 ---- */
+@media (min-width: 761px) {
+  #map:has(.avatar-panel:not([hidden])) .map-zoom {
+    left: 12px;
+    right: auto;
+    top: auto;
+    bottom: 80px;
+  }
+}
+.avatar-panel {
+  pointer-events: auto;
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  bottom: 72px;
+  width: min(320px, calc(100% - 24px));
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--avatar-paper);
+  box-shadow: var(--elev-2);
+  overflow: hidden;
+}
+.avatar-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.avatar-panel-head b {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.avatar-panel-head small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+.avatar-panel-close {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  color: var(--avatar-dim);
+  font-size: 12px;
+}
+.avatar-panel-close:hover {
+  background: var(--avatar-hover);
+}
+.avatar-panel-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 10px 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.avatar-panel-body h4 {
+  margin: 4px 0 0;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+}
+.avatar-panel-body p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.avatar-panel-body .dim {
+  color: var(--avatar-dim);
+  font-size: 12px;
+}
+.avatar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.avatar-row button,
+.avatar-people button,
+.avatar-profile button[type='submit'] {
+  padding: 6px 10px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  font-size: 12px;
+}
+.avatar-row button.avatar-primary-small {
+  border-color: var(--avatar-green);
+  background: var(--avatar-green);
+  color: #fff;
+}
+.avatar-textacts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.avatar-textacts button {
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--avatar-dim);
+  font-size: 12px;
+}
+.avatar-textacts button:hover:not(:disabled) {
+  color: var(--avatar-green);
+}
+.avatar-textacts button.avatar-danger:hover:not(:disabled) {
+  color: var(--avatar-danger);
+}
+/* 交谈 */
+.avatar-invite {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+.avatar-chatlog {
+  display: grid;
+  gap: 6px;
+}
+.avatar-bubble {
+  max-width: 90%;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  font-size: 12.5px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.avatar-bubble small {
+  display: block;
+  color: var(--text-2);
+  font-size: 10.5px;
+}
+.avatar-bubble.me {
+  justify-self: end;
+  border-color: var(--line);
+  background: var(--avatar-green-soft);
+}
+.avatar-chat-event {
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: center;
+}
+.avatar-turn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--avatar-dim);
+  font-size: 11px;
+}
+.avatar-turn.on {
+  color: var(--avatar-green);
+}
+.avatar-turn.on::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.avatar-people {
+  display: grid;
+  gap: 6px;
+}
+.avatar-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.avatar-person span {
+  flex: 1;
+}
+.avatar-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  border-top: 1px solid var(--line);
+}
+.avatar-composer textarea {
+  flex: 1;
+  min-height: 38px;
+  max-height: 120px;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  font: inherit;
+  resize: vertical;
+}
+/* 带上 .avatar-ui：否则 .avatar-ui button 的 color: inherit 会把白字盖成正文色 */
+.avatar-ui .avatar-send {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: var(--avatar-primary);
+  color: var(--on-accent);
+  font-size: 12px;
+}
+.avatar-send kbd {
+  border-color: #ffffff40;
+  background: #ffffff30;
+  color: #fff;
+}
+/* 背包 */
+.avatar-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.avatar-tile {
+  display: grid;
+  gap: 1px;
+  justify-items: center;
+  min-width: 0;
+  padding: 8px 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  font-size: 11.5px;
+  text-align: center;
+}
+.avatar-tile span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.avatar-tile small {
+  color: var(--avatar-dim);
+  font-size: 10.5px;
+}
+.avatar-tile:hover:not(:disabled) {
+  border-color: var(--line);
+}
+.avatar-tile.on {
+  border-color: var(--avatar-green);
+  box-shadow: inset 0 0 0 1px var(--avatar-green);
+}
+.avatar-tile.empty {
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-2);
+  opacity: 1;
+}
+.avatar-sheet {
+  display: grid;
+  gap: 2px;
+  padding: 6px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+.avatar-sheet button {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: transparent;
+  text-align: left;
+  font-size: 12.5px;
+}
+.avatar-sheet button:hover:not(:disabled) {
+  background: var(--avatar-hover);
+}
+.avatar-sheet button.main {
+  background: var(--avatar-green-soft);
+  color: var(--avatar-green);
+  font-weight: 600;
+}
+.avatar-sheet button small {
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 400;
+}
+/* 状态 */
+.avatar-recent {
+  display: grid;
+  gap: 4px;
+}
+.avatar-recent p {
+  color: var(--avatar-dim);
+  font-size: 12px;
+}
+.avatar-reading {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+.avatar-reading small {
+  color: var(--text-2);
+  font-size: 11px;
+}
+.avatar-reading p {
+  max-height: 120px;
+  overflow: auto;
+  font-size: 12px;
+}
+.avatar-profile {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+.avatar-profile h4 {
+  margin: 0;
+}
+.avatar-profile button[type='submit'] {
+  justify-self: start;
+}
+/* 字段与色板：进入对话框和形象表单共用 */
+.avatar-field {
+  display: grid;
+  gap: 4px;
+  color: var(--avatar-dim);
+  font-size: 11.5px;
+}
+.avatar-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  color: var(--avatar-ink);
+  font: inherit;
+  font-size: 13px;
+}
+.avatar-swatches {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.avatar-swatches button {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: var(--swatch);
+}
+.avatar-swatches button.on {
+  border-color: var(--avatar-ink);
+  box-shadow: inset 0 0 0 2px var(--avatar-paper);
+}
+.avatar-swatches input[type='color'] {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px dashed var(--line);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+}
+.avatar-swatches input[type='color'].on {
+  border: 2px solid var(--avatar-ink);
+}
+/* 进入对话框 */
+/* ---- 在公告栏跟前写公告（bulletin.ts）：对话框挂在 body 上，用全局的颜色名 ---- */
+.avatar-bulletin {
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+.avatar-bulletin::backdrop {
+  background: #283a36a6;
+}
+.avatar-bulletin form {
+  display: grid;
+  gap: 10px;
+}
+.avatar-bulletin h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.avatar-bulletin :is(input, textarea) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 15px;
+}
+.avatar-bulletin textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.avatar-bulletin-by,
+.avatar-bulletin-count,
+.avatar-bulletin-notice {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 12px;
+}
+.avatar-bulletin-count {
+  justify-self: end;
+}
+.avatar-bulletin-notice {
+  font-size: 13px;
+}
+.avatar-bulletin-notice:empty {
+  display: none;
+}
+.avatar-bulletin-notice.error {
+  color: var(--danger);
+}
+.avatar-bulletin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.avatar-bulletin-actions button {
+  min-height: 40px;
+  padding: 0 18px;
+}
+
+/* 进入化身的对话框开着：通知卡和暂停、快进提示先让开，不压住对话框的标题 */
+#map:has(.avatar-backdrop:not([hidden])) :is(.town-notices, .pause-hint, .fast-hint) {
+  display: none;
+}
+.avatar-backdrop {
+  pointer-events: auto;
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: #24342b2e;
+}
+.avatar-dialog {
+  width: min(320px, 100%);
+  display: grid;
+  gap: 12px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--avatar-line);
+  border-radius: var(--r-m);
+  background: var(--avatar-paper);
+  box-shadow: var(--elev-3);
+}
+.avatar-dialog h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 17px;
+  font-weight: 600;
+}
+.avatar-preview {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+/* 外壳给 #map 里所有 svg 定了铺满地图的规则，预览标记要单独收回来 */
+#map .avatar-preview-mark svg {
+  position: static;
+  width: 56px;
+  height: 56px;
+}
+.avatar-preview p {
+  margin: 0;
+  color: var(--avatar-dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* 挑外观时只留一句说明，不再画预览标记 */
+.avatar-preview.avatar-preview-text {
+  display: block;
+}
+/* 外观：一排像素小人头像，选中的描边高亮 */
+.avatar-looks {
+  display: grid;
+  grid-template-columns: repeat(4, 44px);
+  gap: 8px 12px;
+}
+.avatar-looks button {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid var(--avatar-line);
+  border-radius: 50%;
+  background: var(--surface);
+  cursor: pointer;
+}
+.avatar-looks button.on {
+  border-color: var(--avatar-primary);
+  box-shadow:
+    0 0 0 2px var(--avatar-paper),
+    0 0 0 4px var(--avatar-primary);
+}
+.avatar-looks img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.avatar-hint {
+  margin: 0;
+  color: var(--avatar-dim);
+  font-size: 11.5px;
+  line-height: 1.9;
+}
+.avatar-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+/* 带上 .avatar-ui：否则 .avatar-ui button 的 color: inherit 会把白字盖成正文色 */
+.avatar-ui .avatar-primary {
+  padding: 8px 16px;
+  border: 1px solid var(--avatar-primary);
+  border-radius: var(--r-s);
+  background: var(--avatar-primary);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.avatar-ghost {
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--avatar-dim);
+}
+
+/* ---- 点击移动的目的地标记（SVG） ---- */
+.avatar-destination {
+  pointer-events: none;
+}
+.avatar-destination-halo {
+  fill: none;
+  stroke: #ffffffcc;
+  stroke-width: 12;
+}
+.avatar-destination-ring {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 6;
+}
+.avatar-destination-dot {
+  fill: var(--text);
+}
+
+/* ---- 地图上的提示标签（SVG） ---- */
+.aprompt {
+  cursor: pointer;
+}
+.aprompt-box {
+  fill: #f9f5e2;
+  stroke: var(--text-3);
+  stroke-width: 0.6;
+}
+.aprompt-main .aprompt-box {
+  fill: var(--text);
+  stroke: none;
+}
+.aprompt-text {
+  font-size: 13px;
+  fill: var(--text);
+  dominant-baseline: central;
+}
+.aprompt-main .aprompt-text {
+  fill: #fff;
+  font-weight: 600;
+}
+.aprompt-key {
+  fill: #ffffffd0;
+}
+.aprompt:not(.aprompt-main) .aprompt-key {
+  stroke: var(--text-3);
+  stroke-width: 0.6;
+}
+/* 「Tab 换人 1 / 7」：比主文字淡一档 */
+.aprompt-more {
+  font-size: 12px;
+  fill: var(--text-2);
+  dominant-baseline: central;
+}
+.aprompt-main .aprompt-more {
+  fill: var(--text-3);
+}
+.aprompt-keytext {
+  font:
+    600 10px ui-monospace,
+    Menlo,
+    monospace;
+  fill: var(--text);
+  text-anchor: middle;
+  dominant-baseline: central;
+}
+.aprompt-muted {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* ---- 化身在场时的地图标记 ---- */
+.vavatar .vring {
+  stroke: var(--avatar-color, var(--accent));
+  stroke-width: 5;
+}
+.vavatar .vtri {
+  fill: var(--avatar-color, var(--accent));
+}
+/* 化身的名字用绿色，和村民的名字分开 */
+.vavatar .vn {
+  fill: var(--accent);
+}
+/* --marker-scale 由渲染器按缩放倍率设置：整图为 1（与观察模式相同），放大后最小 0.25。
+   化身模式和立体像素场景都给 SVG 加 scaled-labels */
+/* 人的名字和动作用 --name-scale：跟着缩放，但不小于读得清的字号（见 render.ts）。
+   地名很多，整图时再放大会叠成一片，仍按 --marker-scale 缩小 */
+.scaled-labels.single-place .vn,
+.scaled-labels .vn {
+  font-size: calc(54px * var(--name-scale, var(--marker-scale, 1)));
+  stroke-width: calc(12px * var(--name-scale, var(--marker-scale, 1)));
+}
+.scaled-labels .vv {
+  font-size: calc(34px * var(--name-scale, var(--marker-scale, 1)));
+  stroke-width: calc(9px * var(--name-scale, var(--marker-scale, 1)));
+}
+.avatar-mode .vwait {
+  display: none;
+}
+.scaled-labels .rg {
+  font-size: calc(88px * var(--marker-scale, 1));
+}
+.avatar-mode .rg {
+  opacity: 0.7;
+}
+.scaled-labels .rm {
+  font-size: calc(60px * var(--marker-scale, 1));
+}
+.scaled-labels .pl {
+  font-size: calc(32px * var(--marker-scale, 1));
+}
+
+/* 右侧面板开着：「回到化身」和提示条挪到面板左边，不压住面板的标题和「收起」 */
+@media (min-width: 720px) {
+  .avatar-ui:has(.avatar-panel:not([hidden])) .avatar-return {
+    right: calc(min(320px, 100% - 24px) + 24px);
+  }
+  .avatar-ui:has(.avatar-panel:not([hidden])) .avatar-toast {
+    left: calc((100% - min(320px, 100% - 24px) - 12px) / 2);
+    max-width: calc(100% - min(320px, 100% - 24px) - 36px);
+  }
+}
+/* 720–1023：村民卡盖在地图右边时，「进入化身」、暂停与快进提示和通知挪到露出来的那块地图中间，
+   不压住卡片底部的按钮，也不被卡片切掉一半 */
+@media (min-width: 720px) and (max-width: 1023px) {
+  #obs-main:has(#info-panel:not([hidden]))
+    :is(.avatar-enter, .pause-hint, .fast-hint, .town-notices) {
+    left: calc((100% - min(340px, 85vw)) / 2);
+    max-width: calc(100% - min(340px, 85vw) - 24px);
+  }
+  #obs-main:has(#info-panel:not([hidden])) .pause-hint {
+    white-space: normal;
+  }
+}
+/* 720–760 宽（折叠屏展开、窄窗口）仍是右侧 320 像素的面板，左边留出地图看得见说话的人；
+   更窄时手机布局把它改成底部抽屉（mobile/style.css） */
+@media (max-width: 760px) {
+  .avatar-hud {
+    padding-left: 10px;
+    overflow-x: auto;
+  }
+  .avatar-me small {
+    max-width: 120px;
+  }
+  .avatar-dialog {
+    padding: 14px;
+  }
+}
+
+.avatar-pause-notice,
+.avatar-invite-result {
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}
+.avatar-pause-notice button,
+.avatar-invite-result button {
+  margin: 4px 6px 0 0;
+}
+.avatar-composer textarea[readonly] {
+  background: var(--surface-sunken);
+}

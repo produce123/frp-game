@@ -7,8 +7,8 @@
 > 同学用浏览器打开一个网址就能一起玩。
 
 - 账号、好友、房间、邀请、头像全平台共用一套；好友列表能看到「正在玩 XXX」，没开局可以直接进入。
-- 8 个游戏：3 个自建小游戏 + 5 个缝合的开源上游项目（三国杀 / 狼人杀 / 斗地主 / 大富翁 / 广东麻将）。
-- 手机能玩：四个横屏大项目有伪横屏外壳，所有游戏都有可选的「全屏」按钮（电脑端不显示）。
+- 10 个游戏：3 个自建小游戏 + 7 个缝合的开源上游项目（三国杀 / 狼人杀 / 斗地主 / 大富翁 / 广东麻将 / 地平线赛车 / AI 小镇）。
+- 手机能玩：五个横屏大项目有伪横屏外壳，所有游戏都有可选的「全屏」按钮（电脑端不显示）。
 - 零第三方运行时依赖：服务端只用 Node 自带能力，一个进程、一个 SQLite 文件就能跑。
 
 > ⚠️ 本项目仅供**学习交流和朋友之间娱乐**，**禁止商用**（售卖、付费运营、商业部署等）。
@@ -36,6 +36,8 @@
 | 🃏 斗地主 | `/ddz/` | 3 | 叫地主 → 抢地主 → 出牌；牌桌是上游 Godot 网页版 |
 | 🎲 大富翁 | `/games/monopoly/` | 1–6 | 上游 3D 棋盘，买地盖楼收租，5 张公开地图，可联机 |
 | 🀄 莲花广麻 | `/mahjong/` | 2–4 | 四人广东麻将：碰杠吃胡买马，单机也能和 AI 打 |
+| 🏎️ 地平线赛车 | `/games/horizon/` | 2–8 | 开放世界海岸赛道 3D 竞速；联机车与车真实碰撞，手机有触屏按键 |
+| 🏘️ AI 小镇 | `/ai-town/` | 1–4 | AI 村民自己过日子的 2D 小镇；房主开自己的存档，朋友进同一张图，各自有化身 |
 | 💣 大炮轰小鬼 | `/games/cannon-goblin/` | 1–2 | 不对称棋盘：大炮隔空吃子，小鬼靠数量堵死大炮 |
 | 🔫 Shell Gambit | `/games/shell-gambit/` | 1–4 | 恶魔轮盘：霰弹枪、7 种道具，胆子和运气 |
 | ⚔️ 刀马 BladeSteed | `/games/blade-steed/` | 2–4 | 武侠猜拳：赢了才能动手，买刀买马、出城砍人 |
@@ -103,6 +105,13 @@ npm start
 - **无名杀**：上游源码约 1.2GB，**不进仓库**。需要时运行 `node tools/noname-update.mjs`
   拉取并构建；没拉取时 `/noname/` 不可用，其它游戏不受影响。
 - **大富翁 / 狼人杀 / 斗地主**：构建产物已经提交，**开箱即用**，不需要 `pnpm install`。
+- **AI 小镇**：前端产物已提交，开箱能开页面；**Rust 的 `bin/` 和内置模型不进仓库**。
+  本机已经编译/放好；换机器要么把 `games/ai-town/bin/` 和 `data/ai-town/models/model.gguf`
+  一起拷过去，要么按 `DEPLOY.md` 重编 Rust + 下载模型（约 505MB）。
+  服务器只跑 `llama-server.exe`（Vulkan），手机端不跑模型。
+  ✅ AI 小镇现在支持**房主和每个客人各自降临**：每人在自己屏幕上是上帝，自己走、自己聊；
+  别人头顶会显示他的平台头像和昵称（小圆点，不挡画面）。世界设置（开始/暂停、天气、
+  请村民）只归房主；客人是临时访客，不写进房主存档。
 
 ## 日常使用
 
@@ -124,8 +133,12 @@ npm start
 | 斗地主 | [blmz/GODOT-DouDiZhu](https://github.com/blmz/GODOT-DouDiZhu) | **上游未声明 LICENSE** | 牌桌是上游 Godot 网页导出；规则/状态机/联机由本仓库重写 |
 | 大富翁 | [FatPaper-1874/mine-monopoly](https://github.com/FatPaper-1874/mine-monopoly) | **GPL-3.0** | 整份 Web 客户端静态托管 + WebSocket 中转 + 平台账号注入 |
 | 莲花广麻 | [BestGuo2020/lianhuaguangdongmahjong](https://github.com/BestGuo2020/lianhuaguangdongmahjong)（前端）<br>[BestGuo2020/lianhua-mahjong-backend](https://github.com/BestGuo2020/lianhua-mahjong-backend)（后端） | **MIT** | 整份项目搬入 + Node 反代 + 平台账号/邀请接线 |
+| 地平线赛车 | [Liyang1145/horizon-racing](https://github.com/Liyang1145/horizon-racing) | **MIT** | 3D 世界/物理原样搬入 + 平台房间/邀请 + `/horizon-relay` 车位置 + 起终点拱门 + 手机触屏/伪横屏 |
+| AI 小镇 | [mewamew/my_ai_town](https://github.com/mewamew/my_ai_town) | **PolyForm Noncommercial 1.0.0** | Rust 世界内核 + manager + TS 前端搬入；平台账号/邀请/房间 + 每账号存档 + 多化身联机 + 手机布局 + 服务器端内置小模型 |
 
-三个自建小游戏（大炮轰小鬼 / Shell Gambit / 刀马）的规则引擎与界面在本仓库内，按 MIT 发布。
+三个自建小游戏（大炮轰小鬼 / Shell Gambit / 刀马）的规则引擎与界面在本仓库内；
+地平线的 3D 世界来自上游（MIT），平台接线在本仓库内。整体按 MIT 发布。
+AI 小镇的上游代码按 **PolyForm Noncommercial 1.0.0** 使用：只许非商业用途，再分发时保留原许可证与 NOTICE。
 
 > **禁止商用**：本项目整体仅供个人学习、朋友之间娱乐。不要拿它做付费服务、售卖、
 > 商业运营或任何以营利为目的的部署。上游项目各自的许可证仍然有效；如果你再分发
@@ -147,8 +160,10 @@ npm start
 ## 开发者命令
 
 ```powershell
-npm test              # 146 条 Node 集成测试（真 HTTP + 真 WebSocket），约 15 秒
-npm run test:browser  # 真 Chrome 端到端（平台外壳 / 房间 / 登录 / 游戏页面 / 全屏）
+npm test              # Node 集成测试（真 HTTP + 真 WebSocket）
+npm run test:browser  # 真 Chrome 端到端（平台外壳 / 房间 / 登录 / 游戏页面 / 全屏 / 地平线）
+npm run test:ai-town  # AI 小镇（真 manager/host/WS + 布局；用 --mock-llm）
+npm run test:horizon  # 地平线赛车（5 条服务器/中继 + 真 Chrome 双人联机）
 npm run test:mahjong  # 莲花广麻（需要 Python .venv）
 npm run test:ddz      # 斗地主（Godot 牌桌）
 npm run test:monopoly # 大富翁
@@ -164,7 +179,7 @@ node tools/check-tunnel.mjs <公网地址> --ws 30   # 公网隧道体检（只�
 | 怎么在另一台电脑上部署（写给 AI 照着做） | [`DEPLOY.md`](DEPLOY.md) |
 | 当前进度、下一步、已知小毛病 | [`docs/NEXT.md`](docs/NEXT.md) |
 | 架构、协议、各游戏怎么接进来的 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| 某个设计为什么这样（D1–D45） | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| 某个设计为什么这样（D1–D48） | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | 各游戏的坑与口径 | [`docs/GAMES.md`](docs/GAMES.md) |
 | 公网 / 隧道排障 | [`docs/TUNNEL.md`](docs/TUNNEL.md) |
 | 开发约定（给接手的 AI） | [`AGENTS.md`](AGENTS.md) |

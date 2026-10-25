@@ -1,0 +1,1415 @@
+/* 手机布局（≤719px）：地图占满，顶栏只留返回、时间、天气和开始/暂停钮；其余入口收进底部五格。
+   村民卡、事件列表、「更多」是底部抽屉。宽屏不受影响：这里新加的节点在宽屏一律隐藏。
+   触屏另有一组规则（[data-input='touch']），按钮和可点范围更大。 */
+
+.mobile-dock,
+.map-fabs,
+.m-sheet-handle,
+.m-pop,
+.m-shade {
+  display: none;
+}
+
+/* 地图右上角两个圆钮（看全图、俯角）：手机和所有触屏都用它们代替一长条缩放钮——
+   触屏用两指缩放，缩放钮加上俯角滑杆有 500 多像素高，在折叠屏上会压住别的按钮 */
+:is([data-layout='compact'], [data-input='touch']) .map-fabs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+}
+/* 等模型的提示条让开右上角的圆钮 */
+:is([data-layout='compact'], [data-input='touch']) .model-wait {
+  left: 12px;
+  right: 66px;
+  transform: none;
+  width: auto;
+  max-width: none;
+}
+/* 手机上按钮放到文字下面 */
+[data-layout='compact'] .model-wait {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 8px 10px;
+}
+[data-layout='compact'] .model-wait-dot {
+  margin-top: 5px;
+}
+[data-layout='compact'] .model-wait button {
+  grid-column: 2;
+  justify-self: start;
+}
+:is([data-layout='compact'], [data-input='touch']) .map-fabs button {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  color: var(--text-2);
+}
+:is([data-layout='compact'], [data-input='touch']) .map-fabs button .game-icon {
+  width: 22px;
+  height: 22px;
+}
+/* 缩放钮收起；点「俯角」圆钮时只露出俯角滑杆，放在圆钮左边 */
+:is([data-layout='compact'], [data-input='touch']) .map-zoom {
+  display: none;
+  top: 12px;
+  right: 62px;
+  left: auto;
+  bottom: auto;
+}
+:is([data-layout='compact'], [data-input='touch']) .map-zoom.show-pitch {
+  display: flex;
+}
+:is([data-layout='compact'], [data-input='touch'])
+  .map-zoom.show-pitch
+  > :not(.map-pitch, .map-view-presets) {
+  display: none;
+}
+/* 手指用的俯角滑杆：加宽加长，整块都能按住上下拖 */
+:is([data-layout='compact'], [data-input='touch']) .map-pitch {
+  width: 52px;
+  padding-top: 18px;
+}
+:is([data-layout='compact'], [data-input='touch']) .map-pitch-track {
+  height: 150px;
+}
+:is([data-layout='compact'], [data-input='touch']) .map-pitch-thumb {
+  width: 22px;
+  height: 22px;
+  margin: 0 0 -11px -11px;
+}
+
+/* 空镇子：手机底部的「居民」用主色，和地图上的邀请卡一起指向第一步 */
+html[data-empty-town] .mobile-dock [data-dock='residents'] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 窄于 1024（手机、折叠屏展开、窄窗口） */
+@media (max-width: 1023px) {
+  /* 「化身在场」的标签让出来：化身时地图顶上的操作条已经写明了 */
+  body:not(.game-theme) #avatar-flag {
+    display: none;
+  }
+  /* 音乐、音效开关不占顶栏：设定的「声音与按键」里有，手机在「更多」里 */
+  #topbar > #audio-controls {
+    display: none;
+  }
+  /* 「← 地图选择」只留箭头，给镇名和右边的入口让出位置（手机布局下面另有尺寸） */
+  .back-to-maps {
+    padding-inline: 6px;
+    font-size: 0;
+    color: var(--text-2);
+  }
+  .back-to-maps::before {
+    content: '←';
+    font-size: 18px;
+  }
+}
+
+@media (max-width: 719px) {
+  body {
+    height: 100dvh;
+    font-size: 14px;
+  }
+  #obs-view,
+  .page-view {
+    height: 100dvh;
+  }
+
+  /* ---------- 顶栏 ---------- */
+  #topbar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 52px;
+    padding: 0 10px 0 2px;
+    overflow: hidden;
+  }
+  #topbar
+    > :is(
+      #app-title,
+      #audio-controls,
+      #avatar-flag,
+      #open-residents,
+      #open-usage,
+      #open-settings,
+      #open-help,
+      #model-flag,
+      #world-mode
+    ) {
+    display: none;
+  }
+  /* 「← 地图选择」只留箭头 */
+  .back-to-maps {
+    width: 40px;
+    height: 40px;
+    flex: none;
+    padding: 0;
+    font-size: 0;
+    color: var(--text-2);
+  }
+  .back-to-maps::before {
+    content: '←';
+    font-size: 20px;
+  }
+  #clock {
+    font-size: 15px;
+  }
+  #world-facts {
+    font-size: 12px;
+    color: var(--text-2);
+  }
+  .weather-trigger {
+    min-height: 30px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--r-pill);
+    background: var(--surface-sunken);
+    font-size: 13px;
+  }
+  /* 额度或故障暂停的原因：顶栏放不下，挂在顶栏下面 */
+  #hold-flag {
+    position: absolute;
+    top: 58px;
+    left: 12px;
+    right: 12px;
+    z-index: 15;
+    max-width: none;
+    padding: 6px 12px;
+    border-radius: var(--r-s);
+    background: var(--danger-soft);
+    white-space: normal;
+  }
+  #conn-text:empty {
+    display: none;
+  }
+  /* 开始/暂停钮挨着时间，只留图标 */
+  .speed-toggle {
+    width: 44px;
+    min-width: 0;
+    height: 36px;
+    padding: 0;
+  }
+  .speed-toggle span {
+    display: none;
+  }
+  .speed-toggle .game-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  /* ---------- 浮层：「更多」 ---------- */
+  .m-pop:not([hidden]) {
+    display: block;
+    position: absolute;
+    z-index: 40;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r-m);
+    box-shadow: var(--elev-3);
+  }
+  .m-pop-title {
+    grid-column: 1 / -1;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-3);
+  }
+  .m-pop-note {
+    grid-column: 1 / -1;
+    margin: 2px 0 0;
+    font-size: 12px;
+    color: var(--text-3);
+  }
+  .m-shade:not([hidden]) {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 39;
+    background: rgb(20 24 22 / 0.32);
+  }
+  .m-more:not([hidden]) {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    padding: 0 16px 16px;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    border-bottom: 0;
+  }
+  .m-grip {
+    width: 36px;
+    height: 4px;
+    margin: 8px auto 6px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  .m-more h2 {
+    margin: 4px 0 12px;
+    font-size: 17px;
+  }
+  .m-tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .m-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    height: 84px;
+    border-radius: var(--r-m);
+    font-size: 13px;
+  }
+  .m-tile .game-icon {
+    width: 22px;
+    height: 22px;
+    color: var(--text-2);
+  }
+  .m-tile small {
+    font-size: 12px;
+    color: var(--text-3);
+    line-height: 1;
+  }
+  .m-row {
+    width: 100%;
+    min-height: 48px;
+    margin-top: 12px;
+    text-align: left;
+  }
+
+  /* ---------- 底部六个入口 ---------- */
+  .mobile-dock {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    flex: none;
+    height: 64px;
+    position: relative;
+    z-index: 12;
+    background: var(--surface-page);
+    border-top: 1px solid var(--line);
+  }
+  .mobile-dock button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .mobile-dock button .game-icon {
+    width: 22px;
+    height: 22px;
+  }
+  /* 新作品的数字贴在图标右上角 */
+  .mobile-dock .ui-count {
+    position: absolute;
+    top: 6px;
+    left: calc(50% + 4px);
+  }
+  .mobile-dock button.on {
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .avatar-controlling .mobile-dock {
+    display: none;
+  }
+
+  /* ---------- 事件：一行最新事件浮在入口上方，展开成底部抽屉 ---------- */
+  #event-bar {
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+    z-index: 11;
+    border: 1px solid var(--line);
+    border-radius: var(--r-m);
+    box-shadow: var(--elev-3);
+    font-size: 13px;
+  }
+  #event-latest {
+    min-height: 44px;
+    padding: 0 6px 0 12px;
+    gap: 6px;
+  }
+  /* 停在底部入口上面：抽屉在最新事件条的层里，压不过入口栏，伸到底的话最新一条正好被入口挡住 */
+  #event-full:not([hidden]) {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 64px;
+    top: auto;
+    z-index: 30;
+    height: min(60dvh, calc(100dvh - 64px - 160px));
+    max-height: none;
+    border-top: 0;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    background: var(--surface);
+    box-shadow: 0 -6px 24px rgb(20 24 22 / 0.16);
+  }
+  /* 一行放下四个筛选和「收起」；往上翻时会自己停止自动滚动，开关就不占地方了 */
+  #event-toolbar {
+    flex-wrap: nowrap;
+    gap: 6px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  #event-toolbar button {
+    flex: none;
+    min-height: 36px;
+  }
+  #event-autoscroll-label {
+    display: none;
+  }
+  #event-list {
+    padding: 6px 16px 16px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  #event-list > div {
+    padding: 4px 0;
+  }
+  #event-bar:has(#event-full:not([hidden])) #event-latest {
+    visibility: hidden;
+  }
+  /* 村民卡打开、化身控制中：收起最新事件这一行 */
+  #obs-view:has(#info-panel:not([hidden])) #event-bar:has(#event-full[hidden]),
+  .avatar-controlling #event-bar {
+    display: none;
+  }
+
+  /* ---------- 村民卡：底部抽屉 ---------- */
+  #info-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    width: 100%;
+    height: 45%;
+    max-height: none;
+    padding: 0 16px 16px;
+    border-top: 0;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    box-shadow: 0 -6px 24px rgb(20 24 22 / 0.16);
+    overscroll-behavior: contain;
+    transition: height 0.2s ease;
+  }
+  #info-panel.dragging {
+    transition: none;
+  }
+  .m-sheet-handle {
+    display: block;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    height: 22px;
+    margin: 0 -16px;
+    background: var(--card);
+    cursor: grab;
+    touch-action: none;
+  }
+  .m-sheet-handle::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+  /* 按钮行排成整齐的三列两行，不再折出半行压着下面的字 */
+  #info-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+  #info-actions > button {
+    width: 100%;
+    margin: 0;
+    padding-inline: 4px;
+  }
+  #info-head {
+    position: sticky;
+    top: 22px;
+    z-index: 2;
+    padding-bottom: 8px;
+    background: var(--card);
+    touch-action: none;
+  }
+
+  /* ---------- 地图上的浮层 ---------- */
+  .map-props-button {
+    display: none;
+  }
+  /* 左右都定位、宽度按内容：不受 left:50% 只剩半屏宽的限制，又不压到右上角的圆钮 */
+  .pause-hint,
+  .fast-hint {
+    top: 12px;
+    left: 0;
+    right: 0;
+    width: fit-content;
+    max-width: calc(100% - 132px);
+    margin: 0 auto;
+    transform: none;
+    white-space: normal;
+    text-align: center;
+  }
+  .town-notices {
+    left: 12px;
+    width: calc(100% - 78px);
+    transform: none;
+  }
+  /* 窄卡片：文字占满一行，按钮换到下面靠右 */
+  .town-notice {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: 6px 10px;
+  }
+  .notice-body {
+    flex-basis: calc(100% - 46px);
+  }
+  .notice-title {
+    font-size: 14px;
+  }
+  .notice-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  /* ---------- 设定中心：目录与子页分两层 ---------- */
+  /* 子页里返回钮已经写着「← 设定」，页头的「设定」标题不再重复 */
+  #settings-view[data-pane='page'] #settings-title {
+    display: none;
+  }
+  #settings-body {
+    flex-direction: column;
+  }
+  #settings-view[data-pane='nav'] #settings-page,
+  #settings-view[data-pane='page'] #settings-nav {
+    display: none;
+  }
+  #settings-nav {
+    flex: 1;
+    width: auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 4px 16px 24px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    border: 0;
+    background: var(--surface-page);
+  }
+  #settings-nav .nav-group {
+    padding: 18px 4px 6px;
+  }
+  #settings-nav .nav-item {
+    width: 100%;
+    min-height: 50px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line-soft);
+    border-radius: 0;
+    background: var(--surface);
+    font-size: 15px;
+  }
+  #settings-nav .nav-item::after {
+    content: '›';
+    margin-left: 8px;
+    color: var(--text-3);
+    font-size: 18px;
+  }
+  #settings-nav .nav-item.on {
+    background: var(--surface);
+    font-weight: 400;
+  }
+  #settings-nav .nav-danger {
+    margin-top: 18px;
+    padding-top: 0;
+    border-top: 0;
+  }
+  .settings-resident-picker {
+    margin: 0 0 8px;
+  }
+  .settings-resident-picker > summary {
+    min-height: 48px;
+  }
+  .settings-resident-menu {
+    position: absolute;
+    display: grid;
+    box-shadow: var(--elev-3);
+  }
+  #settings-page {
+    padding: 14px 16px 24px;
+  }
+
+  /* ---------- 整页 ---------- */
+  .page-topbar {
+    flex-wrap: nowrap;
+    gap: 8px;
+    min-height: 52px;
+    padding: 4px 10px 4px 4px;
+    overflow-x: auto;
+  }
+  /* 放不下时滚动，不把「返回地图」和页名挤成一个字一行 */
+  .page-topbar > * {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .page-topbar > .dim {
+    display: none;
+  }
+  /* 记忆页的搜索框单独占第二行（记忆页窄屏本来就这样排），不跟着顶栏一行排到屏幕外 */
+  #memory-topbar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+    overflow-x: visible;
+  }
+  #memory-search-wrap {
+    flex: 1 1 100%;
+    margin: 0 0 6px 6px;
+  }
+  /* 物品页：页名就是分段钮里选中的那一项 */
+  #props-title {
+    display: none;
+  }
+  /* 村民页的居民卡：头像占两行，名字和状态、地点和住址在右边，按钮另起一行 */
+  .rv-row > .rv-portrait {
+    grid-row: span 2;
+    align-self: start;
+  }
+  /* 弹出键盘时底部入口和最新事件条先让开，不然会被顶到键盘上方白占一行 */
+  .typing .mobile-dock,
+  .typing #event-bar {
+    display: none;
+  }
+  #residents-page,
+  #usage-page,
+  #books-page {
+    padding: 12px 14px 24px;
+  }
+  /* 消耗页的请求表有九列，手机上每条排成一张小卡：类型、村民、结果；时间与耗时；token；说明 */
+  .us-requests,
+  .us-requests tbody {
+    display: block;
+  }
+  .us-requests tr:has(> th) {
+    display: none;
+  }
+  .us-requests tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .us-requests td {
+    padding: 0;
+    border: 0;
+    white-space: normal;
+  }
+  .us-requests td.us-id {
+    order: 1;
+    color: var(--text-3);
+  }
+  .us-requests td.us-id::before {
+    content: '#';
+  }
+  .us-requests td.us-kind {
+    order: 2;
+    font-weight: 600;
+  }
+  .us-requests td.us-resident {
+    order: 3;
+  }
+  .us-requests td.us-result {
+    order: 4;
+    margin-left: auto;
+  }
+  /* 换行：时间一行从头排 */
+  .us-requests tr::before {
+    content: '';
+    order: 5;
+    flex-basis: 100%;
+  }
+  .us-requests td.us-clock,
+  .us-requests td.us-wall,
+  .us-requests td.us-latency,
+  .us-requests td.us-tokens {
+    color: var(--text-2);
+  }
+  .us-requests td.us-clock {
+    order: 6;
+  }
+  .us-requests td.us-wall {
+    order: 7;
+  }
+  .us-requests td.us-latency {
+    order: 8;
+  }
+  .us-requests td.us-tokens {
+    order: 9;
+    flex-basis: 100%;
+  }
+  .us-requests td.us-tokens:not(.reserved)::before {
+    content: '输入 / 缓存 / 输出 token：';
+  }
+  .us-requests td.us-detail {
+    order: 10;
+    flex-basis: 100%;
+    min-width: 0;
+  }
+  .us-requests td.us-detail:empty {
+    display: none;
+  }
+}
+
+/* 手机布局里「进入化身」在底部入口，地图上的入口钮不再显示 */
+@media (max-width: 719px) {
+  .avatar-enter {
+    display: none;
+  }
+}
+
+/* ---------- 化身：触屏摇杆与动作钮（只在触屏显示） ---------- */
+.avatar-touch {
+  display: none;
+}
+[data-input='touch'] .avatar-touch:not([hidden]) {
+  display: block;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 16px;
+  height: 172px;
+  pointer-events: none;
+}
+.avatar-stick {
+  position: absolute;
+  left: 20px;
+  bottom: 12px;
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.28);
+  border: 1.5px solid rgb(255 255 255 / 0.75);
+  box-shadow: 0 2px 14px rgb(0 0 0 / 0.18);
+  pointer-events: auto;
+  touch-action: none;
+}
+.avatar-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 56px;
+  height: 56px;
+  margin: -28px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  pointer-events: none;
+}
+.avatar-act-main,
+.avatar-act-small {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  pointer-events: auto;
+}
+.avatar-act-main {
+  right: 20px;
+  bottom: 16px;
+  width: 84px;
+  height: 84px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+.avatar-act-main.ready {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+.avatar-act-main .game-icon {
+  width: 24px;
+  height: 24px;
+}
+.avatar-act-small {
+  width: 54px;
+  height: 54px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+.avatar-act-small .game-icon {
+  width: 20px;
+  height: 20px;
+}
+.avatar-act-bag {
+  right: 116px;
+  bottom: 8px;
+}
+.avatar-act-cycle {
+  right: 112px;
+  bottom: 70px;
+}
+/* 手机按键自定义布局（layout.ts）：按钮/面板都放在整屏的 .avatar-touch 里 */
+.frp-layout-host {
+  height: auto;
+}
+.frp-layout-button {
+  display: none;
+  position: absolute;
+  right: 12px;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  z-index: 5;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: 12px/1.2 var(--font, system-ui);
+  pointer-events: auto;
+}
+[data-input='touch'] .frp-layout-button {
+  display: block;
+}
+.frp-layout-editing .frp-layout-button {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: var(--accent-fill);
+}
+.frp-layout-editing .avatar-stick,
+.frp-layout-editing .avatar-act-main,
+.frp-layout-editing .avatar-act-small {
+  outline: 2px dashed rgb(232 201 138 / 0.9);
+  outline-offset: 3px;
+  cursor: move;
+}
+.frp-layout-editing .avatar-stick .avatar-knob {
+  pointer-events: none;
+}
+.frp-layout-selected {
+  outline-color: var(--accent-fill) !important;
+  outline-style: solid !important;
+}
+.frp-layout-panel {
+  position: fixed;
+  left: 50%;
+  top: calc(env(safe-area-inset-top, 0px) + 52px);
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 24px);
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: 12px/1.2 var(--font, system-ui);
+  box-shadow: var(--elev-2);
+  pointer-events: auto;
+}
+.frp-layout-panel[hidden] {
+  display: none;
+}
+.frp-layout-panel > span {
+  white-space: nowrap;
+  opacity: 0.8;
+}
+.frp-layout-panel input[type='range'] {
+  width: min(120px, 22vw);
+  accent-color: var(--accent-fill);
+}
+.frp-layout-panel button {
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font: inherit;
+}
+.frp-layout-panel button.frp-layout-ghost {
+  background: var(--surface-2, rgba(255, 255, 255, 0.12));
+  color: var(--text-2);
+}
+.avatar-act-label {
+  position: absolute;
+  right: 20px;
+  bottom: 136px;
+  max-width: calc(100% - 180px);
+  padding: 6px 12px;
+  border-radius: var(--r-pill);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 触屏操作条：贴在地图顶部，按键提示和背包钮收起（背包在右下） */
+/* 化身时右上角的圆钮挪到操作条下面（见下面 .avatar-controlling .map-fabs），操作条占满整行，
+   「正在交谈」这类按钮不再被截成「正在交」 */
+[data-input='touch'] .avatar-hud {
+  top: 10px;
+  bottom: auto;
+  left: 10px;
+  right: 10px;
+  transform: none;
+  max-width: none;
+}
+[data-input='touch'] .avatar-mid .avatar-act {
+  flex: none;
+}
+[data-input='touch'] .avatar-hud kbd,
+[data-input='touch'] .avatar-bag-btn,
+[data-input='touch'] .avatar-hud-hint {
+  display: none;
+}
+[data-input='touch'] .avatar-mid {
+  min-width: 0;
+  overflow: hidden;
+}
+/* 名字下面一行放不下就省略，不压到旁边的按钮 */
+[data-input='touch'] .avatar-me > div {
+  min-width: 0;
+}
+[data-input='touch'] .avatar-me small {
+  max-width: none;
+}
+/* 暂停原因已写在名字下面和提示卡里，条上只留按钮 */
+[data-input='touch'] .avatar-mid > span:not(.avatar-busy) {
+  display: none;
+}
+
+/* 开局向导开着时，地图上的暂停、快进提示和向导抢注意力 */
+body:has(.guide:not([hidden])) :is(.pause-hint, .fast-hint) {
+  display: none;
+}
+
+/* 触屏的化身（手机、折叠屏、平板都一样）：操作条在顶上，摇杆和按钮在底下。
+   面板（交谈、背包、状态）打开时收起摇杆和按钮，不然它们正好压在输入框和「发送」上；
+   提示、跟随钮、提示卡都让到操作条下面。「⋯」菜单往下弹（桌面的操作条在底部，菜单往上弹）。 */
+[data-input='touch'] .avatar-ui:has(.avatar-panel:not([hidden])) .avatar-touch {
+  display: none;
+}
+[data-input='touch'] .avatar-hud {
+  overflow: visible;
+}
+[data-input='touch'] .avatar-menu {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+[data-input='touch'] .avatar-toast {
+  top: 64px;
+  max-width: calc(100% - 140px);
+}
+[data-input='touch'].avatar-controlling .map-fabs,
+[data-input='touch'].avatar-controlling .map-zoom {
+  top: 64px;
+}
+[data-input='touch'].avatar-controlling #map .town-notices,
+[data-input='touch'].avatar-controlling #map:has(.pause-hint:not([hidden])) .town-notices,
+[data-input='touch'].avatar-controlling
+  #map:has(.avatar-toast:not([hidden])):has(.pause-hint:not([hidden]))
+  .town-notices {
+  top: 64px;
+}
+[data-input='touch'] .avatar-return {
+  top: 166px;
+}
+/* 化身操作条自己写着「世界已暂停」并带「继续世界」，不再叠一条提示 */
+[data-input='touch'].avatar-controlling .pause-hint {
+  display: none;
+}
+/* 键盘提示（Esc、回车）在触屏上没有意义 */
+[data-input='touch'] .avatar-ui kbd {
+  display: none;
+}
+/* 场景物品钮在左下，化身时正好被摇杆压住；化身有自己的背包 */
+[data-input='touch'].avatar-controlling .map-props-button {
+  display: none;
+}
+
+@media (max-width: 719px) {
+  /* 交谈、背包、状态在手机上是底部抽屉 */
+  .avatar-panel {
+    left: 0;
+    right: 0;
+    top: auto;
+    bottom: 0;
+    width: 100%;
+    height: 62%;
+    border-bottom: 0;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    box-shadow: 0 -6px 24px rgb(20 24 22 / 0.16);
+  }
+  .avatar-dialog {
+    width: calc(100% - 24px);
+  }
+}
+
+/* ---------- 开局向导：手机上贴底，上面露出小镇；宽屏居中 ---------- */
+.guide:not([hidden]) {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgb(20 24 22 / 0.35);
+}
+.guide-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 520px;
+  max-height: 92dvh;
+  border-radius: 16px 16px 0 0;
+  background: var(--surface-page);
+  box-shadow: 0 -8px 32px rgb(20 24 22 / 0.2);
+}
+@media (min-width: 720px) {
+  .guide:not([hidden]) {
+    align-items: center;
+  }
+  .guide-card {
+    border-radius: 16px;
+  }
+}
+.guide-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  height: 52px;
+  padding: 0 8px 0 20px;
+}
+.guide-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.guide-dots i {
+  width: 20px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.guide-dots i.on {
+  background: var(--accent);
+}
+.guide-dots span {
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.guide-skip {
+  margin-left: auto;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 14px;
+}
+.guide-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 20px 16px;
+}
+.guide-body h2 {
+  margin: 8px 0 6px;
+  font-size: 22px;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.guide-body > p {
+  margin: 0 0 14px;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.guide-providers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.guide-provider {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  min-height: 58px;
+  padding: 6px 12px;
+  text-align: left;
+}
+.guide-provider b {
+  font-size: 15px;
+}
+.guide-provider .ui-chip {
+  margin-left: 6px;
+}
+.guide-provider small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.guide-provider.on,
+.guide-resident.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* 第二步已经连好模型：只显示连好的那个服务 */
+.guide-conn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+}
+.guide-conn > div {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.guide-conn b {
+  font-size: 15px;
+}
+.guide-conn small {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.guide-conn-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+/* 内置模型还没下好：灰的没开始、橙的在下、红的出了错 */
+.guide-conn-dot.off {
+  background: var(--off);
+}
+.guide-conn-dot.busy {
+  background: var(--busy);
+}
+.guide-conn-dot.danger {
+  background: var(--danger);
+}
+.guide-conn small.danger {
+  color: var(--danger);
+}
+.guide-meter {
+  margin-top: 4px;
+}
+.guide-meter > span {
+  transition: width 0.9s linear;
+}
+.guide-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.guide-key {
+  height: 44px;
+  font-family: var(--font-mono);
+  font-size: 15px;
+}
+.guide-test {
+  min-height: 24px;
+  margin-top: 8px;
+}
+.ui-status.bad {
+  color: var(--danger);
+  white-space: normal;
+}
+.ui-status.bad::before {
+  background: var(--danger);
+}
+.guide-alt {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--surface-sunken);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.guide-alt b {
+  color: var(--text);
+  font-size: 14px;
+}
+.guide-alt a {
+  color: var(--accent);
+}
+.guide-alt ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.guide-link {
+  justify-self: start;
+  margin-top: 6px;
+}
+.guide-residents {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.guide-resident {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 12px 4px 10px;
+}
+.guide-resident img {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+  image-rendering: pixelated;
+}
+.guide-resident b {
+  margin-top: 4px;
+  font-size: 14px;
+}
+.guide-resident small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.guide-resident.on::after {
+  content: '✓';
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: 12px;
+}
+/* 开局向导第一页：一句话建的小镇引一下玩家那句话 */
+.guide-quote {
+  margin: 0 0 14px;
+  padding: 10px 14px;
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text);
+}
+/* 一句话建的小镇：建镇时写的几位排在村民库前面，一人一句，点一下选上 */
+.guide-sub {
+  margin: 4px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.guide-wishes + .guide-sub {
+  margin-top: 16px;
+}
+.guide-wishes {
+  display: grid;
+  gap: 8px;
+}
+.guide-wish {
+  position: relative;
+  min-height: 48px;
+  padding: 10px 40px 10px 12px;
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.guide-wish.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.guide-wish.on::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  margin-top: -10px;
+  border-radius: 50%;
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: 12px;
+}
+.guide-note {
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+/* 紧跟在连好的服务下面的一句：和卡片隔开 */
+.guide-conn + .guide-note {
+  margin-top: 12px;
+}
+.guide-note.guide-using {
+  margin: -6px 0 12px;
+}
+.guide-chips {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+}
+.guide-chip {
+  flex: none;
+  min-height: 34px;
+  border-radius: var(--r-pill);
+  font-size: 13px;
+}
+.guide-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.guide-body textarea {
+  width: 100%;
+  min-height: 128px;
+  font-size: 15px;
+  line-height: 1.6;
+  resize: none;
+}
+.guide-progress {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 0;
+  padding-left: 20px;
+  font-size: 14px;
+}
+.guide-progress li.doing {
+  color: var(--busy);
+}
+.guide-progress li.done {
+  color: var(--ok);
+}
+.guide-progress li.failed {
+  color: var(--danger);
+}
+.guide-progress small {
+  display: block;
+  color: var(--text-2);
+}
+.guide-foot {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 10px;
+  padding: 12px 20px 14px;
+  border-top: 1px solid var(--line);
+}
+.guide-foot.one {
+  grid-template-columns: 1fr;
+}
+.guide-foot button {
+  min-height: 48px;
+  font-size: 15px;
+}
+
+/* ---------- 一次性提示：深色小卡，箭头指着人或入口 ---------- */
+.coach:not([hidden]) {
+  position: fixed;
+  z-index: 70;
+  width: max-content;
+  max-width: 264px;
+  padding: 12px 14px 8px;
+  border-radius: var(--r-m);
+  background: #262b28;
+  color: #ffffff;
+  font-size: 14px;
+  line-height: 1.55;
+  box-shadow: var(--elev-3);
+}
+.coach p {
+  margin: 0;
+}
+.coach-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 6px;
+}
+.coach-row small {
+  font-size: 12px;
+  color: rgb(255 255 255 / 0.55);
+}
+.coach-row button {
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: #9fd6bd;
+  font-weight: 600;
+}
+.coach-arrow {
+  position: absolute;
+  left: var(--ax, 50%);
+  bottom: -6px;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  border-radius: 2px;
+  background: #262b28;
+  transform: rotate(45deg);
+}
+.coach.below .coach-arrow {
+  top: -6px;
+  bottom: auto;
+}
+.coach.free .coach-arrow {
+  display: none;
+}

@@ -1,0 +1,547 @@
+/* 界面语言「清楚」的基础组件：只用 tokens.css 的语义名，浅色和深色通用。
+ * 命名：ui-*。各界面自己的布局类放在各自的样式里，不重复定义这里已有的外观。 */
+
+/* ---------- 按钮、输入 ---------- */
+:where(button, select) {
+  font: inherit;
+  color: var(--text);
+  padding: 5px 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--r-s);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast) var(--ease),
+    background-color var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+:where(button:hover:not(:disabled), select:hover:not(:disabled)) {
+  border-color: var(--text-3);
+  background: var(--surface-sunken);
+}
+:where(button:active:not(:disabled)) {
+  background: var(--surface-hover);
+}
+:where(button:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+/* 主操作：一屏最多一个 */
+:where(button.primary, .ui-btn.primary) {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+:where(button.primary:hover:not(:disabled), .ui-btn.primary:hover:not(:disabled)) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+:where(.ui-btn.ghost) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--text-2);
+}
+:where(.ui-btn.ghost:hover:not(:disabled)) {
+  background: var(--surface-sunken);
+  border-color: transparent;
+  color: var(--text);
+}
+/* 文字里的链接式按钮：「连接模型」这类顺手的动作 */
+:where(button.ui-link) {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent-strong);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+:where(button.ui-link:hover:not(:disabled)) {
+  background: none;
+  color: var(--accent);
+}
+:where(.ui-btn.danger) {
+  color: var(--danger);
+}
+:where(.ui-btn.danger:hover:not(:disabled)) {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+:where(input, textarea) {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  border-radius: var(--r-s);
+  transition: border-color var(--t-fast) var(--ease);
+}
+:where(input, textarea):focus {
+  border-color: var(--accent);
+}
+:where(input, textarea)::placeholder {
+  color: var(--text-3);
+}
+
+/* ---------- 下拉框 ----------
+ * <select> 只显示当前值；点开后的列表由 design/select.ts 画：宽屏是贴着下拉框的浮层，手机竖屏从底部升起。
+ * 箭头画在背景上。背景图里用不了变量，颜色照 --text-3 和选中色写死，深色页另给一份。 */
+select:not([multiple]) {
+  appearance: none;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23777c77' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+  background-size: 16px 16px;
+}
+[data-tier='night'] select:not([multiple]) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237d837e' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+}
+/* 「请选择」这类提示项藏在列表外，框里写成浅色 */
+select:has(option:checked[hidden]) {
+  color: var(--text-3);
+}
+:where(select:disabled) {
+  opacity: 0.45;
+  cursor: default;
+}
+select.ui-select-open {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%232f6b55' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E");
+}
+[data-tier='night'] select.ui-select-open {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%235fae8c' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 15 6-6 6 6'/%3E%3C/svg%3E");
+}
+/* 点开后铺满屏幕的一层：透明（手机是遮罩），点在列表外就收起，这一下不会点到下面的东西 */
+.ui-select-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+}
+.ui-select-list {
+  position: absolute;
+  width: max-content;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--elev-3);
+}
+/* 焦点在列表上时不画外框：高亮的那一项就是键盘位置 */
+.ui-select-list:focus-visible {
+  outline: none;
+}
+.ui-select-group-label {
+  padding: 10px 10px 4px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.ui-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 180px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 14px;
+  line-height: 1.35;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.ui-select-option.active {
+  background: var(--surface-sunken);
+}
+.ui-select-option[aria-selected='true'] {
+  color: var(--accent);
+  font-weight: 600;
+  background: var(--accent-soft);
+}
+.ui-select-option[aria-disabled='true'] {
+  color: var(--text-3);
+  cursor: default;
+}
+.ui-select-option .game-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2;
+}
+/* 触屏上的浮层（折叠屏展开）：每项高一些，手指好点 */
+[data-input='touch'] .ui-select-option {
+  padding: 11px 12px;
+  font-size: 15px;
+}
+/* 手机竖屏：从底部升起的列表加遮罩，点遮罩或按返回键收起 */
+.ui-select-layer.sheet {
+  background: rgb(20 24 22 / 0.32);
+  touch-action: none;
+  animation: ui-select-fade var(--t-med) var(--ease);
+}
+.ui-select-layer.sheet[data-tier='night'] {
+  background: rgb(0 0 0 / 0.5);
+}
+.ui-select-sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: min(72vh, 560px);
+  padding: 0 12px 12px;
+  background: var(--surface);
+  border-radius: var(--r-m) var(--r-m) 0 0;
+  box-shadow: 0 -6px 24px rgb(20 24 22 / 0.16);
+  animation: ui-select-rise var(--t-med) var(--ease);
+}
+.ui-select-grip {
+  flex: none;
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 10px;
+  border-radius: 2px;
+  background: var(--line);
+}
+.ui-select-sheet h2 {
+  flex: none;
+  margin: 0 12px 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.ui-select-sheet .ui-select-list {
+  position: relative;
+  flex: 0 1 auto;
+  min-height: 0;
+  width: auto;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ui-select-sheet .ui-select-option {
+  min-width: 0;
+  padding: 13px 12px;
+  font-size: 16px;
+}
+.ui-select-sheet .ui-select-group-label {
+  padding: 14px 12px 6px;
+  font-size: 13px;
+}
+@keyframes ui-select-fade {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes ui-select-rise {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+}
+.ui-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-3);
+  font-size: 16px;
+  line-height: 1;
+}
+.ui-close:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: transparent;
+  color: var(--text);
+}
+
+/* ---------- 表面 ---------- */
+.ui-surface {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  color: var(--text);
+}
+/* 浮在地图上的卡片、对话框：唯一带阴影的表面 */
+.ui-float {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--elev-3);
+  color: var(--text);
+}
+
+/* ---------- 文字 ---------- */
+.ui-title {
+  margin: 0;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--text);
+}
+/* 小节标题：小号灰字 */
+.ui-caption {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-3);
+}
+.ui-kicker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.ui-kicker .game-icon {
+  width: 14px;
+  height: 14px;
+}
+
+/* ---------- 状态：前面一个小圆点 ---------- */
+.ui-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.ui-status::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--off);
+}
+.ui-status.ok::before {
+  background: var(--ok);
+}
+.ui-status.busy::before {
+  background: var(--busy);
+}
+.ui-status.danger::before {
+  background: var(--danger);
+}
+
+/* ---------- 小标签：灰底小字，少用 ---------- */
+.ui-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: nowrap;
+}
+.ui-chip .game-icon {
+  width: 13px;
+  height: 13px;
+}
+.ui-chip.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+}
+.ui-chip.busy,
+.ui-chip.accent {
+  background: var(--busy-soft);
+  color: var(--busy);
+}
+.ui-chip.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.ui-chip.info {
+  background: var(--info-soft);
+  color: var(--info);
+}
+
+/* ---------- 数字提醒：入口上有几条新内容，0 时不出现 ---------- */
+.ui-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ---------- 物品图：浅灰底方块里放像素图，整数倍放大 ---------- */
+.ui-slot {
+  --size: 64px;
+  --scale: 2;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 10px;
+  background: var(--surface-sunken);
+}
+.ui-slot.sm {
+  --size: 56px;
+  --scale: 2;
+}
+.ui-slot.lg {
+  --size: 96px;
+  --scale: 3;
+}
+.ui-slot .game-prop-picture {
+  display: grid;
+  place-items: center;
+  width: calc(26px * var(--scale));
+  height: calc(26px * var(--scale));
+}
+.ui-slot .game-prop-picture img {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+.ui-slot .game-icon {
+  width: 45%;
+  height: 45%;
+  color: var(--text-3);
+}
+
+/* ---------- 数值条 ---------- */
+.ui-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-sunken);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.ui-meter > span {
+  display: block;
+  height: 100%;
+  width: calc(var(--v, 0) * 100%);
+  background: var(--ok);
+}
+
+/* ---------- 网格里的可选格子 ---------- */
+.ui-tile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 4px;
+  padding: 12px 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  text-align: center;
+}
+.ui-tile:hover:not(:disabled) {
+  border-color: var(--text-3);
+  background: var(--surface);
+}
+.ui-tile.selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* ---------- 分段控制、搜索框 ---------- */
+.ui-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+}
+.ui-seg > button {
+  padding: 3px 12px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.ui-seg > button:hover:not(:disabled) {
+  background: transparent;
+  color: var(--text);
+}
+.ui-seg > button.on,
+.ui-seg > button[aria-pressed='true'],
+.ui-seg > button[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.12);
+}
+.ui-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ui-search .game-icon {
+  position: absolute;
+  left: 10px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+.ui-search input {
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  font-size: 13px;
+}
+
+/* ---------- 空状态 ---------- */
+.ui-empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 36px 16px;
+  text-align: center;
+  color: var(--text-3);
+}
+.ui-empty .game-icon {
+  width: 28px;
+  height: 28px;
+}
+
+/* 带图标的按钮：图标和文字之间留出间距 */
+.game-icon-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 键盘焦点：整个游戏同一种 */
+:where(button, input, select, textarea, summary, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}

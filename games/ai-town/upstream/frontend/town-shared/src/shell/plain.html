@@ -1,0 +1,105 @@
+<!-- 平铺界面（2D 地图）的外壳部件，由 shell/layout.ts 按 data-slot 放进 gameShell.html 的骨架。 -->
+<template data-slot="topbar">
+  <button id="back-to-maps" class="back-to-maps">← 选择小镇</button>
+  <span id="app-title">AI小镇</span>
+  <span id="clock">--:--</span>
+  <span id="world-facts" class="dim"></span>
+  <span id="conn" title="连接中…"
+    ><span id="conn-dot"></span><span id="conn-text">连接中…</span></span
+  >
+  <div id="speeds" role="group" aria-label="世界时间"></div>
+  <div id="audio-controls" role="group" aria-label="游戏声音">
+    <button id="music-toggle" type="button" aria-pressed="true" aria-label="音乐：开">
+      ♫ 音乐：开
+    </button>
+    <button id="effects-toggle" type="button" aria-pressed="true" aria-label="音效：开">
+      ♪ 音效：开
+    </button>
+  </div>
+  <span id="hold-flag" hidden></span>
+  <span id="avatar-flag" title="有人在控制化身；这时世界按正常速度走，不自动快进" hidden
+    >化身在场</span
+  >
+  <span class="spacer"></span>
+  <button id="open-residents" title="当前居民、村民库与加入小镇">村民</button>
+  <button id="open-usage" title="模型请求与 token 消耗">消耗</button>
+  <button id="open-settings" title="人设、长相、模型、额度、重置世界">设定</button>
+  <button id="open-help" title="开局向导、新手提示和按键说明">帮助</button>
+</template>
+<!-- 地图左下角的两个入口：场景物品、书与公告，放在地图画面之前 -->
+<template data-slot="map"
+  ><div class="map-corner">
+    <button
+      id="open-props"
+      class="map-props-button"
+      type="button"
+      aria-controls="props-view"
+      title="查看小镇里的物品、用途和影响"
+    >
+      场景物品
+    </button>
+    <button
+      id="open-books"
+      class="map-props-button"
+      type="button"
+      aria-controls="books-view"
+      title="村民写的书、公告栏上的告示；你也可以写书、贴公告"
+    >
+      书与公告
+    </button>
+  </div></template
+>
+<!-- 右栏：头部一行头像、名字、「地点 · 动作」和换人；下面依次是想法、计划、身体，
+     其余收进折叠项，按钮行放最后。 -->
+<template data-slot="info-panel"
+  ><div id="info-head">
+    <span class="info-portrait"></span>
+    <div id="info-who">
+      <span id="info-name">未选中村民</span>
+      <!-- 地点与动作之间不能有空白：「 · 」由样式加在动作前面 -->
+      <!-- prettier-ignore -->
+      <div id="info-where"><div id="info-place" class="dim">点击地图上的村民查看信息</div><div id="info-activity"></div></div>
+      <div id="info-transit"></div>
+    </div>
+    <label class="info-switch"
+      >换人 ▾<select aria-label="选择村民" id="resident-select" hidden></select></label
+    ><button id="info-collapse">收起</button>
+  </div>
+  <div id="info-body">
+    <p id="info-stop" class="info-stop" role="status" hidden>
+      <span></span><button type="button" class="link"></button>
+    </p>
+    <div id="info-home" class="dim"></div>
+    <!-- 和这个人说话：进入化身、走过去搭话（化身没开放时不显示） -->
+    <div id="info-talk-row" class="info-talk" hidden>
+      <button id="info-talk" class="primary" type="button">和村民说话</button>
+      <small id="info-talk-hint"></small>
+    </div>
+    <h3 id="info-thought-caption" class="section-caption">想法</h3>
+    <div id="info-thought" class="dim">这次没有留下想法</div>
+    <h3 class="section-caption">计划</h3>
+    <div id="info-plan" class="dim" aria-live="polite">计划数据暂不可用</div>
+    <h3 class="section-caption">身体</h3>
+    <div id="info-needs"></div>
+    <section id="info-physiology"></section>
+    <div id="info-folds">
+      <details id="info-inventory"></details>
+      <details class="info-fold">
+        <summary>最近变化</summary>
+        <div id="info-recent" class="dim">—</div>
+      </details>
+      <div class="info-body-folds"></div>
+      <details class="info-fold">
+        <summary>目标与记忆</summary>
+        <div id="info-agent"></div>
+      </details>
+    </div>
+    <div class="row" id="info-actions">
+      <button id="info-follow">跟随</button><button id="info-possess" type="button">附身</button>
+      <button id="info-diary" title="按天看他具体做了什么、想了什么">日志</button>
+      <button id="info-chat" title="查看参与过的聊天及完整台词">聊天记录</button>
+      <button id="info-memory" title="查看他整理的经历、认识、目标，以及它们的来源">记忆</button>
+      <button id="info-edit">编辑</button>
+    </div>
+  </div></template
+>

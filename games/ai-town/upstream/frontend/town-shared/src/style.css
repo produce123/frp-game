@@ -1,0 +1,3137 @@
+/* AI小镇前端共用样式（地图选择页、固定地图视图、各整页面板）。
+   颜色、圆角、阴影、字体和基础组件都在 design/ 下，这里只写各界面自己的布局。 */
+@import './design/tokens.css';
+@import './design/components.css';
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  overflow-x: hidden;
+}
+body {
+  margin: 0;
+  height: 100vh;
+  background: var(--surface-page);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+input.err,
+textarea.err {
+  border-color: var(--band-collapse);
+}
+select {
+  max-width: 100%;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.dim {
+  color: var(--dim);
+  font-size: 11px;
+}
+.ok {
+  color: var(--band-steady);
+}
+.drop {
+  color: var(--band-collapse);
+}
+/* hidden 属性必须压过各处的 display:flex/grid，这是唯一保留的 !important */
+[hidden] {
+  display: none !important;
+}
+/* gameIcon 的线条图标：3D 由 game-theme 设描边与贴图；2D 没有这套样式时，
+   SVG 按默认黑色填充、默认尺寸画成大黑块，这里给一份最小的线条画法 */
+:where(body:not(.game-theme)) .game-icon {
+  width: 1.25em;
+  height: 1.25em;
+  flex: none;
+  vertical-align: -0.25em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* 整页替换地图页的面板：竖排、占满视口 */
+.page-view {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+}
+/* 每个页面的顶条 */
+.page-topbar {
+  position: relative;
+  z-index: 6;
+  flex: none;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+/* 「← 返回地图」：轻按钮，不抢页名 */
+.page-topbar > button[id$='-back'] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-2);
+}
+.page-topbar > button[id$='-back']:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: transparent;
+  color: var(--text);
+}
+/* 整页的页名：紧跟「返回地图」，各页同一字号 */
+.page-topbar
+  :where(
+    #diary-title,
+    #memory-title,
+    #usage-title,
+    #books-title,
+    #residents-title,
+    #settings-title,
+    #props-title
+  ) {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+/* 页头右侧的时间和操作靠 spacer 推到最右 */
+.page-topbar > .spacer {
+  flex: 1;
+}
+/* 村民、消耗、书与公告页的正文：可滚动，内容居中，最宽 1200 像素 */
+#residents-page,
+#usage-page,
+#books-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px max(24px, calc((100% - 1200px) / 2)) 32px;
+}
+/* 面板内的小节标题 */
+.section-caption {
+  font-size: 12px;
+  color: var(--caption);
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+/* ---------- 地图页 ---------- */
+#obs-view {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+
+#app-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.back-to-maps {
+  color: var(--dim);
+  background: transparent;
+  border: none;
+  padding: 8px 4px;
+  font-size: 12px;
+}
+.back-to-maps:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.back-to-maps:hover {
+  color: var(--accent);
+}
+a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.entry-state {
+  max-width: 520px;
+  margin: 15vh auto;
+  padding: 32px;
+  line-height: 1.8;
+}
+.entry-state h1 {
+  font-size: 24px;
+}
+.entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+.entry-actions a {
+  color: var(--accent);
+}
+#clock {
+  font-size: 17px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+#conn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--dim);
+  cursor: default;
+}
+#conn-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--band-collapse);
+  flex: none;
+}
+#conn.ok {
+  color: var(--band-steady);
+}
+#conn.ok #conn-dot {
+  background: var(--band-steady);
+}
+#hold-flag {
+  font-size: 11px;
+  color: var(--band-collapse);
+  border: 1px solid var(--band-collapse);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+  max-width: 42ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#hold-flag.warn {
+  color: var(--busy);
+  border-color: var(--busy);
+}
+#avatar-flag {
+  font-size: 11px;
+  color: var(--band-steady);
+  border: 1px solid var(--band-steady);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+  white-space: nowrap;
+}
+#audio-controls {
+  display: flex;
+  gap: 4px;
+}
+#audio-controls button {
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+#audio-controls button[aria-pressed='false'] {
+  color: var(--dim);
+  background: transparent;
+}
+#topbar .spacer {
+  flex: 1;
+}
+/* 2D 顶栏（3D 的 game-theme 另有一套）：一行放下，放不下时先压缩标题和暂停原因 */
+body:not(.game-theme) #topbar {
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+}
+body:not(.game-theme) #topbar > * {
+  flex: none;
+}
+body:not(.game-theme) #topbar > :is(#app-title, #hold-flag) {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+body:not(.game-theme) #topbar > .spacer {
+  flex: 1;
+}
+/* 开始/暂停钮：暂停时用主操作色，提示从这里开始；运行时是普通按钮 */
+#speeds {
+  display: flex;
+  flex: none;
+}
+.speed-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 76px;
+  font-weight: 600;
+}
+.speed-toggle .game-icon {
+  width: 14px;
+  height: 14px;
+}
+.speed-toggle.go:not(:disabled) {
+  background: var(--accent-fill);
+  border-color: var(--accent-fill);
+  color: var(--on-accent);
+}
+.speed-toggle.go:hover:not(:disabled) {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+body:not(.game-theme) #audio-controls button {
+  padding-inline: 7px;
+}
+/* 顶栏右边的入口：图标加字、字重和「开始」一样，底色深一档，免得在白底上看不出是按钮 */
+body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings) {
+  padding-inline: 11px;
+  font-weight: 600;
+  background: var(--surface-sunken);
+}
+body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings):hover {
+  background: var(--surface-hover);
+}
+body:not(.game-theme) #topbar > :is(#open-residents, #open-usage, #open-settings) .game-icon {
+  width: 16px;
+  height: 16px;
+}
+/* 空镇子（emptyTown.ts）：第一步是请村民，「邀请村民」用主色描出来；「开始」和暂停提示先让位 */
+html[data-empty-town] body:not(.game-theme) #topbar > #open-residents {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+html[data-empty-town] body:not(.game-theme) #topbar > #open-residents:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
+}
+html[data-empty-town] .speed-toggle.go:not(:disabled) {
+  background: var(--surface);
+  border-color: var(--line);
+  color: var(--text);
+}
+html[data-empty-town] .speed-toggle.go:hover:not(:disabled) {
+  background: var(--surface-sunken);
+  border-color: var(--text-3);
+}
+html[data-empty-town] .pause-hint {
+  display: none;
+}
+/* 空镇子的邀请卡：浮在地图正中 */
+.empty-town {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px));
+  padding: 20px 22px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--elev-3);
+  text-align: center;
+}
+.empty-town h2 {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+.empty-town p {
+  margin: 0 0 16px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.empty-town-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+/* 推荐的几位：头像一排，旁边写为什么 */
+.empty-rec {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+  text-align: left;
+}
+.empty-faces {
+  display: flex;
+  flex: none;
+}
+.empty-face {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent-soft);
+  object-fit: cover;
+  image-rendering: pixelated;
+  font-weight: 600;
+}
+.empty-face + .empty-face {
+  margin-left: -10px;
+}
+.empty-rec-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.empty-rec-words b {
+  font-size: 14px;
+}
+.empty-rec-words span {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.empty-town .model-line {
+  display: block;
+  margin-top: 12px;
+}
+html.avatar-controlling .empty-town {
+  display: none;
+}
+/* 世界设定标签：只在测试模式、待设置等不寻常状态出现，写成小字灰色 */
+body:not(.game-theme) #world-mode {
+  padding: 0 6px;
+  color: var(--dim);
+  background: transparent;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  font-size: 11px;
+}
+body:not(.game-theme) #world-mode:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+/* 顶栏压在地图上的浮层（按钮 ≤6、化身界面 12）之上 */
+#topbar {
+  z-index: 13;
+}
+
+#obs-main {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  position: relative;
+}
+/* user-select none：双击放大时浏览器会把「选词」跳到最近的可选文字（缩放钮上的 +） */
+#map {
+  flex: 1;
+  min-width: 0;
+  cursor: grab;
+  touch-action: none;
+  position: relative;
+  user-select: none;
+}
+#map.drag {
+  cursor: grabbing;
+}
+/* 安卓 WebView 点地图时会把焦点给地图 SVG，画上一圈橙色的默认焦点框；地图不是键盘控件，不要这圈框 */
+#map > svg:focus {
+  outline: none;
+}
+/* 图标（gameIcon）不在此列：地图容器里的浮层也会用到它们 */
+#map svg:not(.game-icon) {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+/* 地图左下角的两个入口：场景物品、书与公告 */
+.map-corner {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 5;
+  display: flex;
+  gap: 8px;
+}
+.map-props-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--r-s);
+  background: var(--surface);
+  font-weight: 500;
+  box-shadow: var(--elev-3);
+  touch-action: manipulation;
+}
+.map-props-button .game-icon {
+  width: 16px;
+  height: 16px;
+}
+.map-props-button:active {
+  box-shadow: var(--elev-1);
+}
+/* 地图右下角缩放钮：+ / 当前百分比（点击回 100%）/ − */
+.map-zoom {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  box-shadow: var(--elev-3);
+}
+.map-zoom button {
+  width: 44px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  font-size: 17px;
+  line-height: 1;
+}
+.map-zoom .zoom-value {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+.map-zoom button + button {
+  border-top: 1px solid var(--line);
+}
+.map-zoom button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+.map-zoom button:disabled {
+  color: var(--line);
+  cursor: default;
+}
+.map-zoom button:focus-visible {
+  outline-offset: -2px;
+}
+.map-zoom .zoom-readout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  height: auto;
+  padding: 4px 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+/* 「缩放」「俯角」字样：比数值淡、不加粗 */
+.map-zoom .zoom-readout small,
+.map-pitch-caption {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--dim);
+}
+.map-zoom .zoom-readout.on {
+  color: var(--accent);
+  font-weight: 700;
+}
+/* 「整图」是这个按钮唯一的字：比旁边的小字清楚一点；没在整图时用主色 */
+.map-zoom .zoom-readout small {
+  font-size: 11px;
+  color: var(--text-2);
+}
+.map-zoom .zoom-readout.on small {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 世界暂停时地图上方居中的提示条（只有 2D 版装） */
+.pause-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 6px 14px;
+  border-radius: var(--r-s);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+/* 化身提示条、重新连上的提示也在地图顶部，同时出现时暂停提示让到下面 */
+#map:has(.avatar-toast:not([hidden])) .pause-hint,
+#map:has(.reconnect-hint:not([hidden])) .pause-hint:not(.reconnect-hint) {
+  top: 50px;
+}
+.pause-hint[hidden] {
+  display: none;
+}
+/* 等模型：平静的提示条，不用红色；按钮直接去连模型或一键选好 */
+.model-wait {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  z-index: 6;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: min(560px, calc(100% - 24px));
+  padding: 10px 12px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+  color: var(--text);
+}
+.model-wait[hidden] {
+  display: none;
+}
+/* 化身的操作提示也在地图顶部：同时出现时让到下面 */
+#map:has(.avatar-toast:not([hidden])) .model-wait {
+  top: 50px;
+}
+.model-wait-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--busy);
+}
+.model-wait-words {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.model-wait-words b {
+  font-size: 14px;
+  font-weight: 600;
+}
+.model-wait-words span {
+  font-size: 12.5px;
+  color: var(--text-2);
+  line-height: 1.45;
+}
+.model-wait button {
+  flex: none;
+}
+.model-wait button[hidden],
+.model-wait-meter[hidden] {
+  display: none;
+}
+/* 内置模型的下载进度 */
+.model-wait-meter {
+  width: 220px;
+  max-width: 100%;
+  margin-top: 4px;
+}
+.model-wait-meter > span {
+  transition: width 0.9s linear;
+}
+#map:has(.model-wait:not([hidden])) .town-notices {
+  top: 84px;
+}
+/* 顶栏的「等你连接模型」：橙色小圆点，点了和提示条的按钮一样 */
+.model-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 0;
+  padding: 1px 10px 1px 8px;
+  border: 1px solid var(--busy);
+  border-radius: var(--r-pill);
+  background: var(--busy-soft);
+  color: var(--busy);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.model-flag::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.model-flag[hidden] {
+  display: none;
+}
+/* 顶栏「帮助」的菜单与按键说明 */
+.help-menu {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+}
+.help-menu[hidden] {
+  display: none;
+}
+.help-menu > button {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  padding: 8px 10px;
+}
+.help-menu > button:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.help-keys {
+  gap: 10px;
+  width: 340px;
+  padding: 14px 16px;
+}
+.help-keys b {
+  font-size: 14px;
+}
+.help-keys dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 12.5px;
+}
+.help-keys dt {
+  color: var(--text);
+  font-weight: 600;
+}
+.help-keys dd {
+  margin: 0;
+  color: var(--text-2);
+}
+.help-keys > button {
+  align-self: flex-end;
+  border: 1px solid var(--line);
+  padding: 4px 12px;
+}
+/* 被另一个页面挤下线：屏幕正中一张卡，盖在向导和对话框之上，说清原因，回不回来由玩家决定 */
+.displaced-card {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  z-index: 95;
+  transform: translate(-50%, -50%);
+  display: grid;
+  gap: 8px;
+  width: min(380px, calc(100% - 32px));
+  padding: 18px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  color: var(--text);
+}
+.displaced-card b {
+  font-size: 16px;
+}
+.displaced-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-2);
+}
+.displaced-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+/* 地图下方的一句话结果提示 */
+.map-toast {
+  position: absolute;
+  /* 让开地图底部正中的「进入化身」 */
+  bottom: 72px;
+  left: 50%;
+  z-index: 6;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 8px 16px;
+  border-radius: var(--r-s);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  cursor: default;
+}
+.map-toast[hidden] {
+  display: none;
+}
+/* 点「开始」时有人没选模型：就地问一句 */
+.start-ask {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: min(320px, calc(100vw - 24px));
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+  color: var(--text);
+}
+.start-ask b {
+  font-size: 14px;
+}
+.start-ask span {
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-2);
+}
+.start-ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+/* 和小镇断开时（shell/reconnect.ts）只出「正在重新连接」那条，「世界已暂停」和快进提示先收起 */
+html[data-offline] :is(.pause-hint:not(.reconnect-hint), .fast-hint) {
+  display: none;
+}
+/* 自动快进的提示：和暂停提示同一个位置但更淡，重要事件卡出现时盖在它上面 */
+.fast-hint {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  z-index: 5;
+  transform: translateX(-50%);
+  max-width: calc(100% - 24px);
+  padding: 4px 12px;
+  border-radius: var(--r-pill);
+  background: var(--toast-bg);
+  color: var(--toast-ink);
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0.85;
+  animation: fast-hint-in var(--t-med) var(--ease) both;
+}
+.fast-hint[hidden] {
+  display: none;
+}
+.fast-hint .game-icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+@keyframes fast-hint-in {
+  from {
+    opacity: 0;
+  }
+}
+.pause-hint kbd {
+  margin: 0 2px;
+  padding: 1px 5px;
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  font:
+    600 11px ui-monospace,
+    Menlo,
+    monospace;
+}
+
+/* 右侧只读村民信息：桌面端左边缘可拖动调宽 */
+#info-resizer {
+  width: 7px;
+  flex: none;
+  cursor: col-resize;
+  touch-action: none;
+  position: relative;
+  background: transparent;
+}
+#info-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--line);
+  transition:
+    width 0.12s,
+    left 0.12s,
+    background 0.12s;
+}
+#info-resizer:hover::after,
+#info-resizer:focus-visible::after,
+#info-resizer.drag::after {
+  left: 2px;
+  width: 3px;
+  background: var(--accent);
+}
+#info-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+body.resizing-info {
+  cursor: col-resize;
+  user-select: none;
+}
+#info-panel {
+  width: var(--info-panel-width, 330px);
+  flex: none;
+  min-width: 0;
+  background: var(--card);
+  overflow-y: auto;
+  padding: 10px 14px;
+}
+#info-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+#info-name {
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--text);
+}
+#info-place,
+#info-activity {
+  line-height: 1.7;
+}
+/* Agent 停下、要玩家处理：卡片正文最上面一行，橙色，带一个能马上处理的按钮 */
+.info-stop {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-radius: var(--r-s);
+  background: var(--busy-soft);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.info-stop[hidden] {
+  display: none;
+}
+/* 「和 X 说话」：右栏头部下面的主按钮，下面一行小字说会发生什么 */
+.info-talk {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+.info-talk[hidden] {
+  display: none;
+}
+.info-talk button {
+  width: 100%;
+  min-height: 34px;
+}
+.info-talk small {
+  color: var(--text-3);
+  font-size: 11.5px;
+  text-align: center;
+}
+.info-stop button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--busy);
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+#info-transit {
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+/* 想法块：新想法到达强调一次 */
+#info-thought.thought-box {
+  background: var(--note-bg);
+  border-left: 3px solid var(--accent);
+  padding: 8px 10px;
+  border-radius: 0 6px 6px 0;
+}
+.thought-text {
+  font-size: 13px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.thought-foot {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--dim);
+}
+.ev-trigger {
+  font-size: 10px;
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--surface-hover);
+  color: var(--dim);
+  white-space: nowrap;
+}
+.ev-trigger {
+  margin-left: 8px;
+}
+@keyframes thoughtflash {
+  from {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  to {
+    box-shadow: none;
+  }
+}
+#info-thought.flash {
+  animation: thoughtflash 1.1s ease-out 1;
+}
+.ev-thought {
+}
+#event-latest-text.thought {
+  color: var(--ink);
+}
+/* 手头的活：进度条 = 世界执行记录的计数 */
+#world-facts {
+  font-size: 12px;
+}
+/* ---------- 日志页 ---------- */
+#diary-title {
+  font-weight: 700;
+}
+#diary-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+#diary-nav {
+  flex: none;
+  width: 180px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: var(--card);
+  padding: 8px 0;
+}
+#diary-nav .nav-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 0;
+  background: none;
+  padding: 7px 14px 7px 22px;
+}
+#diary-nav .nav-item:hover {
+  background: var(--surface-sunken);
+}
+#diary-nav .nav-item.on {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+#diary-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 26px 32px;
+  max-width: 900px;
+}
+.diary-head h2 {
+  margin: 0 0 6px;
+  font-size: 18px;
+}
+.diary-summary {
+  margin-bottom: 14px;
+  line-height: 1.7;
+}
+.diary-rows {
+  display: grid;
+  gap: 4px;
+}
+.diary-row {
+  display: grid;
+  grid-template-columns: 4em 1fr auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 4px 8px;
+  border-radius: 4px;
+  line-height: 1.55;
+}
+.diary-row.thought {
+  background: var(--note-bg);
+  border-left: 3px solid var(--accent);
+}
+.diary-row.thought .diary-text {
+}
+.diary-row.important .diary-text {
+  font-weight: 600;
+  color: var(--band-collapse);
+}
+.diary-row.important .important-detail {
+  font-weight: 400;
+}
+.diary-row .diary-text {
+  overflow-wrap: anywhere;
+}
+/* 记忆页的样式在 memory/style.css */
+#memory-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+}
+@media (max-width: 1023px) {
+  #diary-body {
+    flex-direction: column;
+  }
+  #diary-nav {
+    width: auto;
+    display: flex;
+    overflow-x: auto;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    padding: 4px 8px;
+  }
+  #diary-nav .nav-item {
+    width: auto;
+    flex: none;
+    padding: 5px 10px;
+    border-radius: var(--r-s);
+  }
+}
+#info-recent {
+  font-size: 12px;
+  line-height: 1.7;
+}
+#info-recent .ev-clock {
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+  margin-right: 6px;
+}
+#info-actions {
+  margin-top: 12px;
+}
+#info-follow.on {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: var(--accent-fill);
+}
+
+/* 2D 右栏：头像在左；第一行名字、换人、收起，「地点 · 动作」和在路上的进度另起一行占满宽度，
+   不会被右边两个按钮挤成一条窄列（「广场 · 正在 / 交谈 · 阿 / 岚、麦青」） */
+:where(body:not(.game-theme)) #info-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'portrait name switch collapse'
+    'portrait where where where'
+    'portrait transit transit transit';
+  align-items: center;
+  column-gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+:where(body:not(.game-theme)) #info-head .info-portrait {
+  grid-area: portrait;
+  align-self: start;
+}
+:where(body:not(.game-theme)) #info-who {
+  display: contents;
+}
+:where(body:not(.game-theme)) #info-name {
+  grid-area: name;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:where(body:not(.game-theme)) #info-where {
+  grid-area: where;
+}
+:where(body:not(.game-theme)) #info-transit {
+  grid-area: transit;
+}
+:where(body:not(.game-theme)) #info-head .info-switch {
+  grid-area: switch;
+}
+:where(body:not(.game-theme)) #info-collapse {
+  grid-area: collapse;
+}
+.info-portrait:empty {
+  display: none;
+}
+.info-portrait img {
+  display: block;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  object-fit: cover;
+  object-position: top;
+  image-rendering: pixelated;
+}
+#info-who {
+  flex: 1;
+  min-width: 0;
+}
+#info-who > * {
+  display: block;
+  font-size: 12px;
+  color: var(--dim);
+  line-height: 1.5;
+}
+#info-who > #info-name {
+  font-size: 17px;
+  color: var(--text);
+}
+#info-where > * {
+  display: inline;
+  font-size: inherit;
+  line-height: inherit;
+}
+#info-where > :not(:empty) + :not(:empty)::before {
+  content: ' · ';
+}
+.info-switch {
+  position: relative;
+  flex: none;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  white-space: nowrap;
+  cursor: pointer;
+}
+/* 下拉框透明地盖在文字上，点开的是统一的下拉列表（design/select.ts） */
+.info-switch select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+.info-switch:has(select[hidden]) {
+  display: none;
+}
+.info-switch:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* 需求条：名字 · 条 · 整数，一行一项；阈值只画细线，数字在悬停提示里 */
+:where(body:not(.game-theme)) #info-needs .need {
+  display: grid;
+  grid-template-columns: 34px 1fr 28px;
+  align-items: center;
+  column-gap: 8px;
+  margin-top: 6px;
+  font-size: 12px;
+}
+:where(body:not(.game-theme)) #info-needs .need-head {
+  display: contents;
+}
+:where(body:not(.game-theme)) #info-needs .need-label {
+  grid-area: 1 / 1;
+}
+:where(body:not(.game-theme)) #info-needs .need-track {
+  grid-area: 1 / 2;
+  height: 8px;
+  margin: 0;
+  border: 0;
+  border-radius: 4px;
+}
+:where(body:not(.game-theme)) #info-needs .need-value {
+  grid-area: 1 / 3;
+  text-align: right;
+}
+:where(body:not(.game-theme)) #info-needs .need-state {
+  grid-area: 2 / 2 / 3 / 4;
+  margin: 0;
+}
+:where(body:not(.game-theme)) #info-needs .need:not(.need-off) .need-state {
+  display: none;
+}
+:where(body:not(.game-theme)) #info-needs .need-tick {
+  width: 1px;
+  background: rgba(61, 70, 80, 0.4);
+}
+.needs-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--dim);
+}
+.needs-note.needs-note-warn {
+  color: var(--busy);
+  font-weight: 600;
+}
+#info-physiology:empty {
+  display: none;
+}
+/* 折叠项：随身物品、最近变化、现在为什么变化、身体与生命记录、模型设置 */
+#info-folds {
+  margin-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+#info-folds details,
+#info-folds #info-inventory {
+  margin: 0;
+  padding: 7px 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+}
+#info-folds summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+#info-folds details > :not(summary) {
+  margin-top: 6px;
+}
+#info-folds ul,
+#info-folds ol {
+  padding-left: 20px;
+  max-height: 230px;
+  overflow: auto;
+}
+:where(body:not(.game-theme)) #info-actions {
+  position: sticky;
+  bottom: -10px;
+  z-index: 1;
+  padding: 10px 0;
+  background: var(--card);
+}
+/* 聊天记录：右栏里的一页，打开时替换右栏原来的内容 */
+#info-panel.chat-open {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+#info-panel.chat-open > :not(#info-chat-page) {
+  display: none;
+}
+#info-chat-page {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+#info-chat-page header,
+#info-chat-page footer {
+  display: flex;
+  flex: none;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+#info-chat-page header strong {
+  flex: 1;
+}
+#info-chat-page footer {
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+  font-size: 12px;
+}
+#info-chat-page .chat-history-content {
+  padding: 12px 14px;
+}
+#info-chat-page .chat-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 8px;
+  padding: 10px 12px;
+}
+
+/* 当前执行 + 已通过校验的后续计划；列表只读，不伪装成可勾选控件 */
+.plan-current {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+.plan-current-marker {
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.plan-caption,
+.plan-next-head,
+.plan-note {
+  color: var(--dim);
+  font-size: 11px;
+}
+.plan-current-text {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.plan-next-head {
+  margin-top: 10px;
+}
+.plan-list {
+  margin: 5px 0 0;
+  padding-left: 25px;
+  max-height: 230px;
+  overflow-y: auto;
+  line-height: 1.55;
+}
+.plan-list li {
+  padding: 3px 2px;
+  overflow-wrap: anywhere;
+}
+.plan-list li::marker {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.plan-empty {
+  margin-top: 5px;
+  color: var(--dim);
+  font-size: 12px;
+}
+.plan-note {
+  margin-top: 8px;
+  line-height: 1.45;
+}
+
+/* 需求状态条：数值 + 文字 + 分界刻度 */
+.need {
+  margin-top: 10px;
+}
+.need-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.need-label {
+  font-weight: 600;
+}
+.need-value {
+  font-variant-numeric: tabular-nums;
+}
+.need-state {
+  margin-left: auto;
+  font-size: 12px;
+}
+.need-track {
+  position: relative;
+  height: 12px;
+  margin-top: 4px;
+  background: var(--surface-hover);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  overflow: hidden;
+}
+.need-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--band, var(--band-steady));
+}
+.need-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: rgba(61, 70, 80, 0.55);
+}
+.need-scale {
+  position: relative;
+  height: 14px;
+  font-size: 10px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+.need-scale span {
+  position: absolute;
+  transform: translateX(-50%);
+}
+.need.band-steady {
+  --band: var(--band-steady);
+}
+.need.band-voiced {
+  --band: var(--band-voiced);
+}
+.need.band-ring {
+  --band: var(--band-ring);
+}
+.need.band-collapse {
+  --band: var(--band-collapse);
+}
+.need .need-state {
+  color: var(--band);
+}
+/* 跨级一次性强调（动画结束即移除 class；平稳期不闪烁） */
+@keyframes bandflash {
+  0% {
+    box-shadow: 0 0 0 0 var(--band);
+  }
+  40% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--band) 45%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+/* 世界设定里关掉的需求：灰条，不显示数值与刻度 */
+.need.need-off .need-track {
+  opacity: 0.35;
+}
+.need.need-off :is(.need-fill, .need-tick, .need-scale) {
+  visibility: hidden;
+}
+.need.need-off :is(.need-label, .need-state) {
+  color: var(--dim);
+}
+.need.flash .need-track {
+  animation: bandflash 1.1s ease-out 1;
+}
+
+/* 底部事件区 */
+#event-bar {
+  flex: none;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+  position: relative;
+  font-size: 12px;
+}
+#event-latest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  min-height: 40px;
+}
+#event-latest-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#event-latest-text.alert {
+  color: var(--band-collapse);
+}
+#event-full {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+}
+#event-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  flex: none;
+  flex-wrap: wrap;
+}
+.event-filter.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+#event-autoscroll-label {
+  font-size: 11px;
+  color: var(--dim);
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+#event-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px 8px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.65;
+  color: var(--text);
+}
+/* 没有事件（或筛选后一条也没有）时写一句，不留一整块空白 */
+#event-list:empty::before {
+  content: '暂无事件';
+  color: var(--dim);
+}
+#event-list .ev-clock {
+  color: var(--dim);
+  margin-right: 8px;
+  font-variant-numeric: tabular-nums;
+}
+#event-list .alert {
+  color: var(--band-collapse);
+}
+
+/* ---------- 设定中心（整页替换） ---------- */
+#settings-title {
+  font-weight: 700;
+}
+#settings-paused {
+  font-size: 11px;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+}
+#settings-resume {
+  font-size: 12px;
+  color: var(--dim);
+}
+#settings-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+#settings-nav {
+  width: 210px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border-right: 1px solid var(--line);
+  overflow-y: auto;
+  padding: 10px 0;
+}
+#settings-nav .nav-group {
+  margin: 0;
+  padding: 10px 14px 4px;
+}
+#settings-nav .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  border-radius: 0;
+  padding: 6px 14px 6px 22px;
+  cursor: pointer;
+}
+#settings-nav .nav-item:hover {
+  background: var(--surface-sunken);
+}
+#settings-nav .nav-item.on {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+#settings-nav .nav-badge {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dim);
+}
+#settings-nav .nav-badge.warn {
+  color: var(--band-collapse);
+}
+#settings-nav .nav-item.dirty .nav-label::after {
+  content: ' ●';
+  color: var(--accent);
+}
+/* 「重置世界…」在目录最底下，和其他项隔开 */
+#settings-nav .nav-danger {
+  margin-top: auto;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+  color: var(--band-collapse);
+}
+/* 村民组顶部的换人框：点开列出所有村民 */
+.settings-resident-picker {
+  position: relative;
+  flex: none;
+  margin: 2px 12px 4px;
+}
+.settings-resident-picker > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  cursor: pointer;
+  list-style: none;
+}
+.settings-resident-picker > summary::-webkit-details-marker {
+  display: none;
+}
+.settings-resident-switch {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--dim);
+}
+.settings-resident-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  display: grid;
+  gap: 2px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  box-shadow: var(--elev-2);
+}
+.settings-resident-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.settings-resident-menu button:hover,
+.settings-resident-menu button.on {
+  background: var(--surface-sunken);
+}
+.settings-face {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background: var(--note-bg);
+  font-size: 13px;
+}
+.settings-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.settings-face .resident-portrait {
+  width: 100%;
+  height: 100%;
+}
+.settings-no-resident {
+  margin: 2px 22px 6px;
+  font-size: 12px;
+  color: var(--dim);
+}
+#settings-page {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 16px 22px 24px;
+}
+/* 保存栏只在有未保存修改时出现 */
+#settings-savebar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  background: var(--ink);
+  color: #fff;
+}
+#settings-savebar-hint {
+  flex: 1;
+  font-size: 13px;
+}
+#settings-discard {
+  background: transparent;
+  color: #fff;
+}
+#settings-save {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 设定子页通用 */
+.spage h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.spage .hint {
+  color: var(--dim);
+  font-size: 12px;
+  margin: 4px 0 12px;
+  line-height: 1.6;
+}
+.spage .page-status {
+  margin-top: 10px;
+  font-size: 12px;
+  min-height: 16px;
+}
+.spage h3 {
+  font-size: 13px;
+  margin: 18px 0 6px;
+}
+.spage fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: 10px 14px 12px;
+  margin: 0 0 14px;
+}
+.spage legend {
+  font-size: 12px;
+  color: var(--dim);
+  padding: 0 6px;
+}
+
+/* 人设页：宽屏左原文右预览，窄屏页签切换 */
+.persona-tabs {
+  display: none;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.persona-tabs button.on {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.persona-split {
+  display: flex;
+  gap: 12px;
+  align-items: stretch;
+}
+.persona-split > * {
+  flex: 1;
+  min-width: 0;
+}
+#persona-text {
+  width: 100%;
+  min-height: 320px;
+  resize: vertical;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  line-height: 1.6;
+}
+.persona-preview {
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  padding: 8px 14px;
+  line-height: 1.7;
+  overflow-wrap: break-word;
+}
+.persona-preview h1,
+.persona-preview h2,
+.persona-preview h3,
+.persona-preview h4 {
+  margin: 10px 0 4px;
+}
+.persona-preview p {
+  margin: 6px 0;
+}
+.persona-preview ul {
+  margin: 6px 0;
+  padding-left: 22px;
+}
+
+/* 使用模型页 / 模型服务页 */
+.form-row {
+  margin: 8px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 460px;
+}
+.form-row label {
+  font-size: 12px;
+  color: var(--dim);
+}
+.form-status {
+  margin-top: 8px;
+  font-size: 12px;
+  min-height: 16px;
+}
+
+/* 模型服务页：一张表，点开一行在行下显示编辑表单 */
+.prov-table {
+  max-width: 860px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--card);
+  overflow: hidden;
+}
+.prov-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 170px) minmax(90px, auto) 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.prov-table > :last-child {
+  border-bottom: none;
+}
+.prov-state {
+  justify-self: start;
+  font-size: 12px;
+  border-radius: var(--r-pill);
+  padding: 1px 8px;
+}
+.prov-state.ok {
+  background: var(--surface-sunken);
+  color: var(--band-steady);
+}
+.prov-state.no {
+  background: var(--surface-sunken);
+  color: var(--dim);
+}
+.prov-state.local {
+  background: var(--surface-sunken);
+  color: var(--info);
+}
+.prov-state.busy {
+  background: var(--surface-sunken);
+  color: var(--busy);
+}
+.prov-state.info {
+  background: var(--surface-sunken);
+  color: var(--info);
+}
+.prov-state.danger {
+  background: var(--surface-sunken);
+  color: var(--danger);
+}
+.prov-users {
+  color: var(--dim);
+  font-size: 12px;
+}
+/* 内置模型点开：下载和更新的几行，不是表单 */
+.prov-form.builtin-panel {
+  display: block;
+  padding: 2px 14px 4px;
+}
+.builtin-panel .set-rows {
+  max-width: none;
+}
+.builtin-panel .set-row:last-child {
+  border-bottom: 0;
+}
+.prov-more {
+  grid-template-columns: 1fr auto;
+  color: var(--dim);
+}
+.prov-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.prov-field {
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.prov-field input {
+  min-width: 0;
+}
+.prov-form .p-test-status {
+  grid-column: 1 / -1;
+  margin-top: 0;
+  min-height: 0;
+}
+@media (max-width: 719px) {
+  .prov-row {
+    grid-template-columns: 1fr auto;
+  }
+  .prov-form {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 重置世界：红色确认区，输入小镇名后按钮才可点 */
+.reset-zone {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  align-items: center;
+  max-width: 760px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+}
+.reset-zone-text {
+  flex: 1 1 240px;
+  margin: 0;
+  font-size: 13px;
+}
+.reset-zone .reset-input {
+  min-width: 200px;
+  font-size: 13px;
+}
+.reset-zone .reset-btn {
+  background: var(--band-collapse);
+  border-color: var(--band-collapse);
+  color: #fff;
+  font-weight: 600;
+}
+.reset-zone .reset-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ---------- 地图 SVG ---------- */
+svg text {
+  font-family: 'Noto Sans SC', 'PingFang SC', sans-serif;
+  user-select: none;
+  text-rendering: geometricPrecision;
+}
+.rg {
+  font-size: 88px;
+  font-weight: 700;
+  fill: var(--text-2);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #e9ebe1;
+  stroke-width: 16px;
+  letter-spacing: 6px;
+}
+.rm {
+  font-size: 60px;
+  font-weight: 700;
+  fill: var(--text);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #f0eee3;
+  stroke-width: 14px;
+}
+.pp,
+.pl {
+  opacity: 0;
+  transition: opacity 0.25s;
+  pointer-events: none;
+}
+svg.zoom-detail .pp,
+svg.zoom-detail .pl {
+  opacity: 1;
+}
+svg.single-place .pp,
+svg.single-place .pl {
+  opacity: 1;
+}
+svg.single-place .pp {
+  pointer-events: auto;
+  cursor: pointer;
+}
+svg.single-place .rg {
+  font-size: 40px;
+  stroke-width: 8px;
+  letter-spacing: 2px;
+}
+svg.single-place .vn {
+  font-size: 34px;
+  stroke-width: 8px;
+}
+.pp {
+  fill: var(--text-2);
+}
+.pl {
+  font-size: 32px;
+  fill: var(--text-2);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #f5f2e6;
+  stroke-width: 6px;
+}
+.vtri {
+  fill: var(--danger);
+  stroke: #fdfcf8;
+  stroke-width: 7;
+  stroke-linejoin: round;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: vbreathe 2s ease-in-out infinite;
+}
+.vportrait {
+  filter: url(#vportrait-outline);
+}
+/* 联机访客的平台头像：圆形小点 + 细边，压在名字上方 */
+.vbadge {
+  clip-path: circle(50%);
+  filter: drop-shadow(0 1px 2px rgb(0 0 0 / 45%));
+}
+@keyframes vbreathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18);
+    opacity: 0.82;
+  }
+}
+.vring {
+  display: none;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 6;
+  stroke-dasharray: 14 10;
+}
+g.vsel .vring {
+  display: block;
+}
+/* 「…」：等模型；心声泡：虚线云，字取想法第一句 */
+.vwait {
+  font-size: 54px;
+  font-weight: 700;
+  fill: var(--dim);
+  letter-spacing: 6px;
+  paint-order: stroke;
+  stroke: #f5f2e6;
+  stroke-width: 8px;
+}
+/* 「等模型」：不是出错，用橙色小字 */
+.vwait.vnomodel {
+  font-size: 34px;
+  letter-spacing: 0;
+  fill: var(--busy);
+}
+.bubbles {
+  pointer-events: none;
+}
+.bubbles.hidden-far {
+  display: none;
+}
+.bubble.cloud rect {
+  fill: #f7f6ee;
+  fill-opacity: 0.96;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-dasharray: 16 12;
+}
+.bubble.cloud circle {
+  fill: #f7f6ee;
+  stroke: var(--accent);
+  stroke-width: 4;
+  stroke-dasharray: 8 6;
+}
+.bubble text {
+  font-size: 56px;
+  fill: var(--ink);
+}
+g[data-vid] {
+  cursor: pointer;
+}
+.resident-wardrobe {
+  display: grid;
+  grid-template-columns: minmax(190px, 240px) minmax(0, 1fr);
+  gap: 22px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+.resident-wardrobe-people,
+.resident-wardrobe-current,
+.resident-wardrobe-toolbar {
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--card);
+}
+.resident-wardrobe-people {
+  padding: 14px;
+  align-self: start;
+  position: sticky;
+  top: 0;
+}
+.resident-wardrobe-people h2,
+.resident-wardrobe-current h2 {
+  margin: 0;
+}
+.resident-wardrobe-people > p {
+  margin: 5px 0 12px;
+  line-height: 1.45;
+}
+.resident-wardrobe-people-list {
+  display: grid;
+  gap: 6px;
+}
+button.resident-wardrobe-person {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px 9px;
+  text-align: left;
+}
+button.resident-wardrobe-person .resident-portrait {
+  width: 34px;
+  height: 34px;
+}
+button.resident-wardrobe-person.on {
+  border-color: var(--accent);
+  background: var(--note-bg);
+}
+.resident-wardrobe-closet {
+  min-width: 0;
+}
+.resident-wardrobe-current {
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.resident-wardrobe-identity {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.resident-wardrobe-identity > .resident-portrait {
+  width: 68px;
+  height: 68px;
+}
+.resident-wardrobe-current-copy > :is(span, p) {
+  display: block;
+  margin: 3px 0 0;
+}
+.resident-wardrobe-mode {
+  flex: none;
+  padding: 4px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--dim);
+  font-size: 11px;
+}
+.resident-wardrobe-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 12px 0;
+  padding: 10px 12px;
+}
+.resident-wardrobe-toolbar input {
+  flex: 1;
+  min-width: 0;
+}
+.resident-wardrobe-groups > h3 {
+  margin: 18px 0 8px;
+  font-size: 12px;
+  color: var(--dim);
+}
+.resident-wardrobe-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+}
+button.resident-wardrobe-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 11px 8px;
+  border-radius: var(--r-m);
+  text-align: center;
+}
+button.resident-wardrobe-card.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+button.resident-wardrobe-card strong {
+  font-size: 12px;
+}
+button.resident-wardrobe-card small {
+  min-height: 30px;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 1.4;
+}
+.resident-wardrobe-face,
+.resident-wardrobe-auto {
+  width: 76px;
+  height: 76px;
+}
+.resident-wardrobe-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.resident-wardrobe-auto {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--note-bg);
+  color: var(--accent);
+  font-size: 28px;
+}
+button.resident-wardrobe-card.automatic {
+  width: min(220px, 100%);
+}
+.vn {
+  font-size: 54px;
+  font-weight: 700;
+  fill: var(--busy);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fdfcf8;
+  stroke-width: 12px;
+}
+.vv {
+  font-size: 34px;
+  fill: var(--text-2);
+  text-anchor: middle;
+  paint-order: stroke;
+  stroke: #fdfcf8;
+  stroke-width: 9px;
+}
+/* 2D 多人标签：合进组的人名字和状态不画，只留小人；标签按屏幕像素设计 */
+.vgrouped :is(.vn, .vv, .vwait) {
+  visibility: hidden;
+}
+.vgroup {
+  cursor: pointer;
+}
+.vgroup-box {
+  fill: #fcfbf7f2;
+  stroke: var(--line);
+  stroke-width: 1;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.25));
+}
+.vgroup-face-ring {
+  fill: #fff;
+}
+.vgroup-face {
+  image-rendering: pixelated;
+}
+.vgroup-text {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--ink);
+  dominant-baseline: central;
+}
+.vgroup-list {
+  position: absolute;
+  z-index: 6;
+  display: grid;
+  gap: 2px;
+  min-width: 150px;
+  max-height: min(360px, calc(100% - 16px));
+  overflow-y: auto;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  box-shadow: var(--elev-2);
+}
+.vgroup-list[hidden] {
+  display: none;
+}
+.vgroup-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 12px;
+  text-align: left;
+}
+.vgroup-list button:hover,
+.vgroup-list button:focus-visible {
+  background: var(--surface-sunken);
+}
+.vgroup-list img {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  image-rendering: pixelated;
+}
+.vgroup-status {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--dim);
+}
+.vdead .vportrait {
+  filter: grayscale(0.9) url(#vportrait-outline);
+  opacity: 0.62;
+}
+.vincapacitated .vportrait {
+  opacity: 0.72;
+}
+
+/* ---------- 响应式 ---------- */
+/* 720–1023：右栏改覆盖层；事件区展开覆盖下半屏；设定中心的左目录收窄 */
+@media (max-width: 1023px) {
+  #info-resizer {
+    display: none;
+  }
+  /* 右侧覆盖层 / 底部信息卡都会压住右下角，缩放钮挪到左上角 */
+  .map-zoom {
+    right: auto;
+    bottom: auto;
+    left: 12px;
+    top: 12px;
+  }
+  #info-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 6;
+    width: min(340px, 85vw);
+    box-shadow: -6px 0 18px rgba(61, 70, 80, 0.15);
+  }
+  /* 展开的事件是固定高度的抽屉：事件少时不缩成一行；层级压过地图上的小按钮和「进入化身」 */
+  #event-full {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    right: 0;
+    z-index: 14;
+    height: min(50vh, 360px);
+    max-height: none;
+    background: var(--card);
+    box-shadow: 0 -6px 18px rgba(61, 70, 80, 0.15);
+  }
+  /* 设定中心仍是左目录右内容；改成顶部页签时，目录会在中间排成一长列占满一屏 */
+  #settings-nav {
+    width: 176px;
+  }
+  #settings-nav .nav-item {
+    padding-left: 18px;
+  }
+}
+/* <720：地图全屏，信息从底部弹出卡片 */
+@media (max-width: 719px) {
+  #info-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    max-height: 55%;
+    border-left: none;
+    border-top: 1px solid var(--line);
+    box-shadow: 0 -6px 18px rgba(61, 70, 80, 0.15);
+  }
+  #clock {
+    font-size: 14px;
+  }
+  .persona-tabs {
+    display: flex;
+  }
+  .persona-split {
+    display: block;
+  }
+  .persona-wrap:not(.show-preview) .persona-preview {
+    display: none;
+  }
+  .persona-wrap.show-preview #persona-text {
+    display: none;
+  }
+}
+
+/* 减少动态效果：禁用一次性强调与呼吸动画 */
+@media (prefers-reduced-motion: reduce) {
+  .vtri {
+    animation: none;
+  }
+  .need.flash .need-track {
+    animation: none;
+  }
+  #info-thought.flash {
+    animation: none;
+  }
+  .pp,
+  .pl {
+    transition: none;
+  }
+}
+
+.resident-agent {
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.resident-agent p {
+  margin: 4px 0;
+  white-space: pre-wrap;
+}
+.resident-agent h4 {
+  margin: 14px 0 6px;
+  font-size: 12px;
+}
+.agent-goal,
+.agent-result,
+.agent-memory {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line, var(--line));
+}
+.agent-meter,
+.agent-memory-meta {
+  font-size: 11px;
+  opacity: 0.8;
+}
+.agent-memory summary {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.agent-memory summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.agent-source {
+  padding: 6px 8px;
+  background: var(--note-bg);
+}
+
+/* ---------- 村民页（整页替换地图页）：名册、村民库、加入、创建 ---------- */
+.rv-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.rv-toolbar input[type='search'] {
+  flex: 1;
+  min-width: 200px;
+  max-width: 420px;
+}
+.rv-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+.rv-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: 12px 14px;
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rv-card.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+/* 村民库底部的托盘：选了谁、用哪个模型、一次请进来 */
+.rv-tray {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  box-shadow: var(--elev-3);
+}
+.rv-tray[hidden] {
+  display: none;
+}
+.rv-tray-words {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  font-size: 13px;
+}
+.rv-tray-words b {
+  font-size: 14px;
+}
+.model-line {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.model-line :is(.ui-link, select) {
+  margin-left: 8px;
+}
+.model-line select {
+  padding-block: 2px;
+  font-size: 12px;
+}
+.rv-card p {
+  margin: 0;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+.rv-card .row {
+  margin-top: auto;
+  padding-top: 6px;
+}
+.rv-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rv-head strong {
+  font-size: 15px;
+}
+.rv-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dim);
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 0 8px;
+  white-space: nowrap;
+}
+.rv-status.ok {
+  color: var(--band-steady);
+  border-color: var(--band-steady);
+}
+.rv-marker {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+  display: inline-block;
+}
+.rv-portrait {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  object-fit: cover;
+  object-position: top;
+}
+.rv-detail .rv-portrait {
+  width: 64px;
+  height: 64px;
+}
+.rv-marker.m-tree {
+  background: var(--band-steady);
+}
+.rv-marker.m-leaf {
+  background: var(--band-voiced);
+}
+.rv-marker.m-book {
+  background: var(--perception);
+}
+.rv-marker.m-hammer {
+  background: var(--dim);
+}
+.rv-marker.m-bowl {
+  background: var(--band-ring);
+}
+.rv-marker.m-wave {
+  background: var(--ink);
+}
+.rv-rows {
+  display: grid;
+  gap: 8px;
+}
+.rv-row {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: 10px 14px;
+  background: var(--card);
+}
+.rv-row .dim {
+  line-height: 1.5;
+}
+#event-autoscroll {
+  accent-color: var(--accent);
+}
+.rv-empty {
+  max-width: 600px;
+  padding: 24px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-s);
+  background: var(--card);
+  line-height: 1.7;
+}
+/* 空村时鼓励新建：标题，按钮加大一号 */
+.rv-create h3 {
+  margin: 0 0 6px;
+  font-size: 17px;
+}
+.rv-create .row {
+  margin: 14px 0 12px;
+}
+.rv-create .row button {
+  padding: 9px 18px;
+}
+.rv-detail h2 {
+  font-size: 18px;
+  margin: 10px 0 4px;
+}
+.rv-detail .section-caption {
+  margin: 16px 0 6px;
+}
+.rv-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.rv-pre {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  margin: 0;
+}
+/* 给 AI 看的人设原文：默认收着 */
+.rv-persona-details > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+.rv-persona {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.7;
+  background: var(--note-bg);
+  padding: 12px 14px;
+  border-radius: var(--r-s);
+  margin: 0;
+  max-height: 70vh;
+  overflow: auto;
+}
+.rv-sticky {
+  position: sticky;
+  top: 0;
+}
+.rv-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 16px;
+}
+.rv-form .wide {
+  grid-column: 1 / -1;
+}
+.rv-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.rv-field input,
+.rv-field textarea,
+.rv-field select {
+  width: 100%;
+  box-sizing: border-box;
+}
+.rv-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+.rv-wardrobe {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
+  gap: 8px;
+}
+.rv-wardrobe-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--card);
+  cursor: pointer;
+  font: inherit;
+  color: var(--ink);
+  text-align: center;
+}
+.rv-wardrobe-card:hover {
+  border-color: var(--accent);
+}
+.rv-wardrobe-card.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.rv-wardrobe-card strong {
+  font-size: 12px;
+}
+.rv-wardrobe-card small {
+  font-size: 11px;
+  color: var(--dim);
+}
+.rv-wardrobe-face {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--paper);
+}
+.rv-wardrobe-face img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.rv-wardrobe-auto {
+  width: 64px;
+  height: 64px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  border: 1px dashed var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  color: var(--accent);
+}
+.rv-ai {
+  border: 1px solid var(--accent);
+  border-radius: var(--r-m);
+  padding: 12px 14px;
+  background: var(--surface-sunken);
+  margin: 10px 0 16px;
+  display: grid;
+  gap: 8px;
+}
+.rv-ai textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+.rv-facts p {
+  margin: 4px 0;
+  font-size: 12px;
+}
+.rv-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--band-steady);
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+  font-size: 12px;
+}
+.rv-notice.drop {
+  border-color: var(--band-collapse);
+  background: var(--surface-sunken);
+  color: var(--band-collapse);
+}
+.rv-notice span {
+  flex: 1;
+}
+.rv-detail ul.drop {
+  margin: 6px 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+/* 实心主按钮用 --accent-fill（深色页上深一档的绿），白字才看得清；--accent 是文字和描边用的 */
+button.primary {
+  background: var(--accent-fill);
+  color: var(--on-accent);
+  border-color: var(--accent-fill);
+}
+@media (max-width: 1023px) {
+  .rv-split {
+    grid-template-columns: 1fr;
+  }
+  .rv-sticky {
+    position: static;
+  }
+  .rv-row {
+    grid-template-columns: auto 1fr;
+  }
+  .rv-row .row {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 719px) {
+  .rv-form {
+    grid-template-columns: 1fr;
+  }
+  #residents-page {
+    padding: 12px;
+  }
+  .resident-wardrobe {
+    grid-template-columns: 1fr;
+  }
+  .resident-wardrobe-people {
+    position: static;
+  }
+  .resident-wardrobe-people-list {
+    display: flex;
+    overflow-x: auto;
+  }
+  button.resident-wardrobe-person {
+    width: auto;
+    min-width: max-content;
+  }
+}
+
+/* ---------- 消耗页（整页替换地图页，只读） ---------- */
+#usage-page .section-caption {
+  margin: 18px 0 8px;
+}
+.us-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.us-card {
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  padding: 10px 14px;
+  background: var(--card);
+  display: grid;
+  gap: 2px;
+}
+.us-card strong {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+/* 钱的三张卡：字大一点，放在最上面 */
+.us-money .us-card strong {
+  font-size: 24px;
+}
+/* 详细数据：调用次数、token、请求台账，收起来给要排查的人看 */
+.us-details {
+  margin-top: 20px;
+}
+.us-details > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.us-details[open] > summary {
+  margin-bottom: 12px;
+}
+.us-table {
+  border-collapse: collapse;
+  width: 100%;
+  background: var(--card);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.us-table th,
+.us-table td {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+.us-table th {
+  font-weight: 600;
+  color: var(--dim);
+  white-space: nowrap;
+}
+.us-requests td {
+  white-space: nowrap;
+}
+.us-requests td.us-detail {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  min-width: 200px;
+}
+.us-requests tr.us-进行中 td {
+  color: var(--dim);
+}
+
+svg.zoom-detail .pp {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.pp.selected-prop > rect {
+  stroke: var(--teal);
+  stroke-width: 7;
+}
+.pp:focus > rect {
+  stroke: var(--teal);
+  stroke-width: 5;
+}
+
+/* 生理状态：地图保持简短，原因与历史放在详情中。 */
+#info-physiology {
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 12px 0;
+  overflow-wrap: anywhere;
+}
+#info-physiology details {
+  border-top: 1px solid var(--line, var(--line));
+  padding: 8px 0;
+}
+#info-physiology summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+#info-physiology ul,
+#info-physiology ol {
+  padding-left: 20px;
+  max-height: 230px;
+  overflow: auto;
+}
+.body-danger {
+  color: var(--text);
+  font-weight: 700;
+}
+.body-warning {
+  color: var(--busy);
+  font-weight: 700;
+}
+.body-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 8px;
+}
+.body-condition {
+  border: 1px solid var(--busy);
+  background: var(--surface-sunken);
+  padding: 2px 6px;
+  color: var(--text);
+}
+.vdead .vtri {
+  fill: var(--text-2);
+  stroke: var(--text);
+}
+.vincapacitated .vtri {
+  fill: var(--busy);
+}
+.vdead .vtri,
+.vincapacitated .vtri {
+  animation: none;
+}
+.vdead .vv {
+  fill: var(--text);
+  font-weight: 700;
+}
+
+/* 各地图共用的运行世界设定。首次设定作为模态层，禁止后台地图接收操作。 */
+.world-mode {
+  color: var(--accent, var(--accent));
+  border-color: var(--line);
+  font-size: 12px;
+}
+.world-setup {
+  box-sizing: border-box;
+  width: min(650px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 28px 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-l);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+.world-setup::backdrop {
+  background: #283a36a6;
+}
+.world-setup h1 {
+  font-size: 26px;
+  margin: 8px 0 16px;
+}
+/* 标题只是为了打开时把焦点放在这里（触屏上先不弹键盘），不是输入框：不画焦点框，
+   不然看着像一个能改小镇名的大输入框 */
+.world-setup h1:focus {
+  outline: none;
+}
+.world-setup p {
+  line-height: 1.7;
+}
+.world-setup .eyebrow {
+  font-size: 12px;
+  color: var(--text-2);
+  margin: 0;
+}
+.world-setup textarea,
+.world-settings-page textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  margin: 8px 0;
+  resize: vertical;
+  min-height: 150px;
+  font: inherit;
+  line-height: 1.7;
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+}
+.world-setup label,
+.world-settings-page label {
+  display: block;
+  font-weight: 600;
+}
+.world-setup-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.world-setup-actions button {
+  padding: 10px 20px;
+}
+/* 次要出口：和设定中心「返回地图」一样是灰色文字，不用浏览器默认的蓝色下划线 */
+.world-setup-actions a {
+  padding: 10px 4px;
+  color: var(--text-2);
+  text-decoration: none;
+}
+.world-setup-actions a:hover {
+  color: var(--text);
+}
+.world-save-status {
+  min-height: 24px;
+  color: var(--text-2);
+  white-space: pre-wrap;
+}
+.world-settings-page {
+  max-width: 850px;
+  line-height: 1.7;
+}
+.world-settings-page button {
+  white-space: normal;
+}
+@media (max-width: 700px) {
+  .world-setup {
+    padding: 20px;
+  }
+  #topbar {
+    flex-wrap: wrap;
+  }
+  .world-mode {
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

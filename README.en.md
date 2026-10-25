@@ -5,9 +5,9 @@
 > No client downloads, no third-party game accounts, no data leaving your machine.
 
 - One platform account for every game (friends, rooms, invites, avatars, presence).
-- 8 games: 3 original mini-games + 5 stitched open-source projects
-  (Sanguosha / Werewolf / Dou Dizhu / Monopoly / Guangdong Mahjong).
-- Mobile friendly: four landscape games have a rotate shell; every game has an optional
+- 10 games: 3 original mini-games + 7 stitched open-source projects
+  (Sanguosha / Werewolf / Dou Dizhu / Monopoly / Guangdong Mahjong / Horizon Racing / AI Town).
+- Mobile friendly: five landscape games have a rotate shell; every game has an optional
   fullscreen button (hidden on desktop).
 - **Zero third-party runtime dependencies**: Node's built-ins + one SQLite file.
 
@@ -26,6 +26,8 @@
 | 🃏 Dou Dizhu | `/ddz/` | 3 | Bid → rob → play; the table is an upstream Godot web export |
 | 🎲 Monopoly | `/games/monopoly/` | 1–6 | Upstream 3D board, 5 public maps, online relay |
 | 🀄 Lianhua Mahjong | `/mahjong/` | 2–4 | Four-player Guangdong mahjong; single-player vs AI too |
+| 🏎️ Horizon Racing | `/games/horizon/` | 2–8 | Open-world coastal 3D racing; real car-to-car collision, touch controls |
+| 🏘️ AI Town | `/ai-town/` | 1–4 | AI villagers live their day in a 2D town; host opens their own save, friends join the same map with their own avatars |
 | 💣 Cannon Goblin | `/games/cannon-goblin/` | 1–2 | Asymmetric board: cannon captures at range, goblins block |
 | 🔫 Shell Gambit | `/games/shell-gambit/` | 1–4 | Devil's roulette: shotgun, 7 items, nerve and luck |
 | ⚔️ BladeSteed | `/games/blade-steed/` | 2–4 | Wuxia rock-paper-scissors: win the throw to act |
@@ -69,6 +71,13 @@ Optional:
 - **Noname**: `node tools/noname-update.mjs` downloads/builds the ~1.2 GB upstream.
   Without it `/noname/` is unavailable; other games work.
 - Dou Dizhu / Monopoly / Werewolf shipped prebuilt — no frontend build needed.
+- **AI Town**: the frontend is prebuilt. The Rust `bin/` and the ~505 MB model are
+  **not in git**; copy them together with `data/ai-town/models/model.gguf`, or follow
+  `DEPLOY.md` to rebuild Rust and download the model. Inference runs on the server
+  (Vulkan `llama-server`), never on the phone. ✅ The host and every guest now get
+  their own avatar and can descend together; each avatar shows its platform avatar
+  (small dot) and name above it. Only the host changes world settings (start/pause,
+  weather, inviting villagers); guests are transient and are never written to the host's save.
 
 ## Upstream projects and licenses
 
@@ -77,11 +86,14 @@ Optional:
 | Noname (Sanguosha) | [libnoname/noname](https://github.com/libnoname/noname) | **GPL-3.0** | Hosts upstream as-is; adds platform login/avatar bridge, mobile shell, relay |
 | Werewolf | [hanluolin/wolfcha-custom](https://github.com/hanluolin/wolfcha-custom) | **MIT** (UI) | Only the UI is reused; rules/rooms/accounts/replay are rewritten here |
 | Dou Dizhu | [blmz/GODOT-DouDiZhu](https://github.com/blmz/GODOT-DouDiZhu) | **No license declared upstream** | Godot table exported to web; rules/state/online are rewritten here |
+| AI Town | [mewamew/my_ai_town](https://github.com/mewamew/my_ai_town) | **PolyForm Noncommercial 1.0.0** | Rust world kernel/manager + TS frontend copied in; platform accounts/invites/rooms, per-account saves, multi-avatar multiplayer, mobile layout, server-side built-in model |
 | Monopoly | [FatPaper-1874/mine-monopoly](https://github.com/FatPaper-1874/mine-monopoly) | **GPL-3.0** | Whole web client hosted; WebSocket relay; platform identity injection |
 | Lianhua Mahjong | [BestGuo2020/lianhuaguangdongmahjong](https://github.com/BestGuo2020/lianhuaguangdongmahjong) + [backend](https://github.com/BestGuo2020/lianhua-mahjong-backend) | **MIT** | Whole project hosted; Node reverse proxy; platform identity/invites |
+| Horizon Racing | [Liyang1145/horizon-racing](https://github.com/Liyang1145/horizon-racing) | **MIT** | Whole 3D world/physics hosted; platform rooms/invites + `/horizon-relay`; start/finish gantries + touch shell |
 
-The three original mini-games are MIT-licensed together with the rest of this repository
-(see [`LICENSE`](LICENSE)). **Commercial use is prohibited.**
+The three original mini-games (Cannon Goblin / Shell Gambit / BladeSteed)
+are MIT-licensed together with the rest of this repository. Horizon's 3D world comes from
+upstream (MIT); the platform wiring lives here. **Commercial use is prohibited.**
 
 ## Privacy
 
@@ -98,8 +110,10 @@ All of those are in `.gitignore`. Placeholders such as `<your public address>` a
 ## Development
 
 ```powershell
-npm test              # 146 Node integration tests (real HTTP + WebSocket), ~15 s
-npm run test:browser  # real Chrome end-to-end (platform shell / rooms / games / fullscreen)
+npm test              # 156 Node integration tests (one optional real-model test is skipped), ~19 s
+npm run test:browser  # real Chrome end-to-end (platform shell / rooms / games / fullscreen / horizon)
+npm run test:ai-town  # AI Town (real manager/host/WS + layout, mock LLM)
+npm run test:horizon  # 5 server/relay tests + real-Chrome two-player race
 npm run test:mahjong  # needs Python .venv
 npm run test:ddz      # Godot table
 npm run test:monopoly
@@ -115,7 +129,7 @@ node tools/check-tunnel.mjs <public-url> --ws 30  # read-only tunnel probe
 | Deployment (AI-oriented) | [`DEPLOY.md`](DEPLOY.md) |
 | Current state / next steps | [`docs/NEXT.md`](docs/NEXT.md) |
 | Architecture and protocols | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) |
-| Design decisions (D1–D45) | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
+| Design decisions (D1–D47) | [`docs/DECISIONS.md`](docs/DECISIONS.md) |
 | Per-game notes | [`docs/GAMES.md`](docs/GAMES.md) |
 | Tunnel troubleshooting | [`docs/TUNNEL.md`](docs/TUNNEL.md) |
 | Contributor/AI conventions | [`AGENTS.md`](AGENTS.md) |

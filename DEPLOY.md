@@ -18,10 +18,12 @@
 | Windows 10/11 | ✅ | 项目脚本按 Windows 写；Linux 需自己改 `.cmd`/路径 |
 | Chrome 或 Edge | 仅测试 | `npm run test:browser` 需要 |
 | Python **3.11+** | 仅莲花广麻 | 上游 FastAPI 规则后端 |
+| Rust + VS Build Tools | 仅重编 AI 小镇 | 仓库已带 `games/ai-town/bin/*.exe`，不重编就不用装 |
+| 约 505MB 磁盘 + Vulkan 显卡 | 仅 AI 小镇内置模型 | 模型文件不进 git；服务器跑 llama.cpp，手机不跑 |
 | Git + pnpm | 仅无名杀 | `tools/noname-update.mjs` 拉取约 1.2GB 上游 |
 | 一条 TCP 隧道 | 仅外网访问 | 推荐 SakuraFrp；局域网/NAT 内也可用其它方案 |
 
-> 大富翁 / 狼人杀 / 斗地主 / 莲花广麻的**构建产物已提交在仓库里**，
+> 大富翁 / 狼人杀 / 斗地主 / 莲花广麻 / AI 小镇的**前端构建产物已提交在仓库里**，
 > 不需要 `pnpm install` 或前端构建。只有你改了它们的源码才需要重新构建。
 
 ---
@@ -84,7 +86,7 @@ curl.exe -sS -o NUL -w "%{http_code}`n" http://127.0.0.1:7891/api/me
 
 期望 **401**（未登录，说明服务活着；不是连接失败）。
 
-浏览器打开 <http://127.0.0.1:7891/>，注册账号 → 首页看到游戏卡片 → 能进三个自建小游戏。
+浏览器打开 <http://127.0.0.1:7891/>，注册账号 → 首页看到游戏卡片 → 能进三个自建小游戏和地平线赛车。
 
 ### 后台运行（推荐）
 
@@ -222,6 +224,65 @@ node tools\service.mjs restart
 
 ---
 
+## 6.1 可选：AI 小镇（Rust 世界 + 内置小模型）
+
+仓库里应当已经带着：
+
+- `games/ai-town/web/`（前端构建产物，开箱即用）
+- `games/ai-town/bin/town-manager.exe`、`town-host.exe`（**不进 git**，换机器要一起拷/重编）
+- `games/ai-town/upstream/builtin-model/llama-server.exe` 及 DLL（**不进 git**，约 99MB）
+- `data/ai-town/models/model.gguf`（**不进 git**，约 505MB，sha256 见下）
+
+### 模型文件
+
+```powershell
+cd E:\frp-game
+New-Item -ItemType Directory -Force data\ai-town\models | Out-Null
+curl.exe -L --retry 3 -o data\ai-town\models\model.gguf `
+  "https://modelscope.cn/models/hihuazi/ai-town-villager/resolve/master/2026-10-08/model.gguf"
+# 校验：必须和清单一致
+(Get-FileHash data\ai-town\models\model.gguf -Algorithm SHA256).Hash.ToLower()
+# a12a35be590e55b49a6c84a22ac25b03d36afc8fa6c4a3c78079cc0ffd8ea54e
+```
+
+推理程序（Vulkan 版 llama.cpp）在 `games/ai-town/upstream/builtin-model/`；
+如果这台机器没有，可从 llama.cpp release 下载 Windows Vulkan 包，解压到该目录，
+至少要 `llama-server.exe`、`ggml-vulkan.dll`、`ggml.dll`、`ggml-base.dll`。
+
+### 重编 Rust（只有改了 `games/ai-town/upstream/crates/**` 才需要）
+
+前置：**Rust 1.88+**、**VS 2026/2022 Build Tools（MSVC）**、CMake、约 3GB 临时磁盘。
+
+```powershell
+cd E:\frp-game\games\ai-town\upstream
+cargo build --locked -p host -p manager --bins
+Copy-Item target\debug\host.exe ..\bin\town-host.exe -Force
+Copy-Item target\debug\manager.exe ..\bin\town-manager.exe -Force
+```
+
+> manager 找的是 `town-host.exe`，cargo 产出叫 `host.exe`，**必须复制改名**。
+> 生产可加 `--release`，但当前用的是 debug 产物，体积更大、速度够用。
+
+### 验证
+
+```powershell
+cd E:\frp-game
+npm run test:ai-town                 # 真 manager/host/WS + 布局；用 --mock-llm
+# 可选：真内置模型 + 真浏览器（本机有模型/显卡/Chrome 才跑）
+$env:AI_TOWN_REAL_MODEL='1'; npm run test:ai-town-model
+node tools\service.mjs restart
+```
+
+浏览器打开 `/ai-town/`：能选镇/建镇；进镇后左上角是平台账号悬浮球；手机进入化身后
+只保留右下「背包」和右上「布局」，点地图走路、点人或东西互动；邀请好友能从
+`/ai-town/?room=房号` 进入同一张图。
+房主和客人都能「进入化身」、各自控制自己的化身，别人头顶显示平台头像和昵称；
+世界设置只归房主。服务器进程里应能看到 `town-manager.exe`；村民真正行动时还会多一个
+`llama-server.exe`。
+> 2 个房间 = 2 个 manager/host；模型只在村民第一次要用时加载。
+
+---
+
 ## 7. 验证清单
 
 按顺序跑，任何一步失败先修再继续：
@@ -229,7 +290,9 @@ node tools\service.mjs restart
 ```powershell
 cd E:\frp-game
 
-npm test                                   # 146 条集成测试，约 15 秒
+npm test                                   # Node 集成测试（真 HTTP + 真 WebSocket）
+npm run test:ai-town                       # AI 小镇（真 manager/host/WS；用 --mock-llm）
+npm run test:ai-town-model                 # 可选：真内置模型；先设 AI_TOWN_REAL_MODEL=1
 npm run test:browser                       # 真 Chrome 端到端（需 Chrome/Edge）
 node tools/check-noname.mjs                # 仅当拉取了无名杀
 node tools/check-tunnel.mjs <公网地址> --ws 30
@@ -237,7 +300,7 @@ node tools/check-tunnel.mjs <公网地址> --ws 30
 
 手工验收（浏览器）：
 
-1. 注册 → 首页出现 8 张游戏卡片（无名杀未拉取时可能少一张/不可用）。
+1. 注册 → 首页出现 9–10 张游戏卡片（无名杀未拉取时可能少一张/不可用）。
 2. 搜索「麻将」、筛「3 人」、点字母表，列表正确过滤/跳转。
 3. 点游戏卡片 → **新标签页**打开游戏，平台首页还在。
 4. 手机（或 Chrome 设备模拟 375×812）：游戏页右下角有「⛶ 全屏」；
@@ -257,6 +320,9 @@ node tools/check-tunnel.mjs <公网地址> --ws 30
 | 朋友被要求输访问密码 | 隧道开了「访问认证」：给密码或关掉 |
 | 麻将页 503 | 没装 Python `.venv`，或 8123 被占。看 `data/mahjong-backend.log` |
 | `/noname/` 404/503 | 没拉取无名杀：跑 `node tools/noname-update.mjs` |
+| AI 小镇 503/进不去 | 看 `data/ai-town` 下的 `manager.log`/`host.log`；确认 `games/ai-town/bin/town-manager.exe` 和 `town-host.exe` 都在 |
+| AI 小镇村民不动 / `builtin-model.log` 报错 | 模型没放对或缺 DLL：确认 `data/ai-town/models/model.gguf` 大小/sha，`games/ai-town/upstream/builtin-model/llama-server.exe` 能在终端 `--list-devices` 看到 Vulkan 显卡 |
+| AI 小镇客人不能化身 | 先确认 `town-host.exe` 是含多化身改动的新版本（`cargo build --locked -p host --bins` 后复制），并强刷浏览器；客人仍不能开始/暂停世界或改天气，这是有意的房主权限 |
 | 页面还是旧样式 | 浏览器缓存；强刷 `Ctrl+F5`。构建产物最多缓存 10 分钟 |
 | 手机上全屏按钮不见了 | 进全屏后按钮本来就会隐藏，按手机返回键退出 |
 | IDM 弹窗/下载游戏音频 | 入口页需加载 `/shared/ui/no-idm.js`，服务器需支持无扩展名音频路径；本仓库已内置（见 `docs/ARCHITECTURE.md`） |

@@ -1,0 +1,577 @@
+/*
+ * 地平线赛车的平台接线样式。
+ *
+ * 只加"平台需要的东西"：联机大厅（复用 shared/ui/room.js 的面板）、联机按钮、
+ * 手机触屏按键。游戏本身的节日视觉/菜单样式一行不动 —— 见 index.html 里原有 <style>。
+ */
+
+:root {
+  --ui-accent: #ff8a2a;
+  --ui-surface: #18212d;
+  --ui-border: #3a4658;
+  --ui-text: #f2f3f5;
+  --ui-muted: #9aa8bb;
+  --ui-radius: 12px;
+  --ui-ok: #46c07a;
+  --ui-danger: #ff6b6b;
+}
+
+/* 菜单里的两个按钮：竖着排，"联机竞速"是次级样式（不抢"进入世界"的主按钮）。 */
+.btnRow { flex-wrap: wrap; }
+#btnOnline {
+  flex: 1 1 100%;
+  min-height: 60px;
+  padding: 10px 20px 9px 28px;
+  border-radius: 2px;
+  text-align: left;
+  color: #eaf6ff;
+  background: rgba(7, 14, 23, .78);
+  border: 1px solid rgba(90, 200, 255, .38);
+  border-left: 8px solid #46c8ff;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .3);
+}
+#btnOnline b { display: block; font-size: 19px; font-style: italic; letter-spacing: 1px; }
+#btnOnline span { display: block; margin-top: 2px; font-size: 11px; font-weight: 600; color: #8fb4c8; letter-spacing: 1px; }
+#btnOnline:hover { transform: translateX(8px); box-shadow: 0 18px 45px rgba(0, 0, 0, .42); filter: none; background: rgba(12, 24, 38, .9); }
+
+/* ------------------------------ 联机大厅 ------------------------------ */
+
+#horizonLobby {
+  position: fixed;
+  inset: 0;
+  z-index: 55;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: max(18px, env(safe-area-inset-top, 0px)) 14px max(18px, env(safe-area-inset-bottom, 0px));
+  overflow: auto;
+  background:
+    radial-gradient(ellipse at 50% 0%, rgba(255, 60, 140, .14), transparent 55%),
+    rgba(4, 8, 14, .84);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+#horizonLobbyBox {
+  width: min(560px, 94vw);
+  margin: auto;
+  padding: 20px 20px 18px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: linear-gradient(160deg, rgba(16, 23, 33, .97), rgba(9, 14, 21, .97));
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .55);
+}
+
+#horizonLobbyHead {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.hl-eyebrow { color: #ff2f87; font-size: 11px; font-weight: 900; letter-spacing: 3px; }
+.hl-title { margin-top: 3px; color: #fff; font-size: 28px; font-weight: 900; font-style: italic; letter-spacing: 1px; }
+#horizonAccount { margin-top: 6px; color: #8fb4c8; font-size: 11px; line-height: 1.5; }
+#horizonLobbyClose {
+  flex: none;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .2);
+  background: rgba(255, 255, 255, .08);
+  color: #dbe6ef;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+#horizonLobbyClose:hover { background: rgba(255, 255, 255, .16); }
+#horizonLobbyNote {
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(70, 200, 255, .22);
+  background: rgba(70, 200, 255, .07);
+  color: #a9c6d8;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* 地图选择：平台 .frp-btn + 选中态（不另造组件） */
+.map-pick-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.map-pick { flex: 1 1 118px; min-height: 44px; }
+.map-pick.is-on {
+  color: #211505;
+  background: linear-gradient(135deg, #ffd25e, #ff8a2a);
+  border-color: transparent;
+}
+.map-pick.is-on:hover { filter: brightness(1.05); }
+
+/* 结算列表 */
+.race-results { margin: 4px 0 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.race-results li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .06);
+  border: 1px solid rgba(255, 255, 255, .08);
+  font-size: 14px;
+}
+.race-results .pos { flex: none; width: 30px; color: #ffd25e; font-weight: 900; font-style: italic; }
+.race-results .who { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.race-results .time { flex: none; color: #a9c6d8; font-variant-numeric: tabular-nums; }
+.race-results .me { outline: 1px solid rgba(70, 200, 255, .5); }
+.race-results .dnf { color: #8b98a6; }
+
+/* ------------------------------ 手机触屏按键 ------------------------------ */
+
+#horizonTouch {
+  position: fixed;
+  inset: 0;
+  z-index: 31;
+  pointer-events: none;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#horizonTouch .hzone {
+  position: absolute;
+  display: flex;
+  gap: 12px;
+  pointer-events: none;
+}
+#horizonTouch .hzone.left {
+  left: max(16px, env(safe-area-inset-left, 0px));
+  bottom: max(18px, env(safe-area-inset-bottom, 0px));
+}
+#horizonTouch .hzone.right {
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: max(18px, env(safe-area-inset-bottom, 0px));
+  display: grid;
+  grid-template-columns: 66px 88px;
+  grid-template-rows: 44px 88px;
+  gap: 8px 12px;
+  align-items: end;
+  justify-items: center;
+}
+#horizonTouch .hand { grid-column: 1; grid-row: 1; width: 66px; height: 44px; border-radius: 14px; font-size: 12px; }
+#horizonTouch .brake { grid-column: 1; grid-row: 2; }
+#horizonTouch .gas { grid-column: 2; grid-row: 2; }
+#horizonTouch .hzone.top {
+  right: max(12px, env(safe-area-inset-right, 0px));
+  top: max(12px, env(safe-area-inset-top, 0px));
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 60vw;
+}
+
+#horizonTouch .hkey {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, .34);
+  background: rgba(8, 13, 20, .52);
+  color: #fff;
+  font: 700 20px/1 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .8);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .18);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  touch-action: none;
+  transition: background .06s, transform .06s;
+}
+#horizonTouch .hkey.on,
+#horizonTouch .hkey:active {
+  background: rgba(255, 138, 42, .82);
+  border-color: rgba(255, 255, 255, .75);
+  transform: scale(.96);
+}
+
+#horizonTouch .steer { width: 66px; height: 66px; font-size: 28px; }
+#horizonTouch .brake { width: 66px; height: 66px; font-size: 14px; }
+#horizonTouch .gas { width: 88px; height: 88px; font-size: 15px; background: rgba(255, 80, 90, .28); border-color: rgba(255, 140, 140, .55); }
+#horizonTouch .gas.on, #horizonTouch .gas:active { background: rgba(255, 70, 80, .8); }
+
+#horizonTouch .small {
+  min-width: 46px;
+  height: 44px;
+  padding: 0 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+#horizonTouch .small.warn { border-color: rgba(255, 210, 94, .45); }
+
+/* 横屏手机高度通常 360–430：按键再收一点，别挡住赛道 */
+@media (max-height: 460px) {
+  /* 上游菜单是给桌面排的；手机横屏高度只有 390 左右，按钮/车辆卡会超出屏幕。
+     让它可滚动，保证「联机竞速」「进入世界」和车卡都够得着。
+     用 body #menuPanel 提高优先级：本文件在上游 <style> 之前加载。 */
+  html body #menuPanel {
+    max-height: calc(100vh - 20px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding-right: 4px;
+  }
+  #horizonTouch .steer, #horizonTouch .brake { width: 54px; height: 54px; }
+  #horizonTouch .steer { font-size: 22px; }
+  #horizonTouch .gas { width: 72px; height: 72px; }
+  #horizonTouch .hand { height: 44px; width: 58px; font-size: 11px; margin-right: 0; }
+  #horizonTouch .hzone.right {
+    grid-template-columns: 58px 72px;
+    grid-template-rows: 44px 72px;
+    gap: 6px 8px;
+  }
+  #horizonTouch .small { height: 44px; min-width: 44px; font-size: 11px; }
+  #horizonTouch .hzone.top { max-width: 56vw; gap: 6px; }
+  #horizonTouch .hzone.left { gap: 8px; }
+}
+
+/* 联机大厅在小屏上别把整页撑破 */
+@media (max-height: 520px), (max-width: 420px) {
+  #horizonLobbyBox { padding: 15px 14px; border-radius: 12px; }
+  .hl-title { font-size: 23px; }
+  #horizonLobbyNote { font-size: 11px; padding: 7px 10px; }
+}
+
+/* ==================================================================
+ * 手机 HUD 布局：六个组（小地图 / 仪表盘 / 技能点 / 左转向 / 右油门 / 顶部小按钮）
+ *
+ * 桌面保持上游原来的右下角表盘和左下角小地图；只有 body.frp-touch-hud（触屏设备）
+ * 才换成"左上角小地图 + 下方仪表盘"的紧凑布局。六个组共用 --hud-<组>-x/y/s 三个
+ * CSS 变量，布局编辑器只需改变量，不需要改游戏绘制代码。
+ * ================================================================== */
+
+#dashHud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* 菜单里"驾驶辅助调节 / 手机界面布局"并排，别把菜单撑宽 */
+#menuTools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+#menuTools #btnTune { margin-top: 0; }
+#btnLayout {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid rgba(70, 200, 255, .38);
+  border-radius: 2px;
+  background: rgba(10, 15, 22, .58);
+  color: rgba(150, 220, 255, .9);
+  font-size: 12px;
+  cursor: pointer;
+}
+#btnLayout:hover { color: #fff; border-color: #46c8ff; }
+
+body.frp-touch-hud #minimap {
+  left: max(14px, env(safe-area-inset-left, 0px));
+  top: max(12px, env(safe-area-inset-top, 0px));
+  bottom: auto;
+  width: 104px;
+  height: 104px;
+  border-radius: 14px;
+  transform-origin: left top;
+  transform: translate(var(--hud-map-x, 0px), var(--hud-map-y, 0px)) scale(var(--hud-map-s, 1));
+}
+
+body.frp-touch-hud #dashHud {
+  left: max(14px, env(safe-area-inset-left, 0px));
+  top: max(124px, calc(env(safe-area-inset-top, 0px) + 112px));
+  right: auto;
+  bottom: auto;
+  width: 122px;
+  height: 108px;
+  transform-origin: left top;
+  transform: translate(var(--hud-dash-x, 0px), var(--hud-dash-y, 0px)) scale(var(--hud-dash-s, 1));
+}
+body.frp-touch-hud #gauge {
+  left: 0;
+  top: auto;
+  right: auto;
+  bottom: 0;
+  width: 88px;
+  height: 88px;
+}
+body.frp-touch-hud #gear {
+  left: 70px;
+  top: 2px;
+  right: auto;
+  bottom: auto;
+  font-size: 24px;
+}
+body.frp-touch-hud #speedNum {
+  left: 72px;
+  top: 40px;
+  right: auto;
+  bottom: auto;
+  font-size: 18px;
+}
+body.frp-touch-hud #speedUnit {
+  left: 72px;
+  top: 62px;
+  right: auto;
+  bottom: auto;
+  font-size: 9px;
+}
+body.frp-touch-hud #rpmWrap {
+  left: 0;
+  top: 0;
+  right: auto;
+  bottom: auto;
+  width: 88px;
+  height: 5px;
+}
+
+body.frp-touch-hud #scoreBox {
+  right: max(14px, env(safe-area-inset-right, 0px));
+  top: max(66px, calc(env(safe-area-inset-top, 0px) + 54px));
+  transform-origin: right top;
+  transform: translate(var(--hud-score-x, 0px), var(--hud-score-y, 0px)) scale(var(--hud-score-s, 1));
+}
+
+/* 左转向：从贴边往右上挪，按钮放大 */
+body.frp-touch-hud #horizonTouch .hzone.left {
+  left: max(26px, env(safe-area-inset-left, 0px));
+  bottom: max(40px, env(safe-area-inset-bottom, 0px));
+  gap: 10px;
+  transform-origin: left bottom;
+  transform: translate(var(--hud-left-x, 0px), var(--hud-left-y, 0px)) scale(var(--hud-left-s, 1));
+}
+body.frp-touch-hud #horizonTouch .steer {
+  width: 84px;
+  height: 84px;
+  font-size: 36px;
+}
+
+/* 右油门：从贴边往左上挪，油门/刹车/手刹都放大 */
+body.frp-touch-hud #horizonTouch .hzone.right {
+  right: max(26px, env(safe-area-inset-right, 0px));
+  bottom: max(40px, env(safe-area-inset-bottom, 0px));
+  grid-template-columns: 72px 100px;
+  grid-template-rows: 54px 100px;
+  gap: 8px;
+  transform-origin: right bottom;
+  transform: translate(var(--hud-right-x, 0px), var(--hud-right-y, 0px)) scale(var(--hud-right-s, 1));
+}
+body.frp-touch-hud #horizonTouch .hand {
+  width: 72px;
+  height: 54px;
+  font-size: 12px;
+}
+body.frp-touch-hud #horizonTouch .brake {
+  width: 72px;
+  height: 72px;
+  font-size: 15px;
+}
+body.frp-touch-hud #horizonTouch .gas {
+  width: 100px;
+  height: 100px;
+  font-size: 17px;
+}
+
+body.frp-touch-hud #horizonTouch .hzone.top {
+  right: max(12px, env(safe-area-inset-right, 0px));
+  top: max(12px, env(safe-area-inset-top, 0px));
+  transform-origin: right top;
+  transform: translate(var(--hud-top-x, 0px), var(--hud-top-y, 0px)) scale(var(--hud-top-s, 1));
+}
+
+/* 联机计时：手机端收成一条，贴在小地图右边；拖动/缩放地图后 JS 会跟着重算 */
+body.frp-touch-hud #racePanel {
+  left: calc(max(14px, env(safe-area-inset-left, 0px)) + 112px);
+  top: max(12px, env(safe-area-inset-top, 0px));
+  transform: none;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  max-width: 140px;
+  padding: 5px 9px;
+  border-radius: 10px;
+  text-align: left;
+}
+body.frp-touch-hud #raceTime {
+  font-size: 17px;
+  line-height: 1.1;
+}
+body.frp-touch-hud #raceDelta,
+body.frp-touch-hud #raceCheck,
+body.frp-touch-hud #racePar { display: none; }
+body.frp-touch-hud #racePos {
+  font-size: 11px;
+  line-height: 1.1;
+  margin-top: 0;
+  letter-spacing: 0;
+}
+
+/* 编辑时真实按钮不响应，拖动交给 .layHandle；HUD 本身也不收指针 */
+body.layout-editing #horizonTouch .hkey { pointer-events: none; }
+body.layout-editing #dashHud,
+body.layout-editing #minimap,
+body.layout-editing #scoreBox { pointer-events: none; }
+
+/* 隐藏每一项用 display:none；编辑器的手柄仍然保留，能再打开 */
+body.hud-hide-map #minimap,
+body.hud-hide-dash #dashHud,
+body.hud-hide-score #scoreBox,
+body.hud-hide-left #horizonTouch .hzone.left,
+body.hud-hide-right #horizonTouch .hzone.right,
+body.hud-hide-top #horizonTouch .hzone.top { display: none; }
+
+/* ==================================================================
+ * 布局编辑器
+ * ================================================================== */
+
+#layoutEditor {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  pointer-events: none;
+}
+#layoutEditor .layHintPill { display: none; }
+
+#layHandles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.layHandle {
+  position: absolute;
+  border: 2px dashed rgba(70, 200, 255, .9);
+  border-radius: 12px;
+  background: rgba(70, 200, 255, .08);
+  pointer-events: auto;
+  touch-action: none;
+  cursor: move;
+  box-sizing: border-box;
+}
+.layHandle.sel {
+  border-color: #ffd25e;
+  background: rgba(255, 210, 94, .10);
+  box-shadow: 0 0 0 2px rgba(255, 210, 94, .18);
+}
+.layHandle.hiddenItem { border-style: dotted; opacity: .62; }
+.layHandle .layTag {
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: rgba(7, 14, 23, .92);
+  border: 1px solid rgba(70, 200, 255, .55);
+  color: #cfefff;
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.layHandle.sel .layTag { border-color: #ffd25e; color: #ffe9a8; }
+.layHandle .layCorner {
+  position: absolute;
+  right: -7px;
+  bottom: -7px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #46c8ff;
+  border: 2px solid #07111b;
+}
+.layHandle.sel .layCorner { background: #ffd25e; }
+
+#layoutBar {
+  position: absolute;
+  left: 50%;
+  top: max(8px, env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  width: min(440px, 52vw);
+  max-height: 42vh;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .16);
+  background: linear-gradient(165deg, rgba(14, 22, 32, .97), rgba(7, 12, 19, .97));
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .55);
+  pointer-events: auto;
+  color: #eaf4fb;
+}
+#layoutBar.hidden { display: none; }
+.layHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+.layEyebrow { color: #46c8ff; font-size: 9px; letter-spacing: 2px; }
+.layHead b { font-size: 16px; letter-spacing: 1px; }
+.layHeadBtns { display: flex; gap: 6px; }
+#layoutBar button {
+  border: 1px solid rgba(255, 255, 255, .18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .06);
+  color: #dcecf7;
+  font-size: 11px;
+  min-height: 44px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+#layoutBar button.on { border-color: #ffd25e; color: #ffe9a8; background: rgba(255, 210, 94, .12); }
+#layDone { border-color: rgba(70, 200, 255, .55); color: #cfefff; }
+.layTabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.layTabs button { min-height: 44px; }
+.layRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.laySize {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  font-size: 11px;
+  color: #b8d2e2;
+}
+.laySize input { width: 120px; min-height: 32px; }
+.laySize b { min-width: 38px; text-align: right; color: #ffd25e; }
+.layNudge { display: inline-flex; gap: 3px; }
+.layNudge button { min-width: 44px; padding: 2px 5px; }
+#layTip { margin-top: 6px; color: #8fa8b8; font-size: 10px; line-height: 1.45; }
+#layReopen {
+  position: absolute;
+  left: 50%;
+  bottom: max(10px, env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  border: 1px solid rgba(70, 200, 255, .5);
+  border-radius: 999px;
+  background: rgba(8, 16, 25, .94);
+  color: #cfefff;
+  min-height: 44px;
+  padding: 8px 18px;
+  font-size: 12px;
+  pointer-events: auto;
+  cursor: pointer;
+}
+#layReopen.hidden { display: none; }
+#layoutEditor .layEmpty { display: none; }
+
+@media (max-height: 520px) {
+  #layoutBar { max-height: 34vh; padding: 8px 10px; }
+  .layHead { margin-bottom: 5px; }
+  .layHead b { font-size: 14px; }
+  #layoutBar button { min-height: 44px; }
+  #layTip { display: none; }
+}

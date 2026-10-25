@@ -1,0 +1,138 @@
+{
+ "note": "expected 由训练仓库的 Python 渲染：tokenizer.apply_chat_template(messages, tools, chat_template=town.jinja, add_generation_prompt=True)；工具和参数按游戏发出的字母序",
+ "request": {
+  "messages": [
+   {
+    "content": "你是小镇里的一个村民。\n  ",
+    "role": "system"
+   },
+   {
+    "content": "{\"observation\":{\"at\":3325.0,\"weather\":\"rain\"}}",
+    "role": "user"
+   },
+   {
+    "content": "雨大，先等等，顺便和周伯打个招呼。\n\n",
+    "role": "assistant",
+    "tool_calls": [
+     {
+      "function": {
+       "arguments": "{\"minutes\":30.0,\"reason\":\"等雨停\",\"wake_on\":[\"talk\",\"rain_stop\"]}",
+       "name": "wait_for"
+      },
+      "id": "call_a",
+      "type": "function"
+     },
+     {
+      "function": {
+       "arguments": "{\"interaction_id\":\"s1\",\"message\":\"早，\\\"周伯\\\"！\",\"operation\":\"say\",\"to\":\"resident_002\"}",
+       "name": "interact"
+      },
+      "id": "call_b",
+      "type": "function"
+     }
+    ]
+   },
+   {
+    "content": "{\"ok\":true,\"minutes\":30.0}",
+    "role": "tool",
+    "tool_call_id": "call_a"
+   },
+   {
+    "content": "{\"ok\":true}",
+    "role": "tool",
+    "tool_call_id": "call_b"
+   },
+   {
+    "content": "",
+    "role": "assistant",
+    "tool_calls": [
+     {
+      "function": {
+       "arguments": "{\"interaction_id\":\"s1\",\"operation\":\"leave\"}",
+       "name": "interact"
+      },
+      "id": "call_c",
+      "type": "function"
+     }
+    ]
+   },
+   {
+    "content": "{\"ok\":true}",
+    "role": "tool",
+    "tool_call_id": "call_c"
+   },
+   {
+    "content": "周伯走了。",
+    "role": "user"
+   }
+  ],
+  "tools": [
+   {
+    "function": {
+     "description": "在交谈里说话、听或离开。说的话写在 message 里，\"引号\"照写。",
+     "name": "interact",
+     "parameters": {
+      "additionalProperties": false,
+      "properties": {
+       "interaction_id": {
+        "type": "string"
+       },
+       "message": {
+        "maxLength": 400,
+        "type": "string"
+       },
+       "operation": {
+        "enum": [
+         "say",
+         "listen",
+         "leave"
+        ],
+        "type": "string"
+       },
+       "to": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "operation",
+       "interaction_id"
+      ],
+      "type": "object"
+     }
+    },
+    "type": "function"
+   },
+   {
+    "function": {
+     "description": "等一会儿。\n分钟数可以带小数。",
+     "name": "wait_for",
+     "parameters": {
+      "additionalProperties": false,
+      "properties": {
+       "minutes": {
+        "maximum": 1440.0,
+        "minimum": 1.0,
+        "type": "number"
+       },
+       "reason": {
+        "type": "string"
+       },
+       "wake_on": {
+        "items": {
+         "type": "string"
+        },
+        "type": "array"
+       }
+      },
+      "required": [
+       "minutes"
+      ],
+      "type": "object"
+     }
+    },
+    "type": "function"
+   }
+  ]
+ },
+ "prompt": "<|im_start|>system\n# Tools\n\nYou have access to the following functions:\n\n<tools>\n{\"function\": {\"description\": \"在交谈里说话、听或离开。说的话写在 message 里，\\\"引号\\\"照写。\", \"name\": \"interact\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"interaction_id\": {\"type\": \"string\"}, \"message\": {\"maxLength\": 400, \"type\": \"string\"}, \"operation\": {\"enum\": [\"say\", \"listen\", \"leave\"], \"type\": \"string\"}, \"to\": {\"type\": \"string\"}}, \"required\": [\"operation\", \"interaction_id\"], \"type\": \"object\"}}, \"type\": \"function\"}\n{\"function\": {\"description\": \"等一会儿。\\n分钟数可以带小数。\", \"name\": \"wait_for\", \"parameters\": {\"additionalProperties\": false, \"properties\": {\"minutes\": {\"maximum\": 1440.0, \"minimum\": 1.0, \"type\": \"number\"}, \"reason\": {\"type\": \"string\"}, \"wake_on\": {\"items\": {\"type\": \"string\"}, \"type\": \"array\"}}, \"required\": [\"minutes\"], \"type\": \"object\"}}, \"type\": \"function\"}\n</tools>\n\nIf you choose to call a function ONLY reply in the following format with NO suffix:\n\n<tool_call>\n<function=example_function_name>\n<parameter=example_parameter_1>\nvalue_1\n</parameter>\n<parameter=example_parameter_2>\nThis is the value for the second parameter\nthat can span\nmultiple lines\n</parameter>\n</function>\n</tool_call>\n\n<IMPORTANT>\nReminder:\n- Function calls MUST follow the specified format: an inner <function=...></function> block must be nested within <tool_call></tool_call> XML tags\n- Required parameters MUST be specified\n- You may provide optional reasoning for your function call in natural language BEFORE the function call, but NOT after\n- If there is no function call available, answer the question like normal with your current knowledge and do not tell the user about function calls\n</IMPORTANT>\n\n你是小镇里的一个村民。<|im_end|>\n<|im_start|>user\n{\"observation\":{\"at\":3325.0,\"weather\":\"rain\"}}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n雨大，先等等，顺便和周伯打个招呼。\n\n<tool_call>\n<function=wait_for>\n<parameter=minutes>\n30.0\n</parameter>\n<parameter=reason>\n等雨停\n</parameter>\n<parameter=wake_on>\n[\"talk\", \"rain_stop\"]\n</parameter>\n</function>\n</tool_call>\n<tool_call>\n<function=interact>\n<parameter=interaction_id>\ns1\n</parameter>\n<parameter=message>\n早，\"周伯\"！\n</parameter>\n<parameter=operation>\nsay\n</parameter>\n<parameter=to>\nresident_002\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"ok\":true,\"minutes\":30.0}\n</tool_response>\n<tool_response>\n{\"ok\":true}\n</tool_response><|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n<tool_call>\n<function=interact>\n<parameter=interaction_id>\ns1\n</parameter>\n<parameter=operation>\nleave\n</parameter>\n</function>\n</tool_call><|im_end|>\n<|im_start|>user\n<tool_response>\n{\"ok\":true}\n</tool_response><|im_end|>\n<|im_start|>user\n周伯走了。<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n"
+}

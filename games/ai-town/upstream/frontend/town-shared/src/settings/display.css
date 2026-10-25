@@ -1,0 +1,35 @@
+/* 显示页两项偏好的实际效果（settings/display.ts 把它们写到 body 上）。 */
+
+/* 界面动画「减少」，或「跟随系统」且系统设置了减少动态效果：界面上的过渡和动画一律立即完成；
+   地图本身的移动不在其内。3D 选「减少」时的规则在 game/panels.css */
+body:not(.game-theme).reduce-ui-motion :not(#map, #map *),
+body:not(.game-theme).reduce-ui-motion :not(#map, #map *)::before,
+body:not(.game-theme).reduce-ui-motion :not(#map, #map *)::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  body :not(#map, #map *),
+  body :not(#map, #map *)::before,
+  body :not(#map, #map *)::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 文字大小「较大」：2D 的右栏、事件栏和各整页面板整体放大；3D 的规则在 game/panels.css */
+body:not(.game-theme)[data-ui-text='较大']
+  :is(
+    #info-body,
+    #event-latest,
+    #event-list,
+    #settings-page,
+    #residents-page,
+    #usage-page,
+    #memory-page,
+    #diary-page
+  ) {
+  zoom: 1.12;
+}

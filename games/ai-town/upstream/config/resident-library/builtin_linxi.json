@@ -1,0 +1,27 @@
+{
+  "template_id": "builtin_linxi",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "林溪",
+    "age": "31",
+    "gender": "男",
+    "intro": "随和、喜欢户外，爱散步和观察植物、河岸风景。",
+    "tags": [
+      "随和",
+      "户外",
+      "散步"
+    ],
+    "personality": "不着急，什么都能聊两句但不深谈；更愿意在外面走走，社交节奏比别人慢。",
+    "speech": "慢条斯理，常提到天气和路上看见的东西。",
+    "background": "以前在河边的村子做过巡护工作，习惯每天走很远的路。来小镇是想看看这里的河岸公园和山坡。",
+    "drives": "每天到外面走一走，看看风景。",
+    "interests": "河岸公园、社区花园、小镇道路散步；饿了才想起吃饭，睡得早。",
+    "occupation": "河道巡护员",
+    "appearance": {
+      "marker": "wave",
+      "color": "#3d4650"
+    }
+  }
+}

@@ -252,31 +252,51 @@ export class WsConnection {
  * 我们只负责让公网玩家能从 7891 连到它 —— 一旦开始解析帧，就得跟着上游改协议，
  * 连 `Sec-WebSocket-Key` 校验也变成我们的事了。搬字节最省事，也最不容易坏。
  */
-function pipeUpgrade(req, socket, { port, host = '127.0.0.1', stripPrefix = '', extraHeaders = {} }) {
+function pipeUpgrade(req, socket, {
+  port, host = '127.0.0.1', stripPrefix = '', extraHeaders = {}, path = '', headers = {}, onPipe = null,
+}) {
   const upstream = net.connect({ host, port });
+  let closed = false;
+
+  const destroy = () => {
+    if (closed) return;
+    closed = true;
+    try { upstream.destroy(); } catch { /* 已经断了 */ }
+    try { if (!socket.destroyed) socket.destroy(); } catch { /* 已经断了 */ }
+  };
 
   const fail = (status = '502 Bad Gateway') => {
     try {
       socket.end(`HTTP/1.1 ${status}\r\nConnection: close\r\n\r\n`);
     } catch { /* 已经断了 */ }
-    try {
-      upstream.destroy();
-    } catch { /* 已经断了 */ }
+    destroy();
   };
+
+  let forget = null;
+  if (typeof onPipe === 'function') {
+    try { forget = onPipe(destroy); } catch { fail('503 Service Unavailable'); return; }
+  }
 
   upstream.on('error', () => fail());
   socket.on('error', () => { try { upstream.destroy(); } catch { /* 已经断了 */ } });
 
   upstream.on('connect', () => {
     // 把客户端的握手请求**逐字**重放给上游（含 Sec-WebSocket-Key / Origin / Cookie）。
-    // stripPrefix 只切掉公开路径前缀（`/mahjong`），其余一个字节都不改。
-    const target = stripPrefix && req.url.startsWith(stripPrefix)
+    // 默认只切掉公开路径前缀（`/mahjong`），其余一个字节都不改。
+    // path 是显式改写（AI 小镇要把 `/?session=`/身份参数替换掉）；
+    // headers 是**覆盖**（同名不重复，Host 必须改成本机端口，否则上游会按 Host 判本机）。
+    const target = path || (stripPrefix && req.url.startsWith(stripPrefix)
       ? (req.url.slice(stripPrefix.length) || '/')
-      : req.url;
+      : req.url);
+    const overrides = new Map();
+    for (const [key, value] of Object.entries(headers || {})) overrides.set(key.toLowerCase(), String(value));
     let head = `${req.method} ${target} HTTP/1.1\r\n`;
     for (let i = 0; i < req.rawHeaders.length; i += 2) {
-      head += `${req.rawHeaders[i]}: ${req.rawHeaders[i + 1]}\r\n`;
+      const key = req.rawHeaders[i];
+      if (overrides.has(key.toLowerCase())) continue;
+      head += `${key}: ${req.rawHeaders[i + 1]}\r\n`;
     }
+    for (const [key, value] of overrides) head += `${key}: ${value}\r\n`;
     for (const [key, value] of Object.entries(extraHeaders || {})) {
       head += `${key}: ${value}\r\n`;
     }
@@ -289,7 +309,11 @@ function pipeUpgrade(req, socket, { port, host = '127.0.0.1', stripPrefix = '', 
 
   // 关一头就得关另一头，否则半死的连接会一直挂着
   upstream.on('close', () => { if (!socket.destroyed) socket.destroy(); });
-  socket.on('close', () => { upstream.destroy(); });
+  socket.on('close', () => {
+    upstream.destroy();
+    if (forget) { try { forget(); } catch { /* 已清 */ } }
+  });
+  return { destroy };
 }
 
 /**
@@ -314,11 +338,19 @@ function pipeUpgrade(req, socket, { port, host = '127.0.0.1', stripPrefix = '', 
  */
 export function attachWebSocket(server, { path = '/ws', verify, onConnection, proxy, proxies = [], extra = [] } = {}) {
   const connections = new Set();
+  const pipes = new Set();
   const routes = [
     { path, verify, onConnection },
     ...(Array.isArray(extra) ? extra : []),
   ];
   const prefixProxies = Array.isArray(proxies) ? proxies.filter((p) => p && p.prefix) : [];
+
+  const reject = (socket, code = 401, reason = 'Unauthorized') => {
+    try {
+      socket.write(`HTTP/1.1 ${code} ${reason}\r\nConnection: close\r\n\r\n`);
+    } catch { /* 已经断了 */ }
+    socket.destroy();
+  };
 
   server.on('upgrade', (req, socket) => {
     let url;
@@ -332,28 +364,59 @@ export function attachWebSocket(server, { path = '/ws', verify, onConnection, pr
       pipeUpgrade(req, socket, proxy);
       return;
     }
-    // 前缀转发（莲花广麻 `/mahjong/ws/room/...` → Python 的 `/ws/room/...`）。
+    // 前缀转发（莲花广麻 `/mahjong/ws/room/...` → Python 的 `/ws/room/...`；
+    // AI 小镇 `/ai-town/ws?room=&sid=` → host 的随机端口 `/?session=…`）。
     // 升级前也要过一遍平台登录校验：没登录的人不该能连到游戏后端。
     for (const route of prefixProxies) {
       if (!url.pathname.startsWith(route.prefix)) continue;
+      let verdict = { ok: true };
       if (route.verify) {
-        let verdict;
         try {
           verdict = route.verify(req) || { ok: false };
         } catch {
           verdict = { ok: false };
         }
         if (!verdict.ok) {
-          socket.write([
-            `HTTP/1.1 ${verdict.code || 401} Unauthorized`,
-            'Connection: close',
-            '', ''
-          ].join('\r\n'));
-          socket.destroy();
+          reject(socket, verdict.code || 401, verdict.reason || 'Unauthorized');
           return;
         }
       }
-      pipeUpgrade(req, socket, { ...route, stripPrefix: route.stripPrefix || route.prefix });
+      // target 是这个路由的"现场查表"钩子：AI 小镇的端口每次 open 都会变。
+      // 它是异步的（可能要重新 open 一次），所以这里 async 包一层。
+      const finish = (target) => {
+        if (!target || !target.port) {
+          reject(socket, 502, 'Bad Gateway');
+          return;
+        }
+        pipeUpgrade(req, socket, {
+          ...route,
+          ...target,
+          stripPrefix: target.path ? '' : (route.stripPrefix || route.prefix),
+          onPipe: (destroy) => {
+            const record = { destroy };
+            pipes.add(record);
+            let inner = null;
+            if (typeof target.onPipe === 'function') {
+              try { inner = target.onPipe(destroy); } catch { /* 忽略 */ }
+            }
+            return () => {
+              pipes.delete(record);
+              if (inner) { try { inner(); } catch { /* 已清 */ } }
+            };
+          },
+        });
+      };
+      if (typeof route.target === 'function') {
+        Promise.resolve()
+          .then(() => route.target(req, verdict))
+          .then(finish)
+          .catch((err) => {
+            console.error(`[ws 代理] ${route.prefix} 失败：${err && err.message ? err.message : err}`);
+            reject(socket, err?.code || 502, err?.code === 410 ? 'Gone' : 'Bad Gateway');
+          });
+        return;
+      }
+      finish(route);
       return;
     }
     const route = routes.find((r) => r && r.path === url.pathname);
@@ -378,12 +441,7 @@ export function attachWebSocket(server, { path = '/ws', verify, onConnection, pr
       }
     }
     if (!verdict.ok) {
-      socket.write([
-        `HTTP/1.1 ${verdict.code || 401} Unauthorized`,
-        'Connection: close',
-        '', ''
-      ].join('\r\n'));
-      socket.destroy();
+      reject(socket, verdict.code || 401, verdict.reason || 'Unauthorized');
       return;
     }
 
@@ -415,6 +473,11 @@ export function attachWebSocket(server, { path = '/ws', verify, onConnection, pr
     /** 关掉所有连接（停机时用）。 */
     closeAll(code = 1001, reason = '服务端关闭') {
       for (const conn of [...connections]) conn.close(code, reason);
+      // 裸管道也必须收掉，否则 server.close() 会一直等它们（无名杀/麻将遗留的洞）。
+      for (const pipe of [...pipes]) {
+        try { pipe.destroy(); } catch { /* 已经断了 */ }
+      }
+      pipes.clear();
     }
   };
 }

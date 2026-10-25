@@ -1,0 +1,12 @@
+node_modules/
+dist/
+target/
+data/
+docs/
+logs/
+pnpm-lock.yaml
+*.min.*
+
+# Preserve the former data/ formatting scope for moved sources; avoid reformatting in a layout-only change.
+frontend/town-3d/src/building-v3/
+frontend/town-3d/src/terrain-v2/

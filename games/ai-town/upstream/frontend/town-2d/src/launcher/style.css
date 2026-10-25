@@ -1,0 +1,499 @@
+@import './theme.css';
+
+/* 地图选择页：选中的地图铺在右侧，左边是地图列表，右下角是进入游戏。 */
+/* 选图页整页滚动由 html 负责；body 的横向裁切（共用样式）会让它自己成为滚动框，
+   里面的 position: sticky（手机上吸底的「进入游戏」）就不贴视口了 */
+body:has(.map-launcher) {
+  overflow: visible;
+  height: auto;
+  min-height: 100dvh;
+  background: var(--ui-stage);
+  color: var(--ui-ink);
+  font-family: var(--ui-font);
+  font-size: 14px;
+}
+.map-launcher {
+  --panel-width: 380px;
+  --gap: 24px;
+  min-height: 100dvh;
+}
+.map-launcher [hidden] {
+  display: none !important;
+}
+:where(.map-launcher) button,
+:where(.map-launcher) summary {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+.map-launcher button:focus-visible,
+.map-launcher summary:focus-visible,
+.map-launcher a:focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+
+.launcher-stage {
+  position: fixed;
+  inset: 0;
+  background: var(--ui-stage);
+}
+/* 预览只占面板右边的区域，地图居中时不会压在列表下面。
+   拖动和捏合都由地图自己处理（map/camera.ts）：不然手机浏览器捏到一半会接过去放大整页 */
+.map-preview {
+  position: absolute;
+  inset: 0 0 0 calc(var(--panel-width) + var(--gap) * 2);
+  overflow: hidden;
+  touch-action: none;
+}
+/* 立体场景还没建好时 SVG 上只有底色和放大的地名，先藏起来，由「正在加载预览…」占着 */
+.map-preview svg.map-loading {
+  visibility: hidden;
+}
+.map-preview svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* 右下角是信息卡，缩放按钮移到右上角。 */
+.map-preview .map-zoom {
+  top: var(--gap);
+  right: var(--gap);
+  bottom: auto;
+  left: auto;
+}
+.preview-state {
+  position: absolute;
+  inset: 0 0 0 calc(var(--panel-width) + var(--gap) * 2);
+  display: grid;
+  place-items: center;
+  color: var(--ui-ink-soft);
+  font-size: 15px;
+  pointer-events: none;
+}
+.preview-retry {
+  position: absolute;
+  top: calc(50% + 32px);
+  left: calc(
+    var(--panel-width) + var(--gap) * 2 + (100% - var(--panel-width) - var(--gap) * 2) / 2
+  );
+  transform: translateX(-50%);
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-panel);
+}
+.preview-scenic {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: calc(var(--panel-width) + var(--gap) * 3);
+  z-index: 6;
+  min-height: 42px;
+  padding: 0 16px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+}
+.preview-scenic:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.launcher-panel,
+.launcher-card {
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.launcher-panel {
+  position: fixed;
+  top: var(--gap);
+  bottom: var(--gap);
+  left: var(--gap);
+  width: var(--panel-width);
+  display: flex;
+  flex-direction: column;
+  padding: 24px;
+  overflow-y: auto;
+}
+.launcher-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.launcher-mark {
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+.launcher-heading h1 {
+  margin: 28px 0 6px;
+  font: 600 26px/1.3 var(--ui-font);
+}
+.launcher-heading p {
+  margin: 0 0 24px;
+  color: var(--ui-ink-muted);
+  font-size: 14px;
+}
+/* 一句话说清这是什么游戏；下面那句预览说明是小字 */
+.launcher-heading p.launcher-intro {
+  margin-bottom: 8px;
+  color: var(--ui-ink);
+  line-height: 1.6;
+}
+.launcher-heading p.launcher-preview-note {
+  font-size: 12.5px;
+}
+.map-library {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.map-library-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 0 4px;
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+}
+.map-library-heading h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+}
+.map-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.map-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid var(--ui-line);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  text-align: left;
+}
+.map-option:hover {
+  border-color: var(--ui-line-strong);
+  background: var(--ui-fill);
+}
+.map-option[aria-pressed='true'] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.map-option > span:last-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.map-option strong {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.map-option-status {
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+}
+.launcher-empty {
+  margin: 0;
+  padding: 16px 4px;
+  color: var(--ui-ink-muted);
+}
+.map-library .create-town-button {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--ui-line-strong);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--ui-ink);
+  font-size: 15px;
+  font-weight: 400;
+}
+.map-library .create-town-button:hover {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+}
+.launcher-panel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid var(--ui-line);
+}
+#launcher-music-toggle {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: transparent;
+  font-size: 13px;
+}
+#launcher-music-toggle[aria-pressed='false'] {
+  color: var(--ui-ink-muted);
+}
+
+.launcher-card {
+  position: fixed;
+  right: var(--gap);
+  bottom: var(--gap);
+  width: min(460px, calc(100vw - var(--panel-width) - var(--gap) * 3));
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 24px;
+}
+.launcher-eyebrow {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+}
+.map-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: -8px;
+}
+.map-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.map-title-row h2 {
+  margin: 0;
+  font: 600 22px/1.3 var(--ui-font);
+  overflow-wrap: anywhere;
+}
+.map-metadata {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+#selected-map-description {
+  overflow-wrap: anywhere;
+}
+.enter-game {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+  font-size: 17px;
+  font-weight: 700;
+}
+.enter-game:hover:not(:disabled) {
+  background: var(--ui-accent-hover);
+}
+.enter-game:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.launcher-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+#pause-retry {
+  flex: none;
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 8px;
+  background: transparent;
+}
+
+.town-actions {
+  position: relative;
+  flex: none;
+}
+.town-actions summary {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  color: var(--ui-ink-soft);
+  list-style: none;
+}
+.town-actions summary::-webkit-details-marker {
+  display: none;
+}
+.town-actions summary:hover,
+.town-actions[open] summary {
+  background: var(--ui-fill-strong);
+  color: var(--ui-ink);
+}
+.town-actions-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  display: flex;
+  min-width: 180px;
+  flex-direction: column;
+  padding: 6px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-panel-solid);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.town-actions-menu button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+}
+.town-actions-menu button:hover:not(:disabled) {
+  background: var(--ui-fill-strong);
+}
+.town-actions-menu .delete-town {
+  color: var(--ui-danger);
+}
+
+/* 720–1023（折叠屏展开、竖放的平板、窄窗口）：仍是左列表、右预览、右下角进入游戏，列表窄一些。
+   从上到下排的话，在 744×729 这样的屏幕上「进入游戏」要往下滚才看得到。 */
+@media (min-width: 720px) and (max-width: 1023px) {
+  .map-launcher {
+    --panel-width: 300px;
+    --gap: 16px;
+  }
+}
+
+/* 窄屏：面板、地图、卡片从上到下排（手机布局在下面再调顺序）。 */
+@media (max-width: 719px) {
+  .map-launcher {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px;
+  }
+  .launcher-panel,
+  .launcher-card,
+  .launcher-stage {
+    position: relative;
+    inset: auto;
+    width: auto;
+  }
+  .launcher-panel {
+    order: 1;
+  }
+  .launcher-stage {
+    order: 2;
+    height: 55vh;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .launcher-card {
+    order: 3;
+  }
+  .map-preview,
+  .preview-state {
+    inset: 0;
+  }
+  .preview-retry {
+    left: 50%;
+  }
+  .preview-scenic {
+    left: max(16px, env(safe-area-inset-left));
+  }
+  .launcher-panel-footer {
+    margin-top: 16px;
+  }
+}
+
+/* 手机：上面是地图预览，下面依次是小镇列表和进入游戏；建镇只在电脑版。 */
+@media (max-width: 719px) {
+  .map-launcher {
+    gap: 0;
+    padding: 0;
+  }
+  .launcher-stage {
+    order: 1;
+    height: 32dvh;
+    border-radius: 0;
+  }
+  .launcher-panel {
+    order: 2;
+    z-index: 2;
+    margin: -24px 12px 0;
+    padding: 20px;
+  }
+  .launcher-heading h1 {
+    margin: 16px 0 4px;
+    font-size: 22px;
+  }
+  .launcher-heading p {
+    margin-bottom: 16px;
+  }
+  /* 「进入游戏」这张卡吸在屏幕底部：小镇多了列表变长，也不用滚到最下面才找得到 */
+  .launcher-card {
+    order: 3;
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin: 12px 0 0;
+    padding: 16px 20px calc(14px + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -10px 28px rgba(0, 0, 0, 0.38);
+  }
+  /* 选中后标题就是小镇名，上面「已选择 · 小镇名」那行不再重复 */
+  .launcher-card:has(.map-detail:not([hidden])) #selection-status {
+    display: none;
+  }
+  .enter-game {
+    min-height: 52px;
+  }
+}
+
+/* 赏景仍是原来的静态地图；只让出面板占的空间，桌面和手机都保留退出及镜头控件。 */
+body:has(.map-launcher.is-scenic) {
+  overflow: hidden;
+}
+.map-launcher.is-scenic .launcher-panel,
+.map-launcher.is-scenic .launcher-card {
+  display: none;
+}
+.map-launcher.is-scenic .launcher-stage {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100dvh;
+  border-radius: 0;
+}
+.map-launcher.is-scenic .map-preview,
+.map-launcher.is-scenic .preview-state {
+  inset: 0;
+}
+.map-launcher.is-scenic .preview-scenic {
+  left: max(16px, env(safe-area-inset-left));
+}

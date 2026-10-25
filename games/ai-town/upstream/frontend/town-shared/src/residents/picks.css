@@ -1,0 +1,103 @@
+/* 村民表单里可点的词：胶囊小按钮，按下的用主色浅底；一组一行，行首灰字写组名。触屏的按钮更大 */
+.rv-picks {
+  display: grid;
+  gap: 6px;
+  margin: 2px 0 4px;
+}
+.rv-pick-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.rv-pick-group {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.rv-pick-group > .rv-pick-row {
+  flex: 1;
+  min-width: 0;
+}
+.rv-pick-caption {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+}
+button.rv-pick {
+  padding: 1px 10px;
+  border-radius: var(--r-pill);
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.7;
+}
+button.rv-pick:hover:not(:disabled) {
+  color: var(--text);
+}
+button.rv-pick[aria-pressed='true'],
+button.rv-pick[aria-pressed='true']:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+button.rv-pick.chosen::after {
+  content: '×';
+  margin-left: 4px;
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+/* 已选的标签和自己写的输入放在一个像输入框的框里 */
+.rv-pick-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.rv-pick-count {
+  color: var(--text-3);
+  font-size: 12px;
+}
+.rv-pick-chosen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface);
+  box-sizing: border-box;
+  cursor: text;
+  transition: border-color var(--t-fast) var(--ease);
+}
+.rv-pick-chosen:focus-within {
+  border-color: var(--accent);
+}
+.rv-pick-list {
+  display: contents;
+}
+.rv-field input.rv-pick-own {
+  flex: 1 1 8em;
+  width: auto;
+  min-width: 8em;
+  padding: 2px 4px;
+  border: 0;
+  background: transparent;
+}
+.rv-pick-own:focus-visible {
+  outline: none;
+}
+
+[data-input='touch'] button.rv-pick {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+[data-input='touch'] .rv-pick-row {
+  gap: 8px;
+}
+[data-input='touch'] .rv-pick-caption {
+  font-size: 13px;
+}

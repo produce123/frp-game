@@ -1,0 +1,44 @@
+# --- Node / Vite ---
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.tsbuildinfo
+.eslintcache
+*.local
+
+# --- Rust ---
+# Cargo.lock 入库：host 是二进制。
+target/
+**/*.rs.bk
+
+# --- 本地运行状态 ---
+# 存档、日志、构建产物不入库。.local/ 放研究页的数据与构建、临时存档；
+# 仓库根目录的 .preview.local 这类目录由上面的 *.local 忽略。
+logs/
+/dist-island/
+/dist-research/
+/.local/
+/AI小镇启动.exe
+*.log
+
+# --- 密钥 ---
+.env
+.env.*
+!.env.example
+config/credentials.json
+
+# --- 编辑器与工具 ---
+.DS_Store
+.idea/
+.vscode/
+.obsidian/
+.wowai/
+/.workbuddy/
+/outputs/
+/output/
+.claude/settings.local.json
+
+# --- 本地研究导出 ---
+research/
+mac_portable_research/

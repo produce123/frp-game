@@ -1,0 +1,46 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # 版本与组件同 rust-toolchain.toml（1.88.0，clippy、rustfmt）。
+      - name: Install Rust
+        run: rustup toolchain install 1.88.0 --profile minimal --component clippy --component rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - run: cargo test --locked --workspace
+      # node 测试直接调用 target/debug 下的 host 与 town-map。
+      - run: cargo build --locked -p host --bins
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: corepack enable
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(corepack pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-${{ runner.os }}-
+      - run: corepack pnpm install --frozen-lockfile
+      # 测试读取正式构建产物（town-2d/dist）。
+      - run: corepack pnpm build
+      - run: corepack pnpm typecheck
+      # 协议比对测试（town-shared/tests/protocol-wire）读上面 cargo test 导出的样本。
+      - run: corepack pnpm test

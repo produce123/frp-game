@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 frontend/town-shared/src/design/tokens.css 一致 -->
+    <color name="town_night">#FF111412</color>
+    <color name="town_paper">#FFF5F4F0</color>
+    <color name="town_green">#FF2F6B55</color>
+</resources>

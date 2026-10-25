@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>选择小镇 · AI小镇</title>
+    <script type="module" crossorigin src="/ai-town/assets/index-C7yAEXnD.js"></script>
+    <link rel="modulepreload" crossorigin href="/ai-town/assets/platformAccount-DeArrWH5.js">
+    <link rel="modulepreload" crossorigin href="/ai-town/assets/platform-j81mZcj9.js">
+    <link rel="modulepreload" crossorigin href="/ai-town/assets/brand-CjVdkeHi.js">
+    <link rel="modulepreload" crossorigin href="/ai-town/assets/quality-u8pQUhPE.js">
+    <link rel="modulepreload" crossorigin href="/ai-town/assets/sound-8k0_OVw5.js">
+    <link rel="stylesheet" crossorigin href="/ai-town/assets/platformAccount-B1CDsOdc.css">
+    <link rel="stylesheet" crossorigin href="/ai-town/assets/sound-Z1VqUxd2.css">
+    <link rel="stylesheet" crossorigin href="/ai-town/assets/index-DEjCZn0Y.css">
+  </head>
+  <body data-tier="night">
+    <main class="map-launcher">
+      <div class="launcher-stage">
+        <div id="map-preview" class="map-preview" role="region" aria-label="地图预览"></div>
+        <div id="preview-state" class="preview-state" role="status">正在加载预览…</div>
+        <button id="preview-retry" class="preview-retry" hidden>重试预览</button>
+        <button
+          id="preview-scenic"
+          class="preview-scenic"
+          type="button"
+          aria-pressed="false"
+          disabled
+        >
+          赏景
+        </button>
+      </div>
+
+      <aside class="launcher-panel">
+        <header class="launcher-heading">
+          <div class="launcher-brand"><img class="launcher-mark" alt="" /> AI 小镇</div>
+          <h1>选择小镇</h1>
+          <p class="launcher-intro">
+            一个由 AI
+            村民自己过日子的小镇：他们起床、做饭、串门、聊天，还会记住发生过的事。你可以在一旁看，也可以进去和大家说话。
+          </p>
+          <p class="launcher-preview-note">选中的小镇显示在右边，可以拖动和缩放。</p>
+        </header>
+        <section class="map-library" aria-labelledby="map-library-title">
+          <div class="map-library-heading">
+            <h2 id="map-library-title">我的小镇</h2>
+            <span id="map-count"></span>
+          </div>
+          <div id="map-list" class="map-list" role="group" aria-label="选择小镇"></div>
+          <p id="map-empty" class="launcher-empty" hidden>还没有可用的小镇。</p>
+          <div data-create-town-slot></div>
+        </section>
+        <footer class="launcher-panel-footer">
+          <button id="launcher-music-toggle" type="button" aria-pressed="true">♫ 音乐：开</button>
+        </footer>
+      </aside>
+
+      <section class="launcher-card">
+        <p id="selection-status" class="launcher-eyebrow" role="status">请选择小镇</p>
+        <div class="map-detail" hidden>
+          <div class="map-title-row">
+            <h2 id="selected-map-name"></h2>
+            <details id="town-actions" class="town-actions" hidden>
+              <summary aria-label="更多小镇操作" title="更多操作">
+                <!-- 用图形画三个点：「·」在中文字体里是全角，三个排不进按钮 -->
+                <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+                  <circle cx="5" cy="12" r="1.7" fill="currentColor" />
+                  <circle cx="12" cy="12" r="1.7" fill="currentColor" />
+                  <circle cx="19" cy="12" r="1.7" fill="currentColor" />
+                </svg>
+              </summary>
+              <div class="town-actions-menu" aria-label="小镇管理">
+                <button id="close-town" hidden>保存并关闭小镇</button>
+                <button id="delete-town" class="delete-town" hidden>删除地图…</button>
+              </div>
+            </details>
+          </div>
+          <p class="map-metadata">
+            <span id="selected-map-description"></span>
+          </p>
+        </div>
+        <button id="enter-game" class="enter-game" disabled>
+          进入游戏 <span aria-hidden="true">→</span>
+        </button>
+        <div class="launcher-status">
+          <span id="pause-status" role="status">正在暂停游戏…</span>
+          <button id="pause-retry" hidden>重试暂停</button>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

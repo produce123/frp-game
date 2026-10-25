@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_tan",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿滩",
+    "age": "34",
+    "gender": "男",
+    "intro": "河口的摆渡人，天没亮解缆，黄昏送完最后一批人。",
+    "tags": [
+      "守时",
+      "水上人家",
+      "寡言"
+    ],
+    "personality": "话少但靠谱，答应摆渡的事风雨不改；看水色就知道今天能不能开船。",
+    "speech": "短句，爱说「上来了就走」「水急，坐稳」。",
+    "background": "从小在船上长大，接过父亲的缆绳后就再没离开过这条河。",
+    "drives": "把每一船人平平安安送到对岸。",
+    "interests": "渡口、河岸、修船补网；收工后爱坐在船头看水。",
+    "occupation": "摆渡人",
+    "appearance": {
+      "marker": "wave",
+      "color": "#46586a",
+      "profile": "rigged-ferryman"
+    }
+  }
+}

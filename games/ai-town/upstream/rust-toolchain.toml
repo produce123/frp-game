@@ -1,0 +1,13 @@
+# 固定整个仓库的 Rust 工具链。
+#
+# 不锁的话，rustup 会用本机默认 stable，旧机器上会得到两个完全误导人的报错：
+#   rust-core   : 8 处 `no method named is_none_or`（该方法 1.82 才稳定）
+#   web-server  : `failed to download moxcms: feature edition2024 is required`
+# 两者都不会提示"请升级 rustc"。
+#
+# 真实下限见各 crate 的 rust-version：rust-core 1.82、web-server 1.88.0
+# （后者被直接依赖 image 0.25.10 自己声明的 rust-version 顶住）。
+# 这里锁 1.88.0 是当前验证通过的版本（cargo build / cargo test 全绿）。
+[toolchain]
+channel = "1.88.0"
+components = ["rustfmt", "clippy"]

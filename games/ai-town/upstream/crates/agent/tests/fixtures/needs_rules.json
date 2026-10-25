@@ -1,0 +1,17 @@
+{
+  "rate_min": 0,
+  "rate_max": 10,
+  "thresholds": [
+    { "lower": 0, "upper": "collapse", "inclusive": false, "field": "collapse", "message": "「严重低值」必须大于 0" },
+    { "lower": "collapse", "upper": "ring", "inclusive": false, "field": "ring", "message": "「重新考虑」必须大于「严重低值」" },
+    { "lower": "ring", "upper": "ring_reset", "inclusive": true, "field": "ring_reset", "message": "「恢复值」必须不小于「重新考虑」" },
+    { "lower": "ring_reset", "upper": "voiced", "inclusive": false, "field": "voiced", "message": "「出现不适」必须大于「恢复值」" },
+    { "lower": "voiced", "upper": 100, "inclusive": false, "field": "voiced", "message": "「出现不适」必须小于 100" }
+  ],
+  "bands": {
+    "steady": { "class": "steady", "label": "状态平稳", "severity": 0, "fullness": "", "energy": "" },
+    "mild": { "class": "voiced", "label": "有点饿 / 有点累", "severity": 1, "fullness": "有点饿", "energy": "有点累" },
+    "urgent": { "class": "ring", "label": "很饿 / 很累", "severity": 2, "fullness": "很饿", "energy": "很累" },
+    "collapse": { "class": "collapse", "label": "严重低值", "severity": 3, "fullness": "严重饥饿，持续低值会损害健康", "energy": "严重疲劳，持续低值会损害健康" }
+  }
+}

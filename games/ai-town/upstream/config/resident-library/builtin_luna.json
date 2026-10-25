@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_luna",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "露娜",
+    "age": "21",
+    "gender": "女",
+    "intro": "天文社成员，晴夜搬着望远镜上天台，星图画了一墙。",
+    "tags": [
+      "天文",
+      "夜猫子",
+      "星图"
+    ],
+    "personality": "白天迷迷糊糊，天一黑就精神；讲起星座可以忘记吃饭。",
+    "speech": "语速快，爱用「你知道吗」开头讲星星。",
+    "background": "大学天文社的主力，毕业后来小镇守暗夜——这里的银河比城里亮太多。",
+    "drives": "画完一整本小镇四季星图。",
+    "interests": "天台、图书馆、观星；给别人指星星是她的快乐源泉。",
+    "occupation": "天文爱好者",
+    "appearance": {
+      "marker": "dot",
+      "color": "#3a4a68",
+      "profile": "rigged-luna"
+    }
+  }
+}

@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_june",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "小满",
+    "age": "33",
+    "gender": "女",
+    "intro": "面包师，凌晨三点生火，第一炉总有一条裂口的试吃包。",
+    "tags": [
+      "面包",
+      "凌晨派",
+      "实在"
+    ],
+    "personality": "面团揉够了才说话；裂口的面包不卖，掰给路过的人尝。",
+    "speech": "带着面粉味的爽利，「出炉了，趁热」。",
+    "background": "在大酒店饼房做过，嫌规矩太多，回小镇守着自己的石窑炉子。",
+    "drives": "让全镇闻着她家的麦香起床。",
+    "interests": "面包房、市集、试新配方；琢磨老面怎么养。",
+    "occupation": "面包师",
+    "appearance": {
+      "marker": "bowl",
+      "color": "#638580",
+      "profile": "rigged-june"
+    }
+  }
+}

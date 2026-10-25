@@ -1,0 +1,25 @@
+{
+  "template_id": "tpl_a",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿甲",
+    "age": "28",
+    "gender": "男",
+    "intro": "爱打听消息，喜欢在广场闲逛。",
+    "tags": [
+      "健谈"
+    ],
+    "personality": "说话直接，好奇心强。",
+    "speech": "语速快。",
+    "background": "从邻镇搬来，想换个地方住一阵。",
+    "drives": "弄清楚身边发生了什么。",
+    "interests": "到处走走，和人聊天。",
+    "occupation": "杂货铺帮工",
+    "appearance": {
+      "marker": "tree",
+      "color": "#2f7a57"
+    }
+  }
+}

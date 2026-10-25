@@ -1,0 +1,22 @@
+{
+  "name": "ai-town-hd2d",
+  "private": true,
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "packageManager": "pnpm@10.34.5",
+  "scripts": {
+    "dev": "node scripts/start-client.mjs dev",
+    "build": "corepack pnpm --filter town-2d build",
+    "typecheck": "corepack pnpm -r typecheck",
+    "preview": "node scripts/start-client.mjs preview",
+    "format": "prettier --write frontend scripts",
+    "format:check": "prettier --check frontend scripts",
+    "test": "node --test --test-concurrency=4 scripts/tests/*.test.mjs frontend/town-shared/tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
+}

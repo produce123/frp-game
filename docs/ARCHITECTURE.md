@@ -13,7 +13,8 @@ SakuraFrp 国内节点 ───┼─────────┘  明文 HTTP �
                      │                                  ├─ rooms.mjs 房间注册表
                      │                                  ├─ auth.mjs  注册 / 登录 / 会话
                      │                                  ├─ store.mjs SQLite
-                     │                                  ├─ games/    平台游戏的服务器权威逻辑（斗地主等；大富翁不在此列）
+                     │                                  ├─ games/    平台游戏的服务器权威逻辑（斗地主、地平线的一局生命周期等；大富翁不在此列）
+                     │                                  ├─ horizon/  地平线赛车的车位置中继（/horizon-relay）
                      │                                  └─ werewolf/ 狼人杀接入层（规则在 games/werewolf）
                      └────────────────────────────────────────────────┘
 ```
@@ -33,7 +34,7 @@ TLS 由 **frpc** 负责 —— 隧道开「自动 HTTPS」之后，frpc 用 TLS 
 
 ## 一条连接干所有事
 
-玩家整个会话只有**一条 WebSocket**（`/ws`），承载：
+玩家整个会话的主通道是**一条 WebSocket**（`/ws`），承载：
 
 - 身份与在线状态（上下线时把**整份好友列表**推给相关的人）
 - 好友的增删与实时状态（含"他正在玩什么、还能不能进去"）
@@ -41,7 +42,9 @@ TLS 由 **frpc** 负责 —— 隧道开「自动 HTTPS」之后，frpc 用 TLS 
 - 游戏操作意图的下行与视图的上行
 - 好友邀请
 
-**没有轮询、没有第二条通道、没有信令服务器。**
+**主通道没有轮询、没有第二条信令通道。** 两个例外是游戏自己的中转：
+大富翁的 `/monopoly-relay`（PeerJS 兼容）和地平线的 `/horizon-relay`（12.5Hz 车位置）；
+它们和 `/ws` 共用 7891，但**不承载账号/好友/房间**，也不改变"平台只有一条主 WS"的模型。
 
 ## 认证：HttpOnly Cookie，不走 JS
 
@@ -519,6 +522,48 @@ export function createMatch(players, options) { … }
 作废、出别人的牌被拒）+ `tests/ddz.browser.mjs`（真 Chrome：邀请进房、三块牌桌起 wasm、
 **在 canvas 上真点「叫地主」**、打完一局三家进结算、375px、伪横屏外壳）。
 
+## 地平线赛车（`/games/horizon/`，上游 3D 世界 + 平台房间层 + 独立位置中继）
+
+**不是规则引擎游戏**：世界/物理/车都在浏览器里跑（上游
+`github.com/Liyang1145/horizon-racing`，MIT，Three.js r128 + cannon-es，零构建）。
+平台只负责联机大厅和一局的生命周期；**车辆位置不走 `room.state`**（D46）。
+
+| 项 | 在哪 |
+| --- | --- |
+| `GET /games/horizon/`（含 `?join=`） | `server/http.mjs` 静态目录 + `isHorizonDocument` 登录门 | 未登录 302 `/?return=…`；资源（`js/**`、`assets/**`、`lib/**`）不拦 |
+| `GET /games/horizon` | `http.mjs` | 301 到带尾斜杠（保留 query；在登录门之后） |
+| `GET /play/horizon` | `web/horizon-frame.html` | 手机伪横屏外壳；粗指针竖屏时把 iframe 转 90°，`?join=` 原样带进 iframe |
+| `GET /api/games` | 自动发现 `server/games/horizon.mjs` | 首页卡片 / 好友「正在玩」靠它 |
+| 房间/座位/邀请 | `server/rooms.mjs` + `shared/ui/room.js` | 和刀马/斗地主同一套 `FrpRoom`；`meta.minSeats=1`、`maxPlayers=8`、`maxBots=0` |
+| 一局生命周期 | `server/games/horizon.mjs` | `createMatch` 只记地图/车手/完赛顺序；`act` 支持 `finish`/`dnf`/房主 `over`；开局后 `addPlayer=false` |
+| 车辆位置中继 | `server/horizon/relay.mjs` + `server/ws.mjs` 的 `extra` 路由 | 路径 `/horizon-relay`；握手期要平台登录，`hello` 还要核对房号/座位/`phase=playing` |
+| 客户端接线 | `games/horizon/js/frp-horizon.js` + `css/frp-horizon.css` | 大厅、地图选择、幽灵车、起终点拱门、结算、触屏按键；**上游 js 一行没改** |
+
+**中继协议**（JSON 文本帧，玩家自己发的 `pos` 不回给自己）：
+
+| 方向 | 消息 |
+| --- | --- |
+| C→S | `hello {code,map,car}` / `ready` / `pos {x,y,z,yaw,vx,vz,speed,progress}` / `finish {time}` / `over {timeout}` / `bye` |
+| S→C | `welcome {selfId,code,started,startedAt,peers}` / `peer` / `peer-left` / `go {delayMs,startedAt}` / `pos` / `finish {id,order,time}` / `all-finished` / `over` / `error` |
+
+**关键不变量**：
+
+- **账号唯一**：大厅里显示的就是平台 7 位账号；页面没有昵称输入框，未登录打不开文档。
+- **位置 12.5Hz + 客户端插值**；平台 `room.state` 只在开局/完赛/DNF/结束时发。
+- **碰撞是各客户端推自己的车**（三圆胶囊），不是服务器权威物理；不装"撞了改服务器位置"。
+- **赛道复用上游路线**：`coast` → `ring` → 最长路线；闭环一根"起点 / 终点"格子旗拱门，
+  开放路线起点门 + 终点门；检查点 ~30 个，复用上游 `raceCheckpoints`。
+- **开局后不能中途加入**（物理对不齐）；有人离开/手动退回主菜单记 DNF，别让其他人永远等。
+- **手机触屏 = 合成键盘事件**（`KeyW/A/S/D/Space/C/R/Escape/H/Q/E`），上游输入逻辑不改。
+- **首屏资产 ~15MB**（保时捷 918 GLB base64）；`city3` 另有 ~50MB GLB，按需加载。
+
+**回归防线**：`npm run test:horizon` ——
+`tests/horizon.test.mjs`（5 条：自动发现/2–8 人、建房开局视图、地图白名单、中继鉴权/
+ready→go/pos 只转别人/finish 名次/重置后拒绝、登录门 + 资源不拦 + 301 保留 `?join`）+
+`tests/horizon.browser.mjs`（真 Chrome + Node 队友：平台账号、收起大厅不退房、幽灵车、
+三圆胶囊碰撞推开、起点格子旗拱门、`Game.finishRace` 真冲线到 relay + room.act、双人完赛结算、
+首页卡片、触屏按键尺寸/真合成 KeyW、手机外壳旋转和 `?join` 透传）。
+
 ## 大富翁（`/games/monopoly/`，整份上游 Web 客户端 + WS 中转）
 
 **不是平台房间游戏**：页面/玩法/规则全部来自
@@ -601,6 +646,37 @@ room-router 生命周期与权限/relay 双向转发/resume/401/presence/邀请/
 未登录 401/建房加入准备开局/WS 反代 `rejoin_ok` + 快照裁剪/presence/邀请回执）+
 `tests/mahjong.browser.mjs`（真 Chrome：登录门回跳、账号一致、大厅无昵称框、
 建房、好友「正在玩/进入」、游戏内邀请→平台邀请卡→自动进房、375px 伪横屏、桌面回真页面）。
+
+## AI 小镇（`/ai-town/`，Rust host 子进程 + 平台房间/反代）
+
+**规则与模拟不在 Node**：上游 `town-manager` 管用户目录/开镇，`town-host` 跑世界；Node 只包一层
+账号、房间、存档、布局与反代（D48）。
+
+| 东西 | 在哪 | 说明 |
+| --- | --- | --- |
+| `GET /ai-town/`、`/ai-town/game.html` | `http.mjs` 的 `isAiTownDocument` + `sendAiTownIndex` | 登录门 + 注入 `__FRP_ME__`/桥脚本/全屏/音频防下载；`/ai-town/assets/**` 走静态挂载 |
+| `GET /ai-town` | `http.mjs` | 301 到带尾斜杠 |
+| `ANY /ai-town/api/platform/*` | `server/ai-town/index.mjs` 的 `handlePlatform` | status/state/friends/invite/join/room/leave/close/layout；不经过上游 |
+| `ANY /ai-town/api/towns/*` | `manager.proxyHttp` | 房主开镇/关镇走平台包装；其余反代到房主 manager；客人 GET 可看，POST 403 |
+| `POST /ai-town/api/towns/<id>/open` | `openFor` | 房主调上游 open；客人拿房主房间的 `browserEntry`（不含 lease） |
+| `WS /ai-town/ws?room=&sid=` | `server/ws.mjs` 的 `proxies` + `aiTown.wsTarget` | 握手验平台会话 + 10 分钟房间票据，再按房间查 host 随机端口，裸字节转发；代理在握手前注入 `frp_user/frp_name/frp_role/frp_room/frp_avatar` |
+| 子进程 | `server/ai-town/manager.mjs` | 一个平台用户一个 manager（`--root data/ai-town/users/<id>`）；最多 2 个 |
+| 房间 | `server/ai-town/rooms.mjs` | 平台 6 位码；房主/成员/joinable/邀请；最多 4 人/房、2 房 |
+| 在线状态 | `server/ai-town/presence.mjs` + `hub.mjs` | 好友列表「正在玩 AI 小镇」、邀请回执 |
+| 手机布局 | `store.mjs` 的 `user_layouts` + `index.mjs` 的 layout API | 按平台账号存 4 个控件；`kind='ai-town/controls'` |
+| 模型 | `upstream/builtin-model/llama-server.exe` + `data/ai-town/models/model.gguf` | host 按需起 llama-server；每用户硬链接共享模型 |
+| 多化身 | 上游 kernel/host 的 `guest:<平台ID>` actor + 平台注入的身份 | 房主 `player_avatar`，访客各自一条租约；世界设置仅房主；名册 `avatar_url` 画头顶平台头像 |
+
+**关键不变量**：
+
+- **浏览器永远只看到同源 `/ai-town/ws`**：上游随机端口、`?session=`、`lease` 不出平台。
+- **房间票据一次性/10 分钟**：`sid` 绑定 user+room，WS 握手再验平台会话。
+- **客人不落盘**：客人用住房主世界，退出/关镇保存的是房主的 `world.json`；`snapshot()` 会
+  过滤所有 `guest:` actor 和访客互动。
+- **访客权限边界**：只能控制自己的 `Avatar/AvatarInput` + 只读公开查询；`Possess` 与世界设置
+  （速度/天气/请村民/开始暂停）由 host 拒绝，错误文案说明归房主。
+- **`/games/ai-town/**` 404**：上游源码、Rust target、模型都不从网页暴露。
+- **同时最多 2 个世界**：第三个人开镇返回「小镇满了」；每房 4 人。
 
 ## 目录职责
 

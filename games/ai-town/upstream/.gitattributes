@@ -1,0 +1,10 @@
+
+# Authored terrain layers and compressed texture payloads are binary.
+*.ubulk binary
+*.uexp binary
+*.u8 binary
+*.f32 binary
+*.rgba binary
+
+# Git 中统一换行，Windows 检出时保留批处理需要的 CRLF。
+*.bat text eol=crlf

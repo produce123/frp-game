@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_poppy",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "波比",
+    "age": "25",
+    "gender": "女",
+    "intro": "温室园丁，认得每一株苗的名字，浇水比谁都准时。",
+    "tags": [
+      "园丁",
+      "温室",
+      "准时"
+    ],
+    "personality": "对植物比对人话多；谁踩了苗床会真的生气。",
+    "speech": "干脆，「该浇水了」「这个不能晒」。",
+    "background": "农学院出来不想去大公司，包了镇边的温室，把菜苗花苗伺候得明明白白。",
+    "drives": "让温室四季都有得收。",
+    "interests": "温室、花园、堆肥；给邻居塞自己育的苗。",
+    "occupation": "温室园丁",
+    "appearance": {
+      "marker": "leaf",
+      "color": "#c09b62",
+      "profile": "rigged-poppy"
+    }
+  }
+}

@@ -1,0 +1,584 @@
+/* 道具页与对象卡片。颜色、圆角、阴影、字体来自 design/tokens.css，基础组件来自 design/components.css；
+   这里只写本页自己的布局：整页框架、物品格子、详情（pd-*）、地图上的卡片、道具库列表与编辑器。 */
+
+/* ---------- 整页框架：页头和筛选条固定，下面的内容区滚动 ---------- */
+.props-page {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface-page);
+  color: var(--text);
+  line-height: 1.6;
+  /* 内容居中，最宽 1280 像素 */
+  --props-gutter: max(24px, calc((100% - 1280px) / 2));
+}
+.props-page h1 {
+  margin: 0;
+}
+:where(.props-page, .prop-card) p {
+  margin: 0;
+}
+.props-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line);
+}
+.props-toolbar > div {
+  flex: 1;
+}
+.props-controls {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 14px var(--props-gutter);
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
+}
+.props-toolbar .ui-seg,
+.page-topbar .ui-seg {
+  flex: none;
+}
+.props-controls .ui-search {
+  flex: 1 1 240px;
+  max-width: 400px;
+}
+.props-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.props-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+.prop-status {
+  padding: 8px var(--props-gutter) 0;
+  color: var(--text-2);
+}
+.prop-status:empty {
+  display: none;
+}
+.prop-status.error {
+  color: var(--danger);
+}
+.props-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: 28px;
+  padding: 18px var(--props-gutter) 48px;
+  align-items: start;
+}
+/* 没有选中的物品（筛选结果为空）时不留空白的详情框，列表占满整行，「没有符合条件」的提示落在正中 */
+.props-detail:empty {
+  display: none;
+}
+.props-layout:has(> .props-detail:empty) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.props-list {
+  min-width: 0;
+}
+.props-page .prop-count {
+  margin-bottom: 14px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.props-detail {
+  position: sticky;
+  top: 18px;
+  min-width: 0;
+  max-height: calc(100vh - 190px);
+  overflow: auto;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+
+/* ---------- 场景物品：按地点分组的格子 ---------- */
+.pw-group {
+  margin-bottom: 26px;
+}
+.pw-group-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.pw-group-head small {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+.pw-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 12px;
+}
+.props-page .pw-tile b {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.pw-tile small {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pw-state {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--off);
+}
+.pw-tile[data-state='free'] .pw-state {
+  background: var(--ok);
+}
+.pw-tile[data-state='busy'] .pw-state {
+  background: var(--busy);
+}
+
+/* ---------- 物品详情：整页右栏和地图上的卡片共用 ---------- */
+.pd-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.pd-id {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.pd-name {
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.pd-by {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pd-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pd-desc {
+  margin-top: 12px;
+  color: var(--text-2);
+}
+.props-page .ui-caption,
+.prop-card .ui-caption {
+  margin: 16px 0 8px;
+}
+.pd-actions {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pd-action {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-sunken);
+}
+.pd-action-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pd-action-top strong {
+  font-weight: 600;
+}
+.pd-dur {
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.pd-effects,
+.pd-note {
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pd-effects b {
+  color: var(--ok);
+  font-weight: 600;
+}
+.pd-effects b.bad {
+  color: var(--danger);
+}
+.pd-supply {
+  display: grid;
+  gap: 4px;
+  margin-top: 4px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.pd-facts {
+  margin-top: 12px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.pd-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+}
+/* 创作操作收在「更多」里：展开时占满一行 */
+.prop-more {
+  margin-left: auto;
+}
+.prop-more summary {
+  padding: 5px 10px;
+  border-radius: var(--r-s);
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: none;
+}
+.prop-more summary::-webkit-details-marker {
+  display: none;
+}
+.prop-more summary:hover {
+  background: var(--surface-sunken);
+  color: var(--text);
+}
+.prop-more[open] {
+  flex-basis: 100%;
+}
+.prop-more-menu {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.prop-muted {
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 地图上的对象卡片 ---------- */
+.prop-card.ui-float {
+  position: absolute;
+  /* 压在化身入口（z-index 12）之上 */
+  z-index: 13;
+  top: 14px;
+  right: 14px;
+  width: min(340px, calc(100% - 28px));
+  max-height: calc(100% - 28px);
+  overflow: auto;
+  padding: 16px;
+  scrollbar-width: thin;
+  line-height: 1.6;
+}
+.prop-card .pd-name {
+  font-size: 17px;
+  padding-right: 24px;
+}
+.prop-card .prop-card-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+.prop-card .pd-foot {
+  margin-top: 14px;
+}
+
+/* ---------- 道具库（创作）：定义列表 ---------- */
+.props-list:not(.as-grid) {
+  max-height: calc(100vh - 250px);
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+.props-list:not(.as-grid) .prop-count {
+  margin: 0;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line-soft);
+}
+/* 前缀压过全局 button 的边框与内边距 */
+.props-page .prop-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
+}
+.props-page .prop-row:hover:not(:disabled) {
+  background: var(--surface-sunken);
+}
+.props-page .prop-row.selected {
+  background: var(--accent-soft);
+}
+.prop-row span,
+.prop-row small {
+  color: var(--text-3);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.props-detail .prop-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+}
+.props-page .prop-primary {
+  background: var(--accent-fill);
+  border-color: color-mix(in srgb, var(--accent-fill) 78%, black);
+  color: var(--on-accent);
+}
+
+/* ---------- 创建与编辑 ---------- */
+.prop-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 9px 0;
+  min-width: 0;
+}
+.prop-field > span {
+  font-size: 12px;
+  font-weight: 600;
+}
+.prop-field input,
+.prop-field select,
+.prop-field textarea {
+  width: 100%;
+  min-width: 0;
+}
+.prop-field input[type='checkbox'] {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--accent);
+}
+.props-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  overflow: auto;
+  /* 底边不留内边距：留了的话贴底的按钮条会停在离屏幕底边这么高的地方，下面露出滚动的表单 */
+  padding: 24px 24px 0;
+  background: var(--surface-page);
+}
+/* 卡片至少铺到屏幕底边，按钮条占最后一行：内容不满一屏时也落在底部，满了以后靠 sticky 贴底 */
+.prop-editor-form {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  min-height: 100%;
+  max-width: 1050px;
+  margin: 0 auto;
+  padding-top: 20px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r-m) var(--r-m) 0 0;
+}
+.prop-editor-body {
+  padding: 0 24px;
+}
+.prop-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.prop-editor-head h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.prop-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 20px;
+}
+.prop-form-grid textarea {
+  min-height: 78px;
+}
+/* 编辑器里所有分组框一个样子：细边框、圆角、粗体标题（不用浏览器默认的凹槽边） */
+.prop-editor-form fieldset {
+  margin: 20px 0;
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+}
+.prop-editor-form legend {
+  padding: 0 7px;
+  font-weight: 700;
+}
+/* 编号、携带、书和公告：默认收着 */
+.prop-advanced {
+  margin: 20px 0;
+}
+.prop-advanced > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.prop-advanced[open] > summary {
+  margin-bottom: 12px;
+}
+.prop-action-more {
+  margin: 12px 0;
+}
+.prop-action-more > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.prop-action-more[open] > summary {
+  margin-bottom: 10px;
+}
+.prop-effect-row {
+  display: grid;
+  grid-column: 1/-1;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 15px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.prop-editor-controls {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  gap: 10px;
+  padding: 14px 24px;
+  background: var(--surface);
+  border-top: 1px solid var(--line-soft);
+}
+.prop-preview {
+  margin: 18px 0;
+  padding: 17px;
+  border-radius: var(--r-m);
+  background: var(--surface-sunken);
+}
+.prop-visual-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.prop-visual-editor input[type='color'] {
+  height: 40px;
+}
+
+@media (max-width: 959px) {
+  .props-layout {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  /* 窄屏上详情排在格子上方 */
+  .props-detail {
+    position: static;
+    order: -1;
+    max-height: none;
+  }
+}
+@media (max-width: 700px) {
+  /* 窄屏上页头和筛选条尽量矮：提示收起；搜索框和地点排一行，用途单独一行等宽排开，一眼看全 */
+  .props-page .dim {
+    display: none;
+  }
+  .props-filters:not([hidden]) {
+    display: contents;
+  }
+  .props-controls .ui-search {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .props-filters .ui-seg {
+    display: flex;
+    flex: 1 1 100%;
+  }
+  .props-filters .ui-seg > button {
+    flex: 1;
+    padding-inline: 0;
+  }
+  .props-toolbar {
+    flex-wrap: wrap;
+    gap: 9px;
+    padding: 13px;
+  }
+  .props-toolbar > div {
+    min-width: 55%;
+  }
+  .props-controls {
+    padding: 12px 13px;
+  }
+  .props-layout {
+    padding: 14px 13px 32px;
+  }
+  .props-detail {
+    padding: 16px;
+  }
+  .pd-head {
+    gap: 12px;
+  }
+  .props-editor {
+    padding: 10px 10px 0;
+  }
+  .prop-editor-form {
+    padding-top: 14px;
+  }
+  .prop-editor-body {
+    padding: 0 14px;
+  }
+  .prop-editor-controls {
+    padding: 12px 14px;
+  }
+  .prop-form-grid,
+  .prop-visual-editor {
+    grid-template-columns: 1fr;
+  }
+  .prop-effect-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .prop-status {
+    padding: 8px 13px 0;
+  }
+  .props-controls select {
+    flex: 0 0 116px;
+    min-width: 0;
+  }
+  /* 页头放不下时折到第二行：道具库的「创建道具」「导入道具包」不藏在横向滚动里只露一条边 */
+  .props-page > .page-topbar {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+}

@@ -222,6 +222,32 @@ export function createRooms({ games, deliver = () => {}, onSeatChange = () => {}
     findRoomOf,
     presenceOf,
 
+    /**
+     * 按房号拿一份**只读**的房间摘要。
+     *
+     * 给同进程里的联机中继用（大富翁/无名杀那种"页面心跳"的游戏不需要；
+     * 地平线的 `/horizon-relay` 要确认"这个人真的在这间地平线房里、而且已经开局"）。
+     * 这里刻意只给公开字段，**不交出 room 对象本身** —— 中继没有资格改房间状态。
+     *
+     * 不认识任何具体游戏：所有游戏拿到的形状一样。
+     */
+    snapshot(code) {
+      const room = rooms.get(String(code || '').trim().toUpperCase());
+      if (!room) return null;
+      return {
+        code: room.code,
+        game: room.game,
+        hostId: room.hostId,
+        phase: room.phase,
+        members: [...room.members.values()].map((m) => ({
+          id: m.id,
+          name: m.name,
+          avatar: m.avatar || '',
+          online: Boolean(m.online),
+        })),
+      };
+    },
+
     /** 建房。房主自动入座。 */
     create({ game: slug, host, options = {} }) {
       const game = games.get(slug);

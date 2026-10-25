@@ -1,0 +1,8 @@
+{
+  "ws_url": "ws://127.0.0.1:8787",
+  "port": 8787,
+  "topology_path": "data/maps/2d-town/map.json",
+  "providers_path": "config/providers.json",
+  "credentials_path": "config/credentials.json",
+  "prop_catalog_path": "data/props/core/definitions.json"
+}

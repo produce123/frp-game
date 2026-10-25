@@ -17,7 +17,7 @@ import { T, normalizeCode } from '../shared/protocol.mjs';
 import { publicUser } from './avatar.mjs';
 
 export function createHub({ store, rooms, nonamePresence = null, werewolf = null, monopolyPresence = null,
-  mahjongPresence = null }) {
+  mahjongPresence = null, aiTown = null }) {
   /** userId -> Set<WsConnection> */
   const conns = new Map();
   /** connId -> userId，断线时用 */
@@ -42,6 +42,9 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
   /** 莲花广麻同理：页面心跳报到 `/api/mahjong/state`。 */
   const mahjongOf = (userId) => (mahjongPresence ? mahjongPresence.presenceOf(userId) : null);
 
+  /** AI 小镇同理：页面心跳报到 `/ai-town/api/platform/state`。 */
+  const aiTownOf = (userId) => (aiTown ? aiTown.presence.presenceOf(userId) : null);
+
   /* ------------------------------ 基础 ------------------------------ */
 
   function isOnline(userId) {
@@ -51,7 +54,7 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
   /** 平台 WebSocket 在线 **或** 正在玩无名杀 / 狼人杀，都算"找得到这个人"。 */
   function isReachable(userId) {
     return isOnline(userId) || Boolean(nonameOf(userId)) || Boolean(werewolfOf(userId))
-      || Boolean(monopolyOf(userId)) || Boolean(mahjongOf(userId));
+      || Boolean(monopolyOf(userId)) || Boolean(mahjongOf(userId)) || Boolean(aiTownOf(userId));
   }
 
   /** 把消息发给某人的**所有**连接。rooms.mjs 就是靠这个投递的。 */
@@ -76,13 +79,15 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
       const wolf = werewolfOf(f.id);
       const mono = monopolyOf(f.id);
       const mahjong = mahjongOf(f.id);
+      const aiTownPlaying = aiTownOf(f.id);
       const inRoom = presenceOf(f.id);
-      const online = isOnline(f.id) || Boolean(noname) || Boolean(wolf) || Boolean(mono) || Boolean(mahjong);
+      const online = isOnline(f.id) || Boolean(noname) || Boolean(wolf) || Boolean(mono) || Boolean(mahjong)
+        || Boolean(aiTownPlaying);
       // 离线时房间可能还留着座位，但对别人没意义；无名杀/狼人杀/大富翁/麻将那边同理
       return {
         ...publicUser(f),
         online,
-        playing: online ? (inRoom || wolf || noname || mono || mahjong) : null,
+        playing: online ? (inRoom || wolf || noname || mono || mahjong || aiTownPlaying) : null,
       };
     });
   }
@@ -362,10 +367,12 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
         const wolfRoom = werewolf ? werewolf.roomOf(user.id) : null;
         const monoRoom = monopolyOf(user.id);
         const mahjongRoom = mahjongOf(user.id);
-        if (!platformRoom && !wolfRoom && !monoRoom && !mahjongRoom) return sendError(conn, '你还没在房间里');
+        const aiTownRoom = aiTownOf(user.id);
+        if (!platformRoom && !wolfRoom && !monoRoom && !mahjongRoom && !aiTownRoom) return sendError(conn, '你还没在房间里');
         if (wolfRoom && wolfRoom.phase !== 'waiting') return sendError(conn, '已经开局了，不能再邀请人');
         if (monoRoom && monoRoom.started) return sendError(conn, '已经开局了，不能再邀请人');
         if (mahjongRoom && mahjongRoom.started) return sendError(conn, '已经开局了，不能再邀请人');
+        // AI 小镇是"人已经在镇里玩"，房主随时可以拉好友进来 —— 不按 started 拦。
 
         const to = Array.isArray(msg.to) ? msg.to : [];
         if (!to.length) return sendError(conn, '没有选好友');
@@ -373,11 +380,13 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
         const friendIds = new Set(store.listFriends(user.id).map((f) => f.id));
         const game = platformRoom ? platformRoom.game
           : wolfRoom ? 'werewolf'
-            : monoRoom ? 'monopoly' : 'mahjong';
-        // 狼人杀/大富翁/麻将的房间号是各自游戏里的号，平台房间是 6 位短码
+            : monoRoom ? 'monopoly'
+              : mahjongRoom ? 'mahjong' : 'ai-town';
+        // 狼人杀/大富翁/麻将/AI 小镇的房间号是各自游戏里的号，平台房间是 6 位短码
         const code = platformRoom ? platformRoom.code
           : wolfRoom ? wolfRoom.code
-            : monoRoom ? monoRoom.code : mahjongRoom.code;
+            : monoRoom ? monoRoom.code
+              : mahjongRoom ? mahjongRoom.code : aiTownRoom.code;
         let sent = 0;
         for (const raw of to) {
           const id = String(raw || '').trim().toUpperCase();
@@ -464,6 +473,27 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
               from: publicUser(user),
               game: 'mahjong',
               code: String(msg.code || ''),
+              accept: Boolean(msg.accept),
+            });
+          }
+          return;
+        }
+
+        /*
+         * AI 小镇：房间号是平台为这个镇生成的 6 位码（**不是**上游小镇 id），
+         * 接受邀请不能走 normalizeCode + rooms.join —— 那是平台房间层的 6 位短码，
+         * 会把 AI 小镇的邀请当成平台房间。这里只登记"受邀"并把结果转告房主；
+         * 接受方的页面由 app.js 新窗口打开 /ai-town/?room=<code>，桥接脚本负责进镇。
+         */
+        if (msg.game === 'ai-town') {
+          const code = String(msg.code || '').trim().toUpperCase();
+          if (msg.accept && code) aiTown?.rooms.markInvited(code, user.id);
+          if (fromId && store.listFriends(user.id).some((f) => f.id === fromId)) {
+            deliver(fromId, {
+              t: T.INVITE_REPLY,
+              from: publicUser(user),
+              game: 'ai-town',
+              code,
               accept: Boolean(msg.accept),
             });
           }

@@ -1,0 +1,169 @@
+/* 压在所有面板下面（村民卡 20、动态 30、化身界面 12、底部入口 12、最新事件条 11）；
+   摆放时也只用地图露出来的范围，见 chat/bubbles.ts */
+.chat-bubble {
+  position: fixed;
+  z-index: 10;
+  width: max-content;
+  max-width: min(270px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 1.5px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-2);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.chat-bubble strong {
+  display: block;
+  color: var(--text-2);
+  font-size: 11px;
+  margin-bottom: 3px;
+}
+.chat-bubble span {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.chat-bubble::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: var(--chat-tail, 50%);
+  width: 11px;
+  height: 11px;
+  background: var(--surface);
+  border-right: 1.5px solid var(--line);
+  border-bottom: 1.5px solid var(--line);
+  transform: rotate(45deg);
+}
+.chat-bubble[data-side='below']::after {
+  bottom: auto;
+  top: -7px;
+  border: 0;
+  border-top: 1.5px solid var(--line);
+  border-left: 1.5px solid var(--line);
+}
+.chat-bubble:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+.chat-history {
+  margin: auto 20px auto auto;
+  width: min(460px, calc(100vw - 24px));
+  max-width: calc(100vw - 24px);
+  height: min(740px, 85dvh);
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+.chat-history[open] {
+  display: flex;
+  flex-direction: column;
+}
+.chat-history::backdrop {
+  background: #201c1730;
+}
+.chat-history header,
+.chat-history footer {
+  display: flex;
+  flex: none;
+  gap: 10px;
+  align-items: center;
+  padding: 14px;
+  border-bottom: 1px solid var(--line);
+}
+.chat-history header strong {
+  flex: 1;
+}
+.chat-history footer {
+  justify-content: space-between;
+  border-top: 1px solid var(--line);
+  border-bottom: 0;
+}
+.chat-history button {
+  cursor: pointer;
+  font: inherit;
+  padding: 6px 10px;
+  background: var(--surface);
+  color: inherit;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+}
+.chat-history button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.chat-history-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  padding: 14px;
+  overscroll-behavior: contain;
+}
+.chat-history .chat-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  margin-bottom: 10px;
+  padding: 14px;
+}
+.chat-history-item span {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.chat-entry {
+  margin: 0 0 16px;
+}
+.chat-entry small {
+  color: var(--text-2);
+}
+.chat-entry p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.7;
+  margin: 5px 0 0;
+}
+.chat-spoken p {
+  border-radius: 4px 12px 12px 12px;
+  padding: 10px 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.chat-event {
+  font-size: 12px;
+  color: var(--text-2);
+  text-align: center;
+}
+@media (max-width: 600px) {
+  .chat-history {
+    margin: auto;
+    height: 85dvh;
+  }
+  /* 手机上两三个气泡就能盖住半张地图：窄一点，最多两行 */
+  .chat-bubble {
+    max-width: 196px;
+    padding: 6px 10px;
+  }
+  .chat-bubble strong {
+    margin-bottom: 1px;
+    font-size: 10px;
+  }
+  .chat-bubble span {
+    -webkit-line-clamp: 2;
+    font-size: 13px;
+  }
+}

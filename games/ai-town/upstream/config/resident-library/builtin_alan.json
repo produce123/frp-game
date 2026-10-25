@@ -1,0 +1,27 @@
+{
+  "template_id": "builtin_alan",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿岚",
+    "age": "33",
+    "gender": "女",
+    "intro": "开朗、重视待客，喜欢烹饪和分享食物。",
+    "tags": [
+      "开朗",
+      "待客",
+      "爱烹饪"
+    ],
+    "personality": "见人先招呼，喜欢张罗吃的；别人不愿参与时也不勉强，自己另想办法。",
+    "speech": "热络，爱用“来来来”“先吃点东西”这类话开头。",
+    "background": "在家乡开过小饭铺，后来铺子转手了。来小镇想看看食堂和市集，找机会继续做饭给人吃。",
+    "drives": "让身边的人吃好、待得舒服。",
+    "interests": "公共食堂、市集、做饭和请人吃饭；喜欢热闹，晚上会晚一点睡。",
+    "occupation": "饭铺老板",
+    "appearance": {
+      "marker": "bowl",
+      "color": "#c77a2a"
+    }
+  }
+}

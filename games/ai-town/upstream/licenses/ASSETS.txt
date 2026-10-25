@@ -1,0 +1,60 @@
+AI 小镇素材与模型说明
+
+维护者确认日期：2026-10-19。
+维护者已确认：本项目所用自有音乐、美术和图标为自有或已获授权，可随项目公开分发。
+这是维护者对权利来源的确认，不代表本仓库保存了第三方合同或订阅凭据。
+
+1. 项目美术与自有音效
+frontend/town-2d/src/assets/props/pixel/ 的道具图、
+frontend/town-shared/src/game/materials/town-icons-painted-v1.png、
+frontend/town-shared/src/brand/logo.svg 及由它生成的应用图标，
+以及除下述 Kenney 脚步声外的项目音效，按上述确认随本项目分发。
+允许在本项目及其非商业衍生版本中使用和随项目分发；
+不额外授予将这些素材单独打包、售卖或用于其他项目的许可。
+如需超出此范围使用，请联系维护者核对具体作品的权利人和授权。
+
+新增河畔场景素材：frontend/town-2d/src/assets/river-material-atlas.png
+由 imagegen 生成；river-kit.glb 的几何由 scripts/art/build-river-kit.py
+通过 Blender 程序生成，编辑源文件为 assets/art/river-kit.blend。
+这些素材随本项目分发，使用范围同本节；不包含参考游戏的提取素材。
+
+2. 音乐
+frontend/town-shared/assets/music/ 的 13 首 music_town_*.m4a：
+旧制作记录注明使用 Suno Pro/Premier 生成；维护者现已确认可随项目分发。
+本仓库不提供关于生成内容独占性或可获得著作权的保证。
+使用与分发范围同第 1 项，不把素材分发确认解释为对第三方作品的重新授权。
+amb_sleep_soft_white_noise_loop.m4a 的旧制作记录为程序生成的白噪声。
+
+3. Kenney RPG Audio（9 段脚步声）
+目录：frontend/town-shared/assets/effects/sfx/footsteps/
+来源：https://kenney.nl/assets/rpg-audio
+作者：Kenney
+许可：CC0 1.0；完整声明见 KENNEY-CC0.txt，原目录也保留该声明。
+户外 outdoor_01..03 对应 footstep00..02；室内 indoor_01..03 对应
+footstep03..05；湿地 wet_01..03 对应 footstep06..08。
+这些音效不受本项目非商业限制。
+
+4. 内置村民模型（单独下载，不随源码或安装包分发权重）
+模型：https://modelscope.cn/models/hihuazi/ai-town-villager
+上游：Qwen3.5-0.8B；模型发布页标注 Apache-2.0。
+沿用模型发布方许可，见 APACHE-2.0.txt。项目代码的非商业限制不改变模型许可。
+模型来源地址和下载校验见 crates/host/src/application.rs 与 builtin_store.rs。
+
+5. 内置推理程序（选装到应用包）
+llama.cpp：https://github.com/ggml-org/llama.cpp，固定版本 78651c4。
+许可 MIT，见 LLAMA-CPP.txt；其随附依赖声明见 LLAMA-THIRD-PARTY.txt。
+构建脚本接受自定义源码路径；改用其他版本时必须重新核对并带上相应声明。
+
+6. README 截图
+assets/readme/ 为本版本实际运行截图，使用独立演示小镇。
+允许用于介绍、评测、分享本项目，注明项目来源；不包含玩家个人存档和密钥。
+
+7. 平台构建组件
+Windows 打包脚本从 webview2-com-sys 0.39.1 携带 WebView2Loader.dll，
+当前文件版本 1.0.3800.47；该微软 SDK 组件不适用 Rust 绑定的 MIT 许可。
+原许可与通知取自同版本 Microsoft.Web.WebView2 NuGet 包，见
+WEBVIEW2-SDK.txt 和 WEBVIEW2-SDK-NOTICE.txt；系统 WebView2 Runtime 由用户另行安装。
+MinGW-w64 原声明见 MINGW-W64.txt；GCC 运行库原文及运行库例外见
+GPL-3.0.txt 和 GCC-RUNTIME-EXCEPTION.txt。它们不适用项目的非商业限制。
+Gradle Wrapper 由 Gradle 提供，采用 Apache-2.0（见 APACHE-2.0.txt）。
+构建工具、SDK 或运行库版本变化时，发布者需同步该版本的声明。

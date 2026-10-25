@@ -1,0 +1,43 @@
+{
+  "id": "core:bench",
+  "version": 1,
+  "name": "工作台",
+  "description": "木工用",
+  "portable": true,
+  "stack_limit": 2,
+  "storage_slots": 3,
+  "actions": [
+    {
+      "id": "craft",
+      "label": "制作器物",
+      "duration_minutes": 30.0,
+      "consumes_item": true,
+      "portion_name": "一份",
+      "during": [
+        { "kind": "restore_need", "need": "energy", "per_minute": 0.5, "pause_decay": true },
+        { "kind": "labor" }
+      ],
+      "on_complete": [
+        { "kind": "restore", "need": "fullness", "amount": 5.0 },
+        { "kind": "apply_condition", "condition": "injury", "severity": 1.0 },
+        { "kind": "cure_condition", "condition": "poison" },
+        { "kind": "revive", "values": [50.0, 50.0, 50.0, 50.0], "clear_conditions": true }
+      ],
+      "supply": { "initial": 5, "cost": 1 },
+      "recipient": true,
+      "rest": true,
+      "completion": "activity",
+      "conditions": ["meal_window", "own_home"]
+    }
+  ],
+  "readable": {
+    "work_id": "book1",
+    "version": 1,
+    "kind": "book",
+    "title": "木工手记",
+    "author": "阿树",
+    "text": "正文",
+    "origin": { "kind": "player" }
+  },
+  "bulletin_board": false
+}

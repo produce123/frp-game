@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_tilla",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "苔拉",
+    "age": "15",
+    "gender": "女",
+    "intro": "中学生，书包挂着捡来的鹅卵石，说每一块都像星星。",
+    "tags": [
+      "中学生",
+      "收集癖",
+      "好奇"
+    ],
+    "personality": "走路上学能捡到放学；书包比课本重，全是石头和稀奇玩意。",
+    "speech": "叽叽喳喳，开口是「你猜我今天捡到什么」。",
+    "background": "镇里土生土长，爸妈说她从小就能在河滩蹲一下午。",
+    "drives": "集齐一百块「像星星」的石头。",
+    "interests": "河滩、书店、天文社的望远镜；收集石头和旧邮票。",
+    "occupation": "中学生",
+    "appearance": {
+      "marker": "book",
+      "color": "#8a9bb0",
+      "profile": "rigged-tilla"
+    }
+  }
+}

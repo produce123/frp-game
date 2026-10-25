@@ -1,0 +1,20 @@
+[package]
+name = "agent"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+# 集成测试合成一个二进制：共用 tests/support 夹具，不需要 allow(dead_code)。
+autotests = false
+
+[[test]]
+name = "agent"
+path = "tests/agent.rs"
+
+[dependencies]
+kernel = { path = "../kernel" }
+protocol = { path = "../protocol" }
+serde.workspace = true
+serde_json.workspace = true
+rusqlite = { version = "0.32.1", features = ["bundled"] }
+
+[dev-dependencies]

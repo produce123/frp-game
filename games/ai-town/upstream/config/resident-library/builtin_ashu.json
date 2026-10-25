@@ -1,0 +1,27 @@
+{
+  "template_id": "builtin_ashu",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿树",
+    "age": "26",
+    "gender": "男",
+    "intro": "好奇又健谈，喜欢追问，爱探索小镇和读公告。",
+    "tags": [
+      "好奇",
+      "健谈",
+      "爱追问"
+    ],
+    "personality": "对新鲜事上心，遇到不明白的会一直问到底；说话直来直去，不记仇。",
+    "speech": "话多，语速快，喜欢用反问句追问细节。",
+    "background": "从邻镇过来，之前在杂货铺帮工，攒了些闲钱想换个地方住一阵。听人说这座小镇公告栏上什么消息都有，想亲自看看。",
+    "drives": "弄清楚身边正在发生什么。",
+    "interests": "逛遍小镇每个地方，读公告栏，和新面孔交换见闻；吃饭不挑，困了就回家睡。",
+    "occupation": "杂货铺帮工",
+    "appearance": {
+      "marker": "tree",
+      "color": "#2f7a57"
+    }
+  }
+}

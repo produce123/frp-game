@@ -1,0 +1,115 @@
+/* 内置模型的几行（builtinRows.ts）和用流量下载前的一问（builtin.ts）。只用 tokens，首页深色、小镇里浅色都通用。 */
+.builtin-rows[hidden] {
+  display: none;
+}
+.builtin-rows .builtin-status {
+  align-items: flex-start;
+}
+.builtin-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--off);
+}
+.builtin-dot.ok {
+  background: var(--ok);
+}
+.builtin-dot.busy {
+  background: var(--busy);
+}
+.builtin-dot.danger {
+  background: var(--danger);
+}
+.builtin-status > button {
+  flex: none;
+  margin-top: 2px;
+}
+.builtin-status .set-row-label .ui-chip {
+  margin-left: 6px;
+}
+.builtin-rows .set-row-desc {
+  line-height: 1.55;
+}
+.builtin-rows .set-row-desc.ok {
+  color: var(--ok);
+}
+.builtin-rows .set-row-desc.danger {
+  color: var(--danger);
+}
+.builtin-meter {
+  max-width: 360px;
+  margin: 4px 0 2px;
+}
+.builtin-meter[hidden],
+.builtin-rows .set-row-desc[hidden] {
+  display: none;
+}
+.builtin-meter > span {
+  transition: width 0.9s linear;
+}
+.builtin-confirm {
+  margin: 4px 0;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--r-s);
+  background: var(--danger-soft);
+}
+.builtin-confirm button.builtin-delete {
+  border-color: var(--danger);
+  background: var(--danger);
+  /* 浅色页是深红底配浅字，深色页是浅红底配深字 */
+  color: var(--surface-page);
+  font-weight: 600;
+}
+@media (max-width: 719px) {
+  .builtin-rows .set-row {
+    flex-wrap: wrap;
+  }
+  .builtin-status > button {
+    margin-left: 18px;
+  }
+  .builtin-confirm > button {
+    flex: 1;
+  }
+}
+
+/* 手机用流量时先问 */
+dialog.builtin-ask {
+  width: min(420px, calc(100% - 32px));
+  max-width: none;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+dialog.builtin-ask::backdrop {
+  background: rgb(20 24 22 / 0.45);
+}
+.builtin-ask-card {
+  padding: 20px;
+}
+.builtin-ask-card h3 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 600;
+}
+.builtin-ask-card p {
+  margin: 0;
+  font-size: 14.5px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+.builtin-ask-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 18px;
+}
+.builtin-ask-actions button {
+  min-height: 46px;
+  font-size: 15px;
+}

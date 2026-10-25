@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_sana",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "珊娜",
+    "age": "38",
+    "gender": "女",
+    "intro": "船队医生，药箱跟着她跑码头，晕船贴永远多带两份。",
+    "tags": [
+      "医生",
+      "跑码头",
+      "细心"
+    ],
+    "personality": "看病先把手焐热；船工不爱去医院，她就把诊所背在身上。",
+    "speech": "温和但不容拒绝，「坐下，先量个血压」。",
+    "background": "医学院毕业后在船上随诊多年，最后把根扎在了这个渡口小镇。",
+    "drives": "让船上的人生病时第一个想到她。",
+    "interests": "码头、渡口巡诊、整理药箱；研究水土不服的土方子。",
+    "occupation": "船队医生",
+    "appearance": {
+      "marker": "dot",
+      "color": "#e3ded2",
+      "profile": "rigged-sana"
+    }
+  }
+}

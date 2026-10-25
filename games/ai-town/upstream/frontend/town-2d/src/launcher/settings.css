@@ -1,0 +1,169 @@
+/* 首页「设定」（launcher/settings.ts）：标题栏右边的入口、还没连模型时的提示卡与一行字、设定页。
+   只用 tokens：首页是深色（body data-tier="night"），颜色跟着变。 */
+.launcher-settings {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 500;
+}
+.launcher-settings .game-icon {
+  width: 18px;
+  height: 18px;
+}
+/* 收起提示后：入口右上角一个小绿点，提醒还有一步没做 */
+.launcher-settings.has-dot::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+button.model-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin: -8px 0 14px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+}
+.model-line > i {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.model-line > span {
+  flex: 1;
+}
+.model-line > b {
+  display: flex;
+  align-items: center;
+  color: var(--accent);
+  font-weight: 600;
+}
+.model-line .game-icon {
+  width: 16px;
+  height: 16px;
+  transform: rotate(-90deg);
+}
+/* 内置模型刚下好时留的一句话 */
+.model-line.ok {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -8px 0 14px;
+  color: var(--ok);
+  font-size: 13px;
+}
+.model-line.ok[hidden] {
+  display: none;
+}
+.model-line.ok > i {
+  background: var(--ok);
+}
+
+/* 设定页：电脑是居中的面板，手机铺满屏幕 */
+.home-settings {
+  width: min(620px, calc(100% - 48px));
+  max-width: none;
+  max-height: min(86vh, 880px);
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface-page);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+.home-settings[open] {
+  display: flex;
+  flex-direction: column;
+}
+.home-settings::backdrop {
+  background: rgb(0 0 0 / 0.5);
+}
+.hs-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 52px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.hs-head h1 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.hs-head button.hs-back {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
+.hs-back .game-icon {
+  width: 20px;
+  height: 20px;
+}
+/* 按内容高度起算再收进面板：写成 flex: 1（起算 0）时 WebKit（mac 版）把面板压得只剩标题栏 */
+.hs-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 20px 28px;
+  overscroll-behavior: contain;
+}
+.hs-body .spage {
+  padding: 14px 0 6px;
+}
+.hs-body .set-rows {
+  max-width: none;
+}
+.hs-body .set-row.connected .set-row-desc {
+  color: var(--ok);
+}
+.hs-body .set-row-label .ui-chip {
+  margin-left: 6px;
+}
+.hs-note {
+  margin: 10px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 719px) {
+  .home-settings {
+    width: 100%;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .hs-body {
+    padding: 4px 16px 32px;
+  }
+}

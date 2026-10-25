@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_mira",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "米拉",
+    "age": "23",
+    "gender": "女",
+    "intro": "花店店员，剪下的花头也不扔，插在门口的土罐里。",
+    "tags": [
+      "花店",
+      "元气",
+      "惜物"
+    ],
+    "personality": "见谁都笑，舍不得浪费一朵花；包花束比谁都快。",
+    "speech": "脆生生的，爱说「这束配你」。",
+    "background": "从小爱往花农的地里跑，长大顺理成章进了花店，梦想有自己的暖房。",
+    "drives": "让镇上每张桌子上都有一小束花。",
+    "interests": "花店、市集、花园；研究野花怎么插好看。",
+    "occupation": "花店店员",
+    "appearance": {
+      "marker": "leaf",
+      "color": "#ab7074",
+      "profile": "rigged-mira"
+    }
+  }
+}

@@ -1,0 +1,38 @@
+#info-inventory {
+  margin: 12px 0;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+#info-inventory summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 4px 0;
+}
+#info-inventory > div {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+  min-width: 0;
+}
+.inventory-item {
+  display: grid;
+  text-align: left;
+  gap: 3px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-s);
+  background: var(--surface-sunken);
+  color: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.inventory-item span {
+  font-size: 12px;
+  opacity: 0.75;
+}
+.inventory-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

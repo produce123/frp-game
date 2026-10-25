@@ -1,0 +1,14 @@
+Required Notice: Copyright 2026 mewamew and contributors. https://github.com/mewamew/my_ai_town
+
+本版本的项目原创代码和文档采用 PolyForm Noncommercial License 1.0.0（见 LICENSE）。
+允许许可条款定义的非商业用途、修改与分发。商业使用请先联系维护者另行取得授权。
+许可明确允许其中列举的教育、公益、公共研究、政府等机构使用；具体以英文许可全文为准。
+本项目是源码公开、非商业授权项目，不以 OSI 意义上的开源软件自称。
+
+第三方依赖、llama.cpp、下载的模型和 Kenney 音效各自沿用原许可，
+不因本项目的非商业限制而改变。其原有商业使用权利不受本 NOTICE 限制。
+项目素材的来源与分发范围见 licenses/ASSETS.txt；软件依赖见 licenses/DEPENDENCIES.txt。
+这里的授权不追溯变更旧 Godot 历史版本或其他权利人的作品许可。
+
+贡献代码应是贡献者有权提交的内容，并按本项目相应文件的许可提供。
+请勿提交 API 密钥、个人存档、模型权重或来源不明的素材。

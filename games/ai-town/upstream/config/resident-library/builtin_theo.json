@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_theo",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "西奥",
+    "age": "19",
+    "gender": "男",
+    "intro": "木工学徒，刨花落在肩上也不管，墨线弹得比师父还直。",
+    "tags": [
+      "学徒",
+      "认真",
+      "手稳"
+    ],
+    "personality": "闷头干活型，做坏了就重做，不找借口；被夸会耳朵红。",
+    "speech": "语速快，三句不离木料和工序。",
+    "background": "十五岁开始跟着师父学木工，听说小镇在建房子，背着工具包就来了。",
+    "drives": "早日出师，做出一件能刻自己名字的东西。",
+    "interests": "工作坊、刨木头、看老匠人干活；舍不得扔好木料。",
+    "occupation": "木工学徒",
+    "appearance": {
+      "marker": "hammer",
+      "color": "#7d91a0",
+      "profile": "rigged-theo"
+    }
+  }
+}

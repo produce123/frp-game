@@ -1,0 +1,145 @@
+<!-- 顶条与信息栏由 shell/plain.html 填入。 -->
+<div id="obs-view" hidden>
+  <header id="topbar" class="page-topbar"></header>
+  <div id="obs-main">
+    <div id="map"></div>
+    <div
+      id="info-resizer"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整村民信息栏宽度"
+      aria-controls="info-panel"
+      title="拖动调整宽度；双击恢复默认宽度"
+      tabindex="0"
+      hidden
+    ></div>
+    <aside id="info-panel" class="collapsed" hidden></aside>
+  </div>
+  <footer id="event-bar">
+    <div id="event-latest">
+      <span id="event-latest-text">暂无事件</span>
+      <button id="event-latest-dismiss" title="不再停在这条重要事件上" hidden>关闭</button>
+      <button id="event-expand">展开</button>
+    </div>
+    <div id="event-full" hidden>
+      <div id="event-toolbar">
+        <button class="event-filter on" data-f="all">全部</button>
+        <button class="event-filter" data-f="speech">对话</button>
+        <button class="event-filter" data-f="thought">想法</button>
+        <button class="event-filter" data-f="important">重要</button>
+        <label id="event-autoscroll-label">
+          <input type="checkbox" id="event-autoscroll" checked /> 自动滚动
+        </label>
+        <span class="spacer" style="flex: 1"></span>
+        <button id="event-collapse">收起</button>
+      </div>
+      <div id="event-list"></div>
+    </div>
+  </footer>
+</div>
+
+<!-- 日志页：整页替换地图页，按天看执行记录与想法 -->
+<div id="diary-view" class="page-view" hidden>
+  <header id="diary-topbar" class="page-topbar">
+    <button id="diary-back">← 返回地图</button>
+    <span id="diary-title">日志</span>
+    <span class="dim"
+      >世界写的执行记录与村民自己的想法，按时间穿插；天头是村民次日早上写的「昨天」</span
+    >
+  </header>
+  <div id="diary-body">
+    <nav id="diary-nav"></nav>
+    <main id="diary-page" class="dim">还没有日志</main>
+  </div>
+</div>
+
+<!-- 记忆页：独立读取居民摘要、主题及来源，不复用动作面板。 -->
+<div id="memory-view" class="page-view" hidden>
+  <header id="memory-topbar" class="page-topbar">
+    <button id="memory-back">← 返回地图</button>
+    <div class="memory-identity">
+      <span id="memory-avatar" aria-hidden="true"></span>
+      <div>
+        <h1 id="memory-title">记忆</h1>
+        <p id="memory-hint">经历、认识，以及它们的来处</p>
+      </div>
+    </div>
+    <div id="memory-search-wrap">
+      <label for="memory-search" class="nb-sr-only">搜索全部记忆与经历</label>
+      <input
+        id="memory-search"
+        type="search"
+        maxlength="200"
+        placeholder="搜索记忆与经历"
+        autocomplete="off"
+      />
+      <button id="memory-clear-search" aria-label="清除搜索" hidden>×</button>
+    </div>
+  </header>
+  <main id="memory-page" class="dim">还没收到记忆</main>
+</div>
+
+<!-- 消耗页：整页替换地图页。汇总、按人用量、最近 500 次请求台账；只读，每 2 秒刷新 -->
+<div id="usage-view" class="page-view" hidden>
+  <header id="usage-topbar" class="page-topbar">
+    <button id="usage-back">← 返回地图</button>
+    <span id="usage-title">消耗</span>
+    <span class="dim">金额按服务商公布的价格估算，以服务商的账单为准</span>
+    <span class="spacer"></span>
+    <span id="usage-clock" class="dim"></span>
+  </header>
+  <main id="usage-page" class="dim">还没收到消耗数据</main>
+</div>
+
+<!-- 书与公告：整页替换地图页。村民写的书、公告栏上的告示，玩家也能写书、贴公告；不暂停世界 -->
+<div id="books-view" class="page-view" hidden>
+  <header id="books-topbar" class="page-topbar">
+    <button id="books-back">← 返回地图</button>
+    <span id="books-title">书与公告</span>
+    <span class="spacer"></span>
+    <span id="books-clock" class="dim"></span>
+  </header>
+  <main id="books-page"></main>
+</div>
+
+<!-- 村民页：整页替换地图页。名册、村民库、加入预览、人物创建；不暂停世界，人物只由服务器创建 -->
+<div id="residents-view" class="page-view" hidden>
+  <header id="residents-topbar" class="page-topbar">
+    <button id="residents-back">← 返回地图</button>
+    <span id="residents-title">村民</span>
+    <div id="residents-tabs" class="ui-seg" role="tablist">
+      <button class="rv-tab on" data-tab="roster" role="tab">村中居民</button>
+      <button class="rv-tab" data-tab="library" role="tab">村民库</button>
+    </div>
+    <span class="spacer"></span>
+    <span id="residents-clock" class="dim"></span>
+  </header>
+  <main id="residents-page"></main>
+</div>
+
+<!-- 设定中心：整页替换地图页 -->
+<div id="settings-view" class="page-view" hidden>
+  <header id="settings-topbar" class="page-topbar">
+    <button id="settings-back">← 返回地图</button>
+    <span id="settings-title">设定</span>
+    <span id="settings-paused">世界已暂停</span>
+    <span id="settings-resume"></span>
+  </header>
+  <div id="settings-body">
+    <nav id="settings-nav"></nav>
+    <main id="settings-page"></main>
+  </div>
+  <footer id="settings-savebar" hidden>
+    <span id="settings-savebar-hint">有未保存的修改</span>
+    <button id="settings-discard">放弃</button>
+    <button id="settings-save">保存</button>
+  </footer>
+</div>
+
+<main id="game-loading" class="entry-state" aria-live="polite">
+  <h1 id="game-loading-title">正在进入小镇…</h1>
+  <p id="game-loading-message">正在加载地图</p>
+  <div class="entry-actions">
+    <button id="game-retry" hidden>重新加载</button><a href="./">返回选择小镇</a>
+  </div>
+</main>

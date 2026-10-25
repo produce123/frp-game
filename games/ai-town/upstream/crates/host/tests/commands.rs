@@ -1,0 +1,221 @@
+//! 用临时配置启动真实 host，覆盖命令分发、回执只回发出的连接、额度暂停、自动快进与配置文件的启动门槛。
+use crate::support::*;
+use serde_json::json;
+use std::{
+    fs,
+    time::{Duration, Instant},
+};
+
+/// 两个页面同时保存人设：回执各回各的连接，带各自的请求编号；读不懂的命令回错误，带上编号，
+/// 也只回发出它的连接。
+#[test]
+fn receipts_go_only_to_the_connection_that_sent_the_command() {
+    let mut town = Town::new();
+    town.persistent = false;
+    let mut first = town.start();
+    let id = join_id(&mut first, "tpl_a");
+    let mut second = connect_again(&first);
+    let persona = |request_id: &str, text: &str| json!({"type":"set_persona","request_id":request_id,"resident":id,"text":text});
+    send(&mut first, persona("first-save", "# 阿甲\n第一个页面写的"));
+    send(
+        &mut second,
+        persona("second-save", "# 阿甲\n第二个页面写的"),
+    );
+    let receipt = |own: &'static str| move |m: &serde_json::Value| m["request_id"] == own;
+    let mut seen_first = received_until(&mut first, receipt("first-save"));
+    let mut seen_second = received_until(&mut second, receipt("second-save"));
+    assert_eq!(seen_first.last().unwrap()["type"], "agent_saved");
+    assert_eq!(seen_first.last().unwrap()["ok"], true);
+    assert_eq!(seen_second.last().unwrap()["ok"], true);
+    // 两条保存都处理完才发这两条查询：发错连接的回执一定排在查询结果前面。
+    let fence = json!({"type":"get_world_settings"});
+    send(&mut first, fence.clone());
+    send(&mut second, fence);
+    seen_first.extend(received_until(&mut first, |m| {
+        m["type"] == "world_settings"
+    }));
+    seen_second.extend(received_until(&mut second, |m| {
+        m["type"] == "world_settings"
+    }));
+    let receipts = |seen: &[serde_json::Value]| -> Vec<String> {
+        seen.iter()
+            .filter(|m| m["type"] == "agent_saved")
+            .map(|m| m["request_id"].as_str().unwrap().to_string())
+            .collect()
+    };
+    assert_eq!(receipts(&seen_first), ["first-save"]);
+    assert_eq!(receipts(&seen_second), ["second-save"]);
+
+    send(
+        &mut second,
+        json!({"type":"set_persona","request_id":"broken","resident":id}),
+    );
+    let error = until(&mut second, |m| m["type"] == "error");
+    assert_eq!(error["request_id"], "broken", "{error}");
+    send(&mut first, json!({"type":"get_world_settings"}));
+    let seen = received_until(&mut first, |m| m["type"] == "world_settings");
+    assert!(!seen.iter().any(|m| m["type"] == "error"), "{seen:?}");
+}
+
+#[test]
+fn budget_exhaustion_pauses_the_town_until_limits_change_and_a_speed_is_chosen() {
+    let mut town = Town::new();
+    town.persistent = false;
+    let mut ws = town.start();
+    until(&mut ws, |m| m["type"] == "roster");
+    let id = join_id(&mut ws, "tpl_a");
+    let current = reply(&mut ws, json!({"type":"get_agent_limits"}), "agent_limits");
+    assert_eq!(current["limits"]["calls_per_day"], 400);
+    // 设定页检查输入用的范围由后端给出：每日 token 不小于模型窗口加单次输出上限
+    assert_eq!(
+        current["ranges"]["calls_per_wake"],
+        json!({"min":1,"max":6})
+    );
+    assert_eq!(
+        current["ranges"]["tokens_per_day"],
+        json!({"min":32_000 + 2048,"max":null})
+    );
+    assert_eq!(current["usage"]["lifetime_calls"], 0);
+    let mut limits = current["limits"].clone();
+    limits["calls_per_day"] = json!(0);
+    assert_eq!(
+        reply(
+            &mut ws,
+            json!({"type":"set_agent_limits","request_id":"test-set-agent-limits","limits":limits}),
+            "config_saved"
+        )["ok"],
+        false
+    );
+    limits["calls_per_day"] = json!(1);
+    assert_eq!(
+        reply(
+            &mut ws,
+            json!({"type":"set_agent_limits","request_id":"test-set-agent-limits","limits":limits}),
+            "config_saved"
+        )["ok"],
+        true
+    );
+    assert_eq!(
+        until(&mut ws, |m| m["type"] == "agent_limits")["limits"]["calls_per_day"],
+        1
+    );
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"test-set-speed","speed":20}),
+    );
+    until(&mut ws, |m| {
+        m["type"] == "event"
+            && m["text"]
+                .as_str()
+                .is_some_and(|t| t.contains("全镇已暂停") && t.contains("额度用尽"))
+    });
+    let held = until(&mut ws, |m| m["type"] == "roster" && m["speed"] == 0.0);
+    assert_eq!(held["holds"][0]["resident"], "阿甲");
+    assert_eq!(held["holds"][0]["kind"], "budget");
+    let member = members(&held).into_iter().find(|m| m["id"] == id).unwrap();
+    assert_eq!(member["resident_agent"]["state"], "budget");
+    let usage = reply(&mut ws, json!({"type":"get_agent_limits"}), "agent_limits");
+    assert_eq!(usage["usage"]["residents"][0]["daily_calls"], 1);
+    assert!(usage["usage"]["residents"][0]["paused"]
+        .as_str()
+        .unwrap()
+        .starts_with("额度用尽"));
+    // 只选速度、不改额度：重新检查后立刻再停，世界只走了一拍。
+    let minutes = held["sim_minutes"].as_f64().unwrap();
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"test-set-speed","speed":20}),
+    );
+    let again = until(&mut ws, |m| {
+        m["type"] == "roster" && m["speed"] == 0.0 && m["sim_minutes"].as_f64().unwrap() > minutes
+    });
+    assert_eq!(again["holds"][0]["kind"], "budget");
+    limits["calls_per_day"] = json!(120);
+    assert_eq!(
+        reply(
+            &mut ws,
+            json!({"type":"set_agent_limits","request_id":"test-set-agent-limits","limits":limits}),
+            "config_saved"
+        )["ok"],
+        true
+    );
+    let minutes = again["sim_minutes"].as_f64().unwrap();
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"test-set-speed","speed":20}),
+    );
+    let running = until(&mut ws, |m| {
+        m["type"] == "roster"
+            && m["speed"] == 20.0
+            && m["sim_minutes"].as_f64().unwrap() > minutes + 2.0
+    });
+    assert!(running["holds"].is_null());
+}
+
+/// 自动快进：村民在等模型回复时世界按正常速度走，回复因此不会过时；大家都在做一件还要好一阵的事时
+/// 世界加快（名册的 pace 是正常速度的倍数）。固定回复模型每次要 0.6 秒，先看一眼道具，再等 30 分钟。
+/// 走路时不快进由内核的快进空档保证（temporal_integrity.rs）。
+#[test]
+fn the_world_fast_forwards_only_while_everyone_is_settled() {
+    let mut town = Town::new();
+    town.persistent = false;
+    town.mock_delay = Some("0.6".into());
+    let mut ws = town.start();
+    let id = join_id(&mut ws, "tpl_a");
+    send(
+        &mut ws,
+        json!({"type":"set_speed","request_id":"test-set-speed","speed":1}),
+    );
+    let (mut waited, mut fastest) = (0, 0.0_f64);
+    let mut last: Option<(bool, f64)> = None;
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while (waited < 5 || fastest < 8.0) && Instant::now() < deadline {
+        let roster = until(&mut ws, |m| m["type"] == "roster" && m["speed"] == 1.0);
+        let member = members(&roster)
+            .into_iter()
+            .find(|m| m["id"] == id)
+            .unwrap();
+        let thinking = member["resident_agent"]["state"] == "thinking";
+        let (minutes, pace) = (
+            roster["sim_minutes"].as_f64().unwrap(),
+            roster["pace"].as_f64().unwrap(),
+        );
+        assert!(pace >= 1.0, "{pace}");
+        // 刚发出请求的那一拍是在发出前推进的；之后整个等待期间一拍只走 0.1 分钟
+        if let Some((true, before)) = last.filter(|_| thinking) {
+            assert_eq!(pace, 1.0, "等回复时不快进");
+            assert!(minutes - before <= 0.1 + 1e-9, "{before} → {minutes}");
+            waited += 1;
+        }
+        fastest = fastest.max(pace);
+        last = Some((thinking, minutes));
+    }
+    assert!(waited >= 5, "没有看到等回复的过程");
+    assert!(fastest >= 8.0, "大家都在等着时没有快进：最快 {fastest}");
+    let roster = until(&mut ws, |m| m["type"] == "roster");
+    let member = members(&roster)
+        .into_iter()
+        .find(|m| m["id"] == id)
+        .unwrap();
+    assert_eq!(member["resident_agent"]["stale_replies"], 0, "{member}");
+}
+
+/// providers.json 存在但损坏：启动拒绝，写路径也拒绝覆盖，原文件原样保留。
+#[test]
+fn corrupt_providers_file_blocks_startup_and_is_never_overwritten() {
+    let mut town = Town::new();
+    let path = town.dir.join("config/providers.json");
+    fs::write(&path, "{broken").unwrap();
+    let error = town.try_start().expect_err("损坏的配置不能启动");
+    assert!(error.contains("退出"), "{error}");
+    let saved = host::config::save_providers(
+        path.to_str().unwrap(),
+        &host::config::ProvidersFile::default(),
+    );
+    assert!(saved.is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{broken");
+    // 不存在才是空配置：删掉文件后照常启动。
+    fs::remove_file(&path).unwrap();
+    let mut ws = town.start();
+    until(&mut ws, |m| m["type"] == "roster");
+}

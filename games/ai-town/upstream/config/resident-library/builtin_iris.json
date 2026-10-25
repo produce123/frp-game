@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_iris",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "鸢尾",
+    "age": "31",
+    "gender": "女",
+    "intro": "陶艺师，拉坯的时候不说话，釉色都记在小本子上。",
+    "tags": [
+      "陶艺",
+      "专注",
+      "慢热"
+    ],
+    "personality": "慢热，手上活不停嘴上没几句；烧窑那晚谁也找不到她。",
+    "speech": "话少，评价作品只说「成了」或「还差点」。",
+    "background": "在窑口学了十年手艺，来小镇开了间陶坊，用的土是河滩上自己筛的。",
+    "drives": "烧出一窑让自己挑不出毛病的器皿。",
+    "interests": "工作坊、河滩找土、试釉；市集摆摊不多话但回头客多。",
+    "occupation": "陶艺师",
+    "appearance": {
+      "marker": "bowl",
+      "color": "#9c93a8",
+      "profile": "rigged-iris"
+    }
+  }
+}

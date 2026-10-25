@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 由像素网格生成，与 android/logo.svg 同一张图：小房子 + 带三个点的对话气泡 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#FFFFFF" android:pathData="M54.4,31h18.4v2.3h-18.4zM52.1,33.3h23v2.3h-23zM49.8,35.6h4.6v2.3h-4.6zM59,35.6h2.3v2.3h-2.3zM65.9,35.6h2.3v2.3h-2.3zM72.8,35.6h4.6v2.3h-4.6zM49.8,37.9h4.6v2.3h-4.6zM59,37.9h2.3v2.3h-2.3zM65.9,37.9h2.3v2.3h-2.3zM72.8,37.9h4.6v2.3h-4.6zM52.1,40.2h23v2.3h-23zM54.4,42.5h18.4v2.3h-18.4zM52.1,44.8h6.9v2.3h-6.9zM52.1,47.1h2.3v2.3h-2.3z" />
+    <path android:fillColor="#2F6B55" android:pathData="M54.4,35.6h4.6v2.3h-4.6zM61.3,35.6h4.6v2.3h-4.6zM68.2,35.6h4.6v2.3h-4.6zM54.4,37.9h4.6v2.3h-4.6zM61.3,37.9h4.6v2.3h-4.6zM68.2,37.9h4.6v2.3h-4.6z" />
+    <path android:fillColor="#B9412F" android:pathData="M42.9,51.7h13.8v2.3h-13.8zM38.3,54h23v2.3h-23zM33.7,56.3h32.2v2.3h-32.2z" />
+    <path android:fillColor="#F5F4F0" android:pathData="M36,58.6h27.6v2.3h-27.6zM36,60.9h27.6v2.3h-27.6zM36,63.2h2.3v2.3h-2.3zM42.9,63.2h13.8v2.3h-13.8zM61.3,63.2h2.3v2.3h-2.3zM36,65.5h2.3v2.3h-2.3zM42.9,65.5h13.8v2.3h-13.8zM61.3,65.5h2.3v2.3h-2.3zM36,67.8h11.5v2.3h-11.5zM52.1,67.8h11.5v2.3h-11.5zM36,70.1h11.5v2.3h-11.5zM52.1,70.1h11.5v2.3h-11.5zM36,72.4h11.5v2.3h-11.5zM52.1,72.4h11.5v2.3h-11.5zM36,74.7h11.5v2.3h-11.5zM52.1,74.7h11.5v2.3h-11.5z" />
+    <path android:fillColor="#E2A24A" android:pathData="M38.3,63.2h4.6v2.3h-4.6zM56.7,63.2h4.6v2.3h-4.6zM38.3,65.5h4.6v2.3h-4.6zM56.7,65.5h4.6v2.3h-4.6z" />
+    <path android:fillColor="#285C49" android:pathData="M47.5,67.8h4.6v2.3h-4.6zM47.5,70.1h4.6v2.3h-4.6zM47.5,72.4h4.6v2.3h-4.6zM47.5,74.7h4.6v2.3h-4.6z" />
+</vector>

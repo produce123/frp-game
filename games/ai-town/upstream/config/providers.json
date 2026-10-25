@@ -1,0 +1,14 @@
+{
+  "active": {
+    "model": "deepseek-chat",
+    "provider": "deepseek",
+    "resident": "阿树"
+  },
+  "providers": [
+    {
+      "base_url": "https://api.deepseek.com",
+      "id": "deepseek",
+      "name": "DeepSeek"
+    }
+  ]
+}

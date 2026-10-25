@@ -1,0 +1,25 @@
+{
+  "template_id": "tpl_c",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿丙",
+    "age": "45",
+    "gender": "男",
+    "intro": "热心肠，爱帮邻居干活。",
+    "tags": [
+      "热心"
+    ],
+    "personality": "乐于助人，脾气好。",
+    "speech": "嗓门大，爱笑。",
+    "background": "做了多年木匠，手艺不错。",
+    "drives": "帮上别人的忙。",
+    "interests": "修修补补，找人聊天。",
+    "occupation": "木匠",
+    "appearance": {
+      "marker": "hammer",
+      "color": "#6a675a"
+    }
+  }
+}

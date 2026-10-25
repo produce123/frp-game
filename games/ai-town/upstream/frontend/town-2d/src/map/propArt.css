@@ -1,0 +1,63 @@
+/* 道具图是像素图，放大时不插值；列表里一格像素放大成一个屏幕像素 */
+.prop-art-image,
+.game-prop-picture img {
+  image-rendering: pixelated;
+}
+.game-prop-picture img {
+  width: 26px;
+  height: 26px;
+}
+.pp > .prop-art-image,
+.pp > .prop-art-target {
+  display: none;
+}
+svg.zoom-detail .pp {
+  opacity: 1;
+  pointer-events: auto;
+}
+/* 操作站位仍用于导航；近景不让十字标记盖住道具图片。 */
+svg.zoom-detail .map-stations {
+  display: none;
+}
+svg.zoom-detail .pp.prop-art-ready > :not(.prop-art-image):not(.prop-art-target) {
+  visibility: hidden;
+}
+svg.zoom-detail .pp.prop-art-ready > .prop-art-image,
+svg.zoom-detail .pp.prop-art-ready > .prop-art-target {
+  display: block;
+}
+svg.zoom-detail .pp.prop-art-ready > .prop-art-target {
+  fill: transparent;
+  stroke: none;
+  pointer-events: all;
+}
+svg.zoom-detail .pp.prop-art-ready:is(.selected-prop, :focus) > .prop-art-target {
+  stroke: var(--teal, #427d70);
+  stroke-width: 3;
+  stroke-dasharray: 5 3;
+}
+
+/* 挨着的书合成的一摞（staticLayers.ts 的 bookPile）：点击框平时看不见，选中或聚焦时画虚线 */
+.book-pile-cover {
+  image-rendering: pixelated;
+}
+.pp.book-pile > .book-pile-target {
+  fill: transparent;
+  stroke: none;
+}
+.pp.book-pile:is(.selected-prop, :focus) > .book-pile-target {
+  stroke: var(--teal, #427d70);
+  stroke-width: 3;
+  stroke-dasharray: 5 3;
+}
+.book-pile-count circle {
+  fill: var(--accent-fill, #2f6b55);
+  stroke: #fff;
+  stroke-width: 3;
+}
+.book-pile-count text {
+  fill: #fff;
+  font-size: 17px;
+  font-weight: 700;
+  text-anchor: middle;
+}

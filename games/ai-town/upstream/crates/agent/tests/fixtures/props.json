@@ -1,0 +1,6 @@
+[
+  {"id": "test:bed", "version": 1, "name": "单人床", "description": "", "actions": [{"id": "sleep", "label": "睡觉", "duration_minutes": 480, "during": [{"kind": "restore_need", "need": "energy", "per_minute": 0.15625, "pause_decay": true}], "completion": "sleep", "conditions": [], "rest": true}]},
+  {"id": "test:water", "version": 1, "name": "饮用水桶", "description": "可饮用的清水；一份补充 35 点水分，可帮助在场村民补水。", "actions": [{"id": "drink", "label": "饮水", "duration_minutes": 3, "during": [], "completion": "activity", "conditions": [], "on_complete": [{"kind": "restore", "need": "water", "amount": 35}], "recipient": true, "supply": {"initial": 200, "cost": 1}}]},
+  {"id": "test:poisoned-food", "version": 1, "name": "变质干粮", "description": "有异味的变质干粮，食用会中毒。", "actions": [{"id": "eat", "label": "吃变质干粮", "duration_minutes": 10, "during": [], "completion": "activity", "conditions": [], "on_complete": [{"kind": "restore", "need": "fullness", "amount": 25}, {"kind": "apply_condition", "condition": "poison", "severity": 1}], "recipient": true, "supply": {"initial": 5, "cost": 1}}]},
+  {"id": "test:flower", "version": 1, "name": "一朵野花", "description": "可拾取、赠予和摆放的花。", "portable": true, "stack_limit": 5, "actions": []}
+]

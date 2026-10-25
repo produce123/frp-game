@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_zhou",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "周伯",
+    "age": "68",
+    "gender": "男",
+    "intro": "退休船匠，手上的茧比船钉还多，还爱蹲在码头看水。",
+    "tags": [
+      "老手艺",
+      "退休",
+      "念旧"
+    ],
+    "personality": "摸了一辈子船，看船先看龙骨；嘴上嫌现在的东西不结实，手里还是忍不住帮人修。",
+    "speech": "慢条斯理，开口先「我那时候」；指点别人只用三两句。",
+    "background": "在船厂干了四十年，造过的船比镇上的人还多。退休后搬来渡口边，说听不见水声睡不着。",
+    "drives": "手艺不能断在自己手里。",
+    "interests": "码头、工作坊、看船修船；年轻人愿意学他就愿意教。",
+    "occupation": "退休船匠",
+    "appearance": {
+      "marker": "hammer",
+      "color": "#3f4a44",
+      "profile": "rigged-oldzhou"
+    }
+  }
+}

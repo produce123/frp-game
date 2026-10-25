@@ -1,0 +1,141 @@
+/* 重要事件提示卡：地图区域上方居中，不盖顶栏 */
+.town-notices {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 17;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(420px, calc(100% - 24px));
+  pointer-events: none;
+}
+.game-theme .town-notices {
+  top: 72px;
+}
+/* 暂停提示条在时让到它下面 */
+#map:has(.pause-hint:not([hidden])) .town-notices {
+  top: 56px;
+}
+#map:has(.avatar-toast:not([hidden])):has(.pause-hint:not([hidden])) .town-notices {
+  top: 92px;
+}
+.town-notice {
+  pointer-events: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--band-collapse);
+  border-radius: var(--r-s);
+  box-shadow: var(--elev-2);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: default;
+}
+.notice-portrait {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-s);
+  background: color-mix(in srgb, var(--band-collapse) 14%, transparent);
+  image-rendering: pixelated;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--band-collapse);
+}
+.notice-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.notice-title {
+  font-size: 15px;
+  color: var(--band-collapse);
+}
+.notice-line {
+  color: var(--dim);
+  line-height: 1.5;
+}
+.notice-actions {
+  flex: none;
+  display: flex;
+  gap: 6px;
+}
+
+/* 重要事件的「详情」：收着带数值的原文；事件栏、提示卡、日志页共用 */
+.important-detail {
+  font-size: 11px;
+  color: var(--dim);
+}
+.important-detail summary {
+  cursor: pointer;
+  user-select: none;
+}
+.important-detail > div {
+  margin-top: 2px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+#event-list .important-detail {
+  display: inline-block;
+  margin-left: 8px;
+  vertical-align: top;
+}
+#event-list .important {
+  font-weight: 600;
+}
+#event-latest-text.important,
+body.game-theme #event-bar #event-latest-text.important,
+body.game-theme #event-list .important {
+  color: var(--band-collapse);
+  font-weight: 600;
+}
+#event-latest-dismiss {
+  flex: none;
+  min-height: 0;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+/* 全镇暂停：按原因一张卡，按钮直接去修。到上限、回复慢是玩家自己设的限制或慢了，用橙色 */
+.town-notice.notice-hold {
+  align-items: flex-start;
+  padding: 12px 14px;
+}
+.notice-hold.tone-warn {
+  border-left-color: var(--busy);
+}
+.notice-hold.tone-warn .notice-portrait {
+  background: var(--busy-soft);
+  color: var(--busy);
+}
+.notice-hold.tone-warn .notice-title {
+  color: var(--busy);
+}
+.notice-hold .notice-title {
+  font-size: 15px;
+  line-height: 1.4;
+}
+.notice-who {
+  color: var(--text-2);
+  font-size: 12px;
+}
+.notice-hold .notice-line {
+  color: var(--ink);
+  font-size: 13px;
+}
+.notice-hold .notice-actions {
+  flex-wrap: wrap;
+  margin-top: 6px;
+}
+.notice-hold .important-detail {
+  margin-top: 2px;
+}

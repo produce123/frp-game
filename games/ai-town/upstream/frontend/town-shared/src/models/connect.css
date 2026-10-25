@@ -1,0 +1,238 @@
+/* 连接模型的弹层（models/connect.ts）：电脑居中，手机从底部升起；还有首页和世界观对话框里那张「还差一步」。
+   只用 tokens，首页的深色和小镇里的浅色通用。 */
+.model-connect {
+  width: min(540px, calc(100% - 32px));
+  max-width: none;
+  max-height: min(88vh, 780px);
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: var(--r-m);
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: var(--elev-3);
+}
+.model-connect::backdrop {
+  background: rgb(20 24 22 / 0.45);
+}
+.mc-body {
+  padding: 22px 26px;
+}
+.mc-grip {
+  display: none;
+}
+.model-connect h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  font-weight: 600;
+  outline: none;
+}
+.mc-text {
+  margin: 0 0 14px;
+  color: var(--text-2);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.mc-providers {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.model-connect button.mc-provider {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  text-align: left;
+}
+.model-connect button.mc-provider.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  background: var(--accent-soft);
+}
+.mc-provider b {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+}
+.mc-provider small {
+  color: var(--text-3);
+  font-size: 12px;
+}
+/* 「更多服务」做成按钮的样子，不像一行说明 */
+.model-connect button.mc-more {
+  grid-column: 1 / -1;
+  padding: 9px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--r-m);
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: center;
+}
+.mc-field {
+  display: grid;
+  gap: 6px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.mc-key {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px;
+  font-size: 15px;
+}
+.mc-status {
+  min-height: 20px;
+  margin: 8px 0;
+  font-size: 13px;
+}
+.mc-help {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: var(--r-m);
+  background: var(--surface-sunken);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mc-help b {
+  color: var(--text);
+}
+.mc-help ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.mc-help a {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.mc-foot {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+.mc-foot button {
+  flex: 1;
+  min-height: 46px;
+  font-size: 15px;
+}
+.mc-foot button.primary {
+  flex: 1.6;
+}
+@media (max-width: 719px) {
+  .model-connect {
+    width: 100%;
+    max-height: 92dvh;
+    margin: auto 0 0;
+    border-radius: var(--r-m) var(--r-m) 0 0;
+    animation: mc-rise var(--t-med) var(--ease);
+  }
+  .mc-body {
+    padding: 8px 18px 18px;
+  }
+  .mc-grip {
+    display: block;
+    width: 36px;
+    height: 4px;
+    margin: 4px auto 14px;
+    border-radius: 2px;
+    background: var(--line);
+  }
+}
+@keyframes mc-rise {
+  from {
+    opacity: 0;
+    transform: translateY(32px);
+  }
+}
+
+/* 还差一步：中性底色，主色只用在「连接模型」上，不像报错 */
+.model-prompt {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: start;
+  margin: 0 0 16px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-m);
+  background: var(--surface-sunken);
+}
+.mp-badge {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mp-badge .game-icon {
+  width: 18px;
+  height: 18px;
+}
+.model-prompt > b {
+  font-size: 15px;
+  font-weight: 600;
+}
+.mp-text {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.55;
+}
+/* 下载内置模型时：进度条和一句说明，和按钮一样排在文字那一列 */
+.mp-meter,
+.mp-sub {
+  grid-column: 2;
+}
+.mp-meter {
+  margin-top: 4px;
+}
+.mp-meter[hidden],
+.mp-sub[hidden],
+.mp-actions[hidden] {
+  display: none;
+}
+.mp-sub {
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.mp-actions {
+  grid-column: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+.mp-actions button.mp-go {
+  min-height: 36px;
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  background: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+/* 一行放不下时整个按钮换到下一行，按钮里的字不折 */
+.mp-actions button {
+  white-space: nowrap;
+}
+.mp-actions button.mp-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.mp-actions button.mp-later {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 13px;
+}

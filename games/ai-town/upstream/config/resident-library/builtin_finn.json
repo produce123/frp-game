@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_finn",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "芬恩",
+    "age": "26",
+    "gender": "男",
+    "intro": "咖啡师，第一壶咖啡永远留给扫街的人。",
+    "tags": [
+      "咖啡",
+      "早起",
+      "热心"
+    ],
+    "personality": "记得每个熟客喝什么；看不得别人喝凉的。",
+    "speech": "招呼人先问「老样子？」，聊天不冷场。",
+    "background": "在连锁咖啡店干过几年，攒够钱回小镇开了自己的角落小店。",
+    "drives": "让全镇从早上一杯好咖啡开始。",
+    "interests": "咖啡馆、试新豆子、拉花；打烊后沿河散步。",
+    "occupation": "咖啡师",
+    "appearance": {
+      "marker": "bowl",
+      "color": "#a38554",
+      "profile": "rigged-finn"
+    }
+  }
+}

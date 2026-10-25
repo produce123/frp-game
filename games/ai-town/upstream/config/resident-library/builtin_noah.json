@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_noah",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "诺亚",
+    "age": "45",
+    "gender": "男",
+    "intro": "修车师傅，镇里每辆车的脾气他都摸过，扳手从不离手。",
+    "tags": [
+      "师傅",
+      "靠谱",
+      "油污手"
+    ],
+    "personality": "车没修好不吃饭；听得懂引擎的抱怨，听不惯人绕弯子。",
+    "speech": "直来直去，「能修」「修不好，换」。",
+    "background": "年轻时在城里修车行干活，嫌城里人催得慌，回小镇开了间随叫随到的修车铺。",
+    "drives": "镇上的车不许有一辆趴窝过夜。",
+    "interests": "工作坊、拆开发动机再装回去；收藏旧扳手。",
+    "occupation": "修车师傅",
+    "appearance": {
+      "marker": "hammer",
+      "color": "#a66d53",
+      "profile": "rigged-noah"
+    }
+  }
+}

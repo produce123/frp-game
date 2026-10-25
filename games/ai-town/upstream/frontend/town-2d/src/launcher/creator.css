@@ -1,0 +1,938 @@
+@import './theme.css';
+
+/* 建镇页：预览铺在右侧，左边一个面板，四步上下排开，做完的步骤收成一行摘要。 */
+.create-town-button {
+  min-height: 44px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+  font-family: var(--ui-font);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.town-creator {
+  --panel-width: 480px;
+  --gap: 24px;
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  overflow: hidden;
+  background: var(--ui-stage);
+  color: var(--ui-ink);
+  font-family: var(--ui-font);
+  font-size: 14px;
+}
+.town-creator[hidden],
+.town-creator [hidden] {
+  display: none !important;
+}
+.town-creator *,
+.town-creator *::before,
+.town-creator *::after {
+  box-sizing: border-box;
+}
+:where(.town-creator) button {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ui-ink);
+  font: inherit;
+  cursor: pointer;
+}
+:where(.town-creator) button:hover:not(:disabled) {
+  border-color: var(--ui-accent);
+}
+:where(.town-creator) button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+:where(.town-creator) :is(input, textarea) {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-line-strong);
+  border-radius: 10px;
+  background: var(--ui-fill);
+  color: var(--ui-ink);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 400;
+}
+:where(.town-creator) :is(input, textarea):focus {
+  border-color: var(--ui-accent);
+  outline: none;
+}
+.town-creator :is(button, summary, input, textarea):focus-visible {
+  outline: 2px solid var(--ui-accent);
+  outline-offset: 2px;
+}
+.creator-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.creator-hint {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* 预览区 */
+.creator-stage {
+  position: absolute;
+  inset: 0;
+}
+.creator-preview {
+  position: absolute;
+  inset: 0 0 0 calc(var(--panel-width) + var(--gap) * 2);
+  overflow: hidden;
+  background-color: var(--ui-stage);
+  background-image:
+    linear-gradient(var(--ui-fill) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ui-fill) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+.creator-preview svg,
+.creator-preview canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+.generated-town-preview-host {
+  width: 100%;
+  height: 100%;
+}
+.creator-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 24px;
+  color: var(--ui-ink);
+  font-size: 20px;
+  font-weight: 600;
+  text-align: center;
+}
+.creator-placeholder > span {
+  color: var(--ui-accent);
+  font-size: 40px;
+  font-weight: 400;
+}
+.creator-placeholder small {
+  color: var(--ui-ink-muted);
+  font-size: 15px;
+  font-weight: 400;
+}
+.creator-preview-switch {
+  position: absolute;
+  z-index: 12;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  background: var(--ui-panel);
+}
+.creator-preview-switch button {
+  min-height: 36px;
+  border: 0;
+  font-size: 14px;
+}
+.creator-preview-switch button[aria-pressed='true'] {
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+}
+
+/* 一句话描述由模型起名，生成前填的名字会被覆盖：先不显示，预览出来后在说明上方的名字框里改；
+   一句话描述的第一步只有描述框，后面三步等生成时再出现 */
+.town-creator[data-mode='language'] .creator-basic-grid,
+.town-creator[data-mode='language'][data-creator-step='basics'] .creator-step {
+  display: none;
+}
+/* 预览这一步的说明：左栏里接在步骤后面，地图不被盖住 */
+.creator-result {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 4px 0;
+  padding: 16px 12px;
+  border-radius: var(--ui-radius);
+  background: var(--ui-fill);
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+/* 还想改什么：一句话，按这句改；换一种理解是从头再理解一次 */
+.creator-refine {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ui-line);
+}
+.creator-refine label {
+  color: var(--ui-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+.creator-refine textarea {
+  resize: vertical;
+  line-height: 1.6;
+}
+.creator-refine-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.town-creator #refine-town {
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+/* 文字按钮：换方式、换一种理解 */
+.town-creator .creator-link {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--ui-accent);
+  font-size: 14px;
+}
+.town-creator .creator-link:hover:not(:disabled) {
+  text-decoration: underline;
+}
+/* 例子：点一下填进描述框 */
+.creator-examples {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.town-creator .creator-examples button {
+  min-height: 32px;
+  padding: 0 12px;
+  border-color: var(--ui-line-strong);
+  border-radius: 16px;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+}
+.creator-draft-name {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+}
+.town-creator .creator-draft-name input {
+  font-size: 16px;
+  font-weight: 600;
+}
+/* 用哪个模型；没连上时后面跟一个「连接模型」 */
+.creator-model-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.creator-model-line:empty {
+  display: none;
+}
+.town-creator .creator-model-line button {
+  min-height: 34px;
+  border-color: var(--ui-accent);
+  color: var(--ui-accent);
+  font-weight: 600;
+}
+/* 预览旁的说明：几段小标题加内容，长名字和长句都能折行 */
+.creator-plan {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-wrap: anywhere;
+}
+.creator-plan-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.creator-plan-section h3 {
+  margin: 0;
+  color: var(--ui-ink-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.creator-plan-section p,
+.creator-plan-section ul {
+  margin: 0;
+  color: var(--ui-ink-soft);
+}
+.creator-plan-section ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 18px;
+}
+.creator-plan-section .creator-hint {
+  font-size: 12px;
+}
+/* 你说的 → 地图上的：左边是玩家的原话，右边是地图上的名字 */
+.creator-plan-section .creator-mapping {
+  padding-left: 0;
+  list-style: none;
+}
+.creator-mapping li {
+  display: grid;
+  grid-template-columns: minmax(0, 5em) 1.2em minmax(0, 1fr);
+  gap: 6px;
+  color: var(--ui-ink);
+}
+.creator-mapping b {
+  font-weight: 600;
+}
+.creator-mapping i {
+  color: var(--ui-ink-muted);
+  font-style: normal;
+}
+.creator-mapping small {
+  display: block;
+  color: var(--ui-ink-muted);
+  font-size: 12px;
+}
+.creator-mapping .creator-missing {
+  color: var(--ui-ink-muted);
+}
+
+/* 左侧面板 */
+.creator-panel {
+  position: absolute;
+  top: var(--gap);
+  bottom: var(--gap);
+  left: var(--gap);
+  width: var(--panel-width);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--ui-line);
+  border-radius: 16px;
+  background: var(--ui-panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.creator-heading {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 24px 12px;
+}
+.town-creator .creator-back {
+  align-self: flex-start;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+}
+.town-creator .creator-back:hover:not(:disabled) {
+  color: var(--ui-ink);
+}
+.creator-title-block h1 {
+  margin: 0;
+  font: 600 22px/1.3 var(--ui-font);
+}
+.creator-title-block p {
+  margin: 4px 0 0;
+  color: var(--ui-ink-muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.creator-heading-actions:empty {
+  display: none;
+}
+.creator-main {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 12px 12px;
+}
+.creator-before-form:empty {
+  display: none;
+}
+.layout-stage {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+/* 步骤行：做完的显示摘要，没做的显示说明 */
+.town-creator .creator-step {
+  display: flex;
+  width: 100%;
+  min-height: 48px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px;
+  border: 0;
+  text-align: left;
+}
+.town-creator .creator-step:hover:not(:disabled) {
+  background: var(--ui-fill);
+}
+.creator-step > span,
+.creator-panel-heading span {
+  display: grid;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 13px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.creator-step > span {
+  background: var(--ui-fill-strong);
+  color: var(--ui-ink-muted);
+}
+.creator-step > strong {
+  flex: none;
+  width: 44px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.creator-step > small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ui-ink-muted);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.creator-step:not(.is-done) > strong {
+  color: var(--ui-ink-muted);
+}
+.creator-step.is-done > span {
+  position: relative;
+  background: var(--ui-accent-soft);
+  color: transparent;
+}
+.creator-step.is-done > span::after {
+  content: '✓';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ui-accent);
+}
+.creator-step.is-done > small {
+  color: var(--ui-ink-soft);
+}
+
+/* 展开的当前步骤 */
+.creator-step-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 4px 0;
+  padding: 16px 12px;
+  border-radius: var(--ui-radius);
+  background: var(--ui-fill);
+}
+.creator-panel-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.creator-panel-heading > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.creator-panel-heading span {
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+}
+.creator-panel-heading h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+}
+.creator-panel-heading p {
+  margin: 0 0 0 38px;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.creator-setting-block,
+.creator-view-options,
+.creator-environment-grid,
+.creator-basic-grid,
+.creator-language {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+}
+.creator-environment-grid,
+.creator-basic-grid {
+  gap: 16px;
+}
+.creator-setting-block h3,
+.creator-view-options h3,
+.creator-section-title {
+  margin: 0;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+.creator-before-form section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.creator-name-field,
+.creator-language label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  font-weight: 600;
+}
+.creator-language textarea {
+  resize: vertical;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* 选项卡片 */
+.creator-choice-cards,
+.creator-style-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.creator-view-cards,
+.creator-landform-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.town-creator :is(.creator-choice-cards, .creator-style-cards) button {
+  display: flex;
+  min-height: 56px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 8px;
+  border-color: var(--ui-line);
+  font-size: 14px;
+  text-align: center;
+}
+.town-creator :is(.creator-view-cards, .creator-landform-cards, .creator-style-cards) button {
+  align-items: flex-start;
+  padding: 12px;
+  text-align: left;
+}
+.town-creator :is(.creator-choice-cards, .creator-style-cards) button[aria-pressed='true'] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.town-creator :is(.creator-choice-cards, .creator-style-cards) strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.town-creator :is(.creator-choice-cards, .creator-style-cards) small {
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+.creator-choice-cards button > span {
+  display: flex;
+  gap: 2px;
+  color: var(--ui-ink-soft);
+}
+.creator-choice-cards button[aria-pressed='true'] > span {
+  color: var(--ui-accent);
+}
+.creator-choice-cards svg {
+  width: 20px;
+  height: 20px;
+}
+/* 每种风格的底色由 creatorTemplate.ts 按风格名单写进 --style-swatch */
+.style-scene {
+  display: grid;
+  width: 100%;
+  height: 44px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--style-swatch);
+  font-size: 18px;
+}
+
+/* 地点 */
+.creator-capacity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--ui-fill-strong);
+}
+.creator-capacity:empty {
+  display: none;
+}
+.creator-capacity-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+}
+.creator-capacity-header strong {
+  color: var(--ui-ink);
+  font-size: 16px;
+}
+.creator-capacity[data-state='near'] .creator-capacity-header strong {
+  color: var(--ui-accent);
+}
+.creator-capacity[data-state='full'] .creator-capacity-header strong {
+  color: var(--ui-danger);
+}
+.creator-capacity-track {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--ui-fill-strong);
+}
+.creator-capacity-track i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--ui-accent);
+}
+.creator-capacity[data-state='full'] .creator-capacity-track i {
+  background: var(--ui-danger);
+}
+.creator-capacity small {
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.creator-place-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.town-creator .creator-place-filters button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-color: var(--ui-line-strong);
+  border-radius: 17px;
+  color: var(--ui-ink-soft);
+}
+.town-creator .creator-place-filters button[aria-selected='true'] {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+  color: var(--ui-ink);
+}
+.creator-place-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.creator-place-grid:empty {
+  display: none;
+}
+.creator-place-heading {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: baseline;
+  gap: 8px;
+}
+.creator-place-heading h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.creator-place-heading small {
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+}
+.town-creator .creator-place-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 84px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  border-color: var(--ui-line);
+  background: rgba(243, 239, 230, 0.03);
+  text-align: center;
+}
+.creator-place-card svg {
+  width: 24px;
+  height: 24px;
+  color: var(--ui-ink-soft);
+}
+.creator-place-card > span {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.creator-place-card > b {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  min-width: 22px;
+  height: 22px;
+  place-items: center;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+  font-size: 12px;
+}
+.creator-place-limit {
+  color: var(--ui-ink-muted);
+  font-size: 12px;
+}
+.town-creator .creator-place-card.has-places {
+  border-color: var(--ui-accent);
+  background: var(--ui-accent-soft);
+}
+.creator-place-card.has-places svg {
+  color: var(--ui-accent);
+}
+.creator-selected-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--ui-ink-soft);
+  font-size: 13px;
+}
+.town-creator #clear-places {
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  color: var(--ui-accent);
+}
+.creator-selected {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--ui-ink-muted);
+  font-size: 14px;
+}
+.creator-place-token {
+  display: flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 0 12px;
+  border-radius: 16px;
+  background: var(--ui-fill-strong);
+  color: var(--ui-ink);
+}
+.town-creator .creator-place-token button {
+  display: grid;
+  width: 24px;
+  min-height: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--ui-fill-strong);
+  color: var(--ui-ink-soft);
+}
+.creator-single-area {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* 生活条件：难的标「难度高」，选中后下面写清后果 */
+.creator-choice-cards .creator-hard {
+  display: block;
+  margin-top: 2px;
+  color: var(--orange-300);
+  font-size: 11px;
+  font-weight: 600;
+}
+.creator-effect {
+  margin-top: 8px;
+}
+
+/* 面板底部：状态与操作按钮 */
+.creator-footer {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 24px max(20px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--ui-line);
+}
+#creator-status {
+  margin: 0;
+  color: var(--ui-ink-soft);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.generation-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+.generation-progress progress {
+  width: 100%;
+  height: 6px;
+  appearance: none;
+  border: 0;
+  border-radius: 3px;
+  background: var(--ui-fill-strong);
+}
+.generation-progress progress::-webkit-progress-bar {
+  border-radius: 3px;
+  background: var(--ui-fill-strong);
+}
+.generation-progress progress::-webkit-progress-value {
+  border-radius: 3px;
+  background: var(--ui-accent);
+}
+.generation-progress small {
+  color: var(--ui-ink-muted);
+  font-size: 13px;
+}
+.creator-footer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.town-creator .creator-footer-actions button {
+  min-height: 48px;
+  font-size: 15px;
+}
+.town-creator .creator-primary {
+  flex: 1;
+  border: 0;
+  background: var(--ui-accent-fill);
+  color: var(--ui-accent-ink);
+  font-size: 16px;
+  font-weight: 700;
+}
+.town-creator .creator-primary:hover:not(:disabled) {
+  background: var(--ui-accent-hover);
+}
+
+/* 窄屏（手机、折叠屏、窄窗口）：整页一列滚动——标题、步骤、预览、生成说明，
+   状态和按钮固定在底部，看预览时也点得到「保存」「换一张」。
+   面板和预览两个外框拆开（display: contents），里面的块按 order 排进同一列。 */
+@media (max-width: 860px) {
+  .town-creator {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 16px 16px 0;
+    overflow-y: auto;
+  }
+  .creator-panel,
+  .creator-stage {
+    display: contents;
+  }
+  .creator-heading {
+    order: 1;
+    padding: 0;
+  }
+  .creator-preview {
+    order: 3;
+    position: relative;
+    inset: auto;
+    flex: none;
+    height: min(62vh, 520px);
+    border-radius: 16px;
+  }
+  /* 预览只在预览这一步出现；前三步不占一大块空白，失败的原因写在底部状态里 */
+  .town-creator:not([data-creator-step='preview']) .creator-preview {
+    display: none;
+  }
+  /* 桌面上步骤区是可伸缩的滚动块；这里整页滚动，步骤区拆开排进同一列：
+     表单在预览前，说明在预览后，按内容撑开，不能被预览压扁 */
+  .creator-main {
+    display: contents;
+  }
+  .creator-before-form,
+  .creator-form {
+    order: 2;
+    flex: none;
+  }
+  .creator-result {
+    order: 4;
+    flex: none;
+    margin: 0;
+  }
+  /* 内容不满一屏时 margin-top: auto 把它推到底部，满了以后靠 sticky 贴底 */
+  .creator-footer {
+    order: 5;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: auto -16px 0;
+    padding: 12px 16px max(12px, env(safe-area-inset-bottom));
+    background: var(--ui-panel);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.3);
+  }
+  /* 弹出键盘时底栏先让开，不然它正好盖住正在写的输入框；收起键盘就回来 */
+  .typing .creator-footer {
+    display: none;
+  }
+  #creator-status {
+    font-size: 13px;
+  }
+  /* 主按钮单独一行占满，其余两个并排在下面；字不折行 */
+  .town-creator .creator-footer-actions button {
+    flex: 1 1 0;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+  .town-creator .creator-footer-actions .creator-primary {
+    flex-basis: 100%;
+    order: -1;
+  }
+}
+.creator-planning:empty {
+  display: none;
+}
+/* 矮屏：去掉标题下的说明，给步骤内容多留高度。 */
+@media (max-height: 760px) and (min-width: 861px) {
+  .creator-title-block p {
+    display: none;
+  }
+}

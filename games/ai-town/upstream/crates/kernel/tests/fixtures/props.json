@@ -1,0 +1,30 @@
+[
+  {"id": "test:flower", "version": 1, "name": "一朵野花", "portable": true, "stack_limit": 5, "actions": []},
+  {"id": "test:water", "version": 1, "name": "饮用水桶", "actions": [
+    {"id": "drink", "label": "饮水", "duration_minutes": 3, "completion": "activity",
+     "on_complete": [{"kind": "restore", "need": "water", "amount": 35}], "recipient": true,
+     "supply": {"initial": 200, "cost": 1}}]},
+  {"id": "test:bed", "version": 1, "name": "单人床", "actions": [
+    {"id": "sleep", "label": "睡觉", "duration_minutes": 480, "completion": "sleep", "rest": true,
+     "during": [{"kind": "restore_need", "need": "energy", "per_minute": 0.15625, "pause_decay": true}]}]},
+  {"id": "test:rations", "version": 1, "name": "干粮袋", "actions": [
+    {"id": "eat", "label": "吃干粮", "duration_minutes": 10, "completion": "activity",
+     "on_complete": [{"kind": "restore", "need": "fullness", "amount": 25}], "recipient": true,
+     "supply": {"initial": 100, "cost": 1}}]},
+  {"id": "test:medical_kit", "version": 1, "name": "救助药箱", "actions": [
+    {"id": "heal", "label": "治疗健康", "duration_minutes": 5, "completion": "activity",
+     "on_complete": [{"kind": "restore", "need": "health", "amount": 30}], "recipient": true,
+     "supply": {"initial": 20, "cost": 1}}]},
+  {"id": "test:revival_stone", "version": 1, "name": "复苏石", "actions": [
+    {"id": "revive", "label": "施用复苏石", "duration_minutes": 10, "completion": "activity",
+     "on_complete": [{"kind": "revive", "values": [50, 50, 50, 40], "clear_conditions": true}],
+     "recipient": true, "supply": {"initial": 3, "cost": 1}}]},
+  {"id": "test:bulletin_board", "version": 1, "name": "公告栏", "bulletin_board": true, "actions": [
+    {"id": "read", "label": "查看公告栏", "duration_minutes": 10, "completion": "activity"}]},
+  {"id": "test:writing_desk", "version": 1, "name": "写作桌", "actions": [
+    {"id": "write", "label": "写作", "duration_minutes": 120, "completion": "write_book"}]},
+  {"id": "test:book", "version": 1, "name": "木工入门",
+   "readable": {"work_id": "k-joinery", "version": 1, "kind": "book", "title": "木工入门", "author": "佚名",
+                "text": "榫卯有三种常见接法，打磨要顺着木纹。", "origin": {"kind": "builtin"}},
+   "actions": [{"id": "read", "label": "阅读", "duration_minutes": 30, "completion": "read_book"}]}
+]

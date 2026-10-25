@@ -46,6 +46,17 @@ window.GAMES = [
     maxPlayers: 4,
   },
   {
+    // 地平线赛车：开放世界 3D 竞速；房间/账号/邀请走平台，车位置走 /horizon-relay。
+    slug: "horizon",
+    title: "地平线赛车",
+    letter: "D",
+    desc: "开放世界海岸赛道，2–8 人真实碰撞竞速，手机可玩。",
+    icon: "🏎️",
+    tags: ["赛车", "3D", "可联机"],
+    minPlayers: 2,
+    maxPlayers: 8,
+  },
+  {
     // 无名杀：上游原版静态托管（/noname/），账号/好友/邀请走平台。
     title: "无名杀（三国杀）",
     letter: "W",
@@ -101,6 +112,18 @@ window.GAMES = [
     icon: "🀄",
     tags: ["麻将", "3D", "可联机", "四人"],
     minPlayers: 2,
+    maxPlayers: 4,
+  },
+{
+    // AI 小镇：上游 Rust 世界 + TS/Three.js 前端，Node 只做静态托管/账号/反代。
+    // 房号是平台给每个镇生成的 6 位码（?room=），好友在平台页点「进入」。
+    title: "AI 小镇",
+    letter: "A",
+    href: "/ai-town/",
+    desc: "AI 村民自己生活的 2D 小镇，可和朋友一起降临。",
+    icon: "🏘️",
+    tags: ["模拟", "AI", "可联机"],
+    minPlayers: 1,
     maxPlayers: 4,
   },
 ];

@@ -1,0 +1,25 @@
+{
+  "template_id": "tpl_b",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "阿乙",
+    "age": "31",
+    "gender": "女",
+    "intro": "做事仔细，喜欢安静。",
+    "tags": [
+      "细心"
+    ],
+    "personality": "不急不躁，先想后做。",
+    "speech": "话少，说话慢。",
+    "background": "在城里做过账房，想找个清静的地方。",
+    "drives": "把日子过得有条理。",
+    "interests": "整理东西，按时吃饭睡觉。",
+    "occupation": "账房",
+    "appearance": {
+      "marker": "book",
+      "color": "#327975"
+    }
+  }
+}

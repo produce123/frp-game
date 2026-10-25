@@ -1,0 +1,161 @@
+/* 小镇的界面语言「清楚」：整个游戏唯一的样式来源。
+ *
+ * 原则
+ * 1. 一种字体：系统黑体，常规与半粗两种字重；不用衬线和变形字。
+ * 2. 一个主色：深绿只给主按钮和选中项。状态用小圆点：绿 = 空闲/正常，橙 = 使用中/注意，
+ *    灰 = 不可用；红只表示危险。
+ * 3. 两种圆角：按钮、输入框 --r-s（8），卡片、面板 --r-m（12）；胶囊 --r-pill 只给分段与小标签。
+ * 4. 没有装饰：不用渐变、纹理、双线框、内高光；层次只靠底色、细边框和字重。
+ *    只有浮在地图上的东西才有阴影（--elev-3）。
+ * 5. 浅色（默认）给游戏内各界面；深色（data-tier="night"）给选图页、建镇页这类铺在地图预览上的页面。
+ *    两套变量同名同构，组件只写一份。
+ *
+ * 组件在 components.css，DOM 助手在 ui.ts。新界面只用本文件的语义名；
+ * 下面「旧变量别名」让还没细改的界面跟着换色，改到哪个界面就把旧名换成语义名。
+ */
+
+:root {
+  color-scheme: light;
+
+  /* ---------- 原色 ---------- */
+  --green-700: #285c49;
+  --green-600: #2f6b55;
+  /* 深色页的主按钮底：比 400 深，配白字 */
+  --green-500: #3a7a60;
+  --green-450: #43876b;
+  --green-400: #5fae8c;
+  --green-300: #6fbf9c;
+  --leaf-600: #2f8a5b;
+  --leaf-300: #6cc795;
+  --orange-600: #c27615;
+  --orange-300: #e2a24a;
+  --red-600: #b9412f;
+  --red-300: #ec8a78;
+  --gray-400: #9a9d98;
+  --blue-600: #2f6f9e;
+  --blue-300: #7fb2d8;
+  /* 深色页面的底与字 */
+  --night-0: #111412;
+  --night-1: #181b19;
+  --night-2: #222623;
+  --night-ink: #eceee9;
+  --night-ink-2: #aab0aa;
+  --night-ink-3: #7d837e;
+
+  /* ---------- 形状 ---------- */
+  --r-s: 8px;
+  --r-m: 12px;
+  --r-l: 12px;
+  --r-pill: 999px;
+
+  /* ---------- 字体 ---------- */
+  --font-ui:
+    -apple-system, 'PingFang SC', 'Hiragino Sans GB', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  /* 名字和标题也用同一种字，只靠字号和字重区分 */
+  --font-display: var(--font-ui);
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  /* ---------- 动效 ---------- */
+  --ease: ease;
+  --t-fast: 120ms;
+  --t-med: 180ms;
+}
+
+/* ---------- 语义角色：浅色（默认） ---------- */
+:root,
+[data-tier='paper'] {
+  --surface-page: #f5f4f0;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --surface-sunken: #f2f1ec;
+  --surface-hover: #ebeae4;
+  --line: #e2e0d8;
+  --line-soft: #ebe9e2;
+  --text: #1f2421;
+  --text-2: #5d635f;
+  --text-3: #777c77;
+  --accent: var(--green-600);
+  --accent-fill: var(--green-600);
+  --accent-strong: var(--green-700);
+  --accent-soft: #e6f0eb;
+  --on-accent: #ffffff;
+  --ok: var(--leaf-600);
+  --ok-soft: #e4f2ea;
+  --busy: var(--orange-600);
+  --busy-soft: #faf0e1;
+  --off: var(--gray-400);
+  --danger: var(--red-600);
+  --danger-soft: #f8e6e2;
+  --info: var(--blue-600);
+  --info-soft: #e4eef6;
+  --focus: var(--green-600);
+  --elev-1: none;
+  --elev-2: 0 1px 3px rgb(20 24 22 / 0.08);
+  --elev-3: 0 6px 24px rgb(20 24 22 / 0.14);
+  /* 半透明的深色提示条（暂停提示等），两种模式通用 */
+  --toast-bg: rgb(31 36 33 / 0.86);
+  --toast-ink: #ffffff;
+}
+
+/* ---------- 语义角色：深色 ---------- */
+[data-tier='night'] {
+  color-scheme: dark;
+  --surface-page: var(--night-0);
+  --surface: var(--night-2);
+  --surface-raised: var(--night-2);
+  --surface-sunken: var(--night-1);
+  --surface-hover: #2b302c;
+  --line: #343a36;
+  --line-soft: #2c312d;
+  --text: var(--night-ink);
+  --text-2: var(--night-ink-2);
+  --text-3: var(--night-ink-3);
+  /* 文字和描边用亮一些的绿才读得清；实心按钮用深一档的绿配白字 */
+  --accent: var(--green-400);
+  --accent-fill: var(--green-500);
+  --accent-strong: var(--green-450);
+  --accent-soft: #24352d;
+  --on-accent: #ffffff;
+  --ok: var(--leaf-300);
+  --ok-soft: #21352a;
+  --busy: var(--orange-300);
+  --busy-soft: #3a2f1f;
+  --off: var(--night-ink-3);
+  --danger: var(--red-300);
+  --danger-soft: #3b2622;
+  --info: var(--blue-300);
+  --info-soft: #1f2e3a;
+  --focus: var(--green-400);
+  --elev-1: none;
+  --elev-2: 0 1px 3px rgb(0 0 0 / 0.3);
+  --elev-3: 0 6px 24px rgb(0 0 0 / 0.4);
+}
+
+/* ---------- 旧变量别名 ----------
+ * 写在 [data-tier] 上，深色区域里的旧写法也能跟着换色。 */
+:root,
+[data-tier] {
+  --paper: var(--surface-page);
+  --card: var(--surface);
+  --ink: var(--text);
+  --dim: var(--text-2);
+  --caption: var(--text-3);
+  --note-bg: var(--surface-sunken);
+  --perception: var(--accent);
+  --teal: var(--accent);
+  --green: var(--accent);
+  --green-ink: var(--accent-strong);
+  --muted-green: var(--text-2);
+  /* 需求状态色：平稳绿 / 有点饿黄 / 很饿橙 / 撑不住红 */
+  --band-steady: var(--ok);
+  --band-voiced: #b8a02e;
+  --band-ring: var(--busy);
+  --band-collapse: var(--danger);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-med: 0ms;
+  }
+}

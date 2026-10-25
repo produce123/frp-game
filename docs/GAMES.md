@@ -1,9 +1,10 @@
 # 游戏索引
 
 平台游戏的唯一入口说明。**加/改游戏先看这里**，再进各自的 `AGENTS.md`。
-（另外还有五个**不是平台自建**的缝合项目：原版无名杀 `games/noname-web/` 见文末《无名杀 Web》，
+（另外还有六个**不是平台自建**的缝合项目：原版无名杀 `games/noname-web/` 见文末《无名杀 Web》，
 狼人杀 `games/werewolf/` 见文末《狼人杀》，斗地主 `games/ddz/` 见文末《斗地主》，
-大富翁 `games/monopoly/` 见文末《大富翁》，莲花广麻 `games/mahjong/` 见文末《莲花广麻》。）
+大富翁 `games/monopoly/` 见文末《大富翁》，莲花广麻 `games/mahjong/` 见文末《莲花广麻》，
+AI 小镇 `games/ai-town/` 见文末《AI 小镇》。）
 
 **手机端所有游戏都必须有可选全屏，电脑端不显示**：入口页加
 `<script defer src="/shared/ui/fullscreen.js"></script>`，按钮右下角「⛶ 全屏」，
@@ -17,8 +18,10 @@
 | `cannon-goblin` | 大炮轰小鬼 💥 | 1–2 | 大炮隔空格吃小鬼，小鬼数量围堵大炮 | ✅ 已接入（服务器权威 + 单机人机 + 在线人机座位 / 逐条演出 / 互动） |
 | `shell-gambit` | Shell Gambit 💀 | 1–4 | 恶魔轮盘聚会版：霰弹枪、7 种道具 | ✅ 已接入（服务器权威 + 单机人机 + 在线人机座位 / 逐条演出 / 互动） |
 | `blade-steed` | 刀马 BladeSteed ⚔️ | 1–4 | 武侠猜拳：赢的人才能买刀买马砍人 | ✅ 已接入（服务器权威 + 单机人机 + 在线人机座位 / 逐条演出 / 互动） |
+| `horizon` | 地平线赛车 🏎️ | 2–8 | 开放世界海岸赛道 3D 竞速，车与车真实碰撞 | ✅ 已接入（**上游 3D 世界原样跑在浏览器** + 平台房间层 + `/horizon-relay` 车位置；手机触屏按键 / 伪横屏；没有电脑） |
 | `ddz` | 斗地主 🃏 | 3 | 叫地主 → 抢地主、出牌；牌桌是上游的 Godot 网页版 | ✅ 已接入（**牌桌是上游界面** + 服务器权威规则 + 房间层 + 平台账号；**没有电脑**、没有倒计时、不存战绩） |
 | `mahjong` | 莲花广麻 🀄 | 2–4 | 四人广东麻将（白板癞子 / 翻精癞子）；界面和规则都是上游的，规则在 Python 后端 | ✅ 已接入（**整份上游项目**：Vue3 页面 + FastAPI 后端 + 平台账号/好友/邀请；手机走 `/play/mahjong`） |
+| `ai-town` | AI 小镇 🏘️ | 1–4 | AI 村民自己过日子的 2D 小镇；房主开自己的存档，朋友进同一张图，各自有化身 | ✅ 已接入（**Rust 世界内核 + manager** + 平台账号/邀请/房间 + 每账号存档 + 手机布局 + 服务器端内置小模型；房主/客人同图降临，客人不存档） |
 
 `web/assets/js/games.js` 的卡片清单要与上表一致。另外还有**四条 `href` 卡片**
 （点了开新标签页）：`/play/noname`（原版无名杀，见《无名杀 Web》）、
@@ -42,11 +45,12 @@
 | `cannon-goblin` | `C:\Users\produce\Desktop\WorkSpace\Cannon Goblin` | 经典脚本（全局 + 内联 `onclick`） |
 | `shell-gambit` | `C:\Users\produce\Desktop\WorkSpace\Shell Gambit` | ES Module |
 | `blade-steed` | `C:\Users\produce\Desktop\WorkSpace\BladeSteed` | ES Module |
+| `horizon` | `github.com/Liyang1145/horizon-racing`（MIT） | 经典 `<script>` + Three.js r128 + cannon-es，零构建；世界/物理/车原样留在浏览器，平台只加房间/中继/触屏 |
 | `ddz` | `github.com/blmz/GODOT-DouDiZhu`（Godot 4.4，无 LICENSE） | Godot 工程（规则/界面/AI 搅在 `脚本/手牌管理器.gd`）；**界面原样导出成网页版**（`games/ddz/table/`），规则搬到服务器 |
 
 > 原三个文件夹**保持原样不动**（线上 GitHub Pages 站不受影响，改坏了可对照）。
 
-五个缝合项目的来源：
+上游缝合项目的来源（大富翁、地平线的完整来源见各自小节）：
 
 | 项目 | 上游 | 我们这一份 |
 | --- | --- | --- |
@@ -54,6 +58,7 @@
 | 狼人杀 | `github.com/hanluolin/wolfcha-custom`（MIT，Next.js 16 前端） | 只要界面（`games/werewolf/app` → 静态导出 `dist/`）；规则引擎是本仓库重写的 `games/werewolf/engine/index.mjs`。AI/TTS 全删，见 D37 |
 | 斗地主 | 第一版借 `tinyshu/ddz_game` 的玩法（页面是自己画的，用户否掉了那版 UI）；现在是 `github.com/blmz/GODOT-DouDiZhu`（**无 LICENSE**，默认保留所有权利） | **界面原样用上游的 Godot 网页导出**（`games/ddz/table/`）+ 规则搬到服务器（`games/ddz/js/engine/**`）；源码在 `games/ddz/godot/`，见《斗地主》 |
 | 莲花广麻 | `github.com/BestGuo2020/lianhuaguangdongmahjong`（MIT，Vue3 + Three.js）+ `github.com/BestGuo2020/lianhua-mahjong-backend`（MIT，Python/FastAPI） | 两份源码都复制进 `games/mahjong/`（**不是 fork**）；前端构建产物提交到 `games/mahjong/web/`；后端原样跑在 `127.0.0.1:8123`，Node 只反代 + 注入平台身份，见《莲花广麻》 |
+| AI 小镇 | `github.com/mewamew/my_ai_town`（**PolyForm Noncommercial 1.0.0**） | 源码复制进 `games/ai-town/upstream/`（**不是 fork**）；Rust 内核/manager 编译成 `games/ai-town/bin/`；前端构建产物在 `games/ai-town/web/`；Node 管进程/房间/账号/存档/WS 反代 |
 
 ## 搬一个游戏时看什么
 
@@ -194,6 +199,51 @@
   2 秒缓冲抵不掉 —— 排空时只剩 **77.9%**，而行动阶段是 **101.5%**。
   要一律 ≥90% 得把缓冲提到 ≥4.2 秒，代价是挂机时全桌多等，**属于要用户拍板的取舍**。细节见
   `games/blade-steed/AGENTS.md` 第 14/15/16 条。
+## 地平线赛车（`games/horizon/`，上游 3D 世界 + 平台房间层）
+
+**唯一一个"世界/物理全在浏览器、服务器只记名次"的平台游戏**。上游是
+`github.com/Liyang1145/horizon-racing`（MIT，Three.js r128 + cannon-es，经典 `<script>`、
+零构建；**不是 fork**，源码直接复制进 `games/horizon/`）。完整决定见 D46。
+
+### 玩家看到的样子
+
+- 游戏主菜单多一个「联机竞速」按钮 → 平台标准房间面板（账号/好友/邀请/房号全部平台那套）。
+- 房主选地图（阿尔卑斯湖谷 / 海特洛市 / 海特洛2 / 程序化都市 GLB），点开始后所有人切图。
+- 联机时每人在主菜单选自己的车；起跑格 2 列排开，沿海闭环赛道，起点/终点格子旗拱门。
+- 其他玩家是幽灵车（真实车型/名字牌），撞上会被推开；所有人完赛后弹出名次表，
+  房主可「再来一局」。
+- 手机：`/play/horizon` 伪横屏外壳；小地图缩到左上角，仪表盘缩到小地图下方；
+  左下 ←/→，右下油门/刹车/手刹（放大并向内/上挪），右上视角/复位/暂停/喇叭/升挡/降挡。
+  联机时顶部居中的大计时窗在手机上收成**小地图右边的一条**（只留用时+名次），
+  地图被布局编辑器拖动/缩放后它也跟着走。
+- 手机主菜单「驾驶辅助调节」右边多「手机界面布局」：小地图 / 仪表盘 / 技能点 /
+  左转向 / 右油门 / 顶部小按钮 **六组整体**可拖动、缩放、显示隐藏，自动存本机 localStorage，
+  可一键恢复默认。布局只改 CSS 变量，不改 3D/物理/绘制代码。
+
+### 我们这一份怎么分工
+
+| 层 | 文件 | 干什么 |
+| --- | --- | --- |
+| 上游世界 | `games/horizon/js/**`、`lib/**`、`assets/**` | 地形/城市/车流/物理/车模型；**一行没改**（除了 `ui.js` 的 `raceTotal` 一处小改） |
+| 平台接线 | `games/horizon/js/frp-horizon.js`、`css/frp-horizon.css`、`index.html` 的浮层 | 大厅、地图、幽灵车、拱门、结算、触屏、中继 |
+| 一局生命周期 | `server/games/horizon.mjs` | 地图/车手/完赛顺序/DNF/房主结束；`maxBots: 0` |
+| 位置中继 | `server/horizon/relay.mjs` + `server/ws.mjs` | `/horizon-relay`，握手验登录 + `hello` 验房号/座位/phase |
+| 手机外壳 | `web/horizon-frame.html` | 竖屏转 90°，`?join=` 带进 iframe |
+
+### 必须记住的约定
+
+- **不要试图把车辆物理搬到服务器**：上游物理和 8 台车的悬挂/轮胎全在浏览器，服务器拉位置会橡皮筋（D46）。
+- **不要用 `room.state` 传车位置**：FrpRoom 每条 state 都重画；位置走 `/horizon-relay`（12.5Hz）。
+- **开局后不能中途加入**（`addPlayer:false`）；有人离开记 DNF，别让其他人等。
+- **手机触屏只合成键盘事件**（`KeyW/A/S/D/Space/C/R/Escape/H/Q/E`），不要另写驾驶逻辑。
+- **首屏 ~15MB**（保时捷 918 GLB）；`city3` 另有 ~50MB GLB。手机弱网会慢，这是上游资产。
+- **起点/终点**：闭环 `coast` 一根"起点 / 终点"格子旗拱门；开放路线起点门 + 终点门。
+
+### 测试
+
+`npm run test:horizon` = `tests/horizon.test.mjs`（5 条服务器/中继）+ `tests/horizon.browser.mjs`
+（真 Chrome + Node 队友：幽灵车/碰撞/结算/手机外壳）。`npm test` 也会跑到前者。
+
 ## 无名杀 Web（`games/noname-web/`，**不是平台游戏**）
 
 原版无名杀，网址 **`/noname/`**（`/noname` 会 301 过来）。上游
@@ -762,5 +812,158 @@ presence/邀请 + HTTP/WS 反代**。设计决定见 **D43**；源码/补丁/构
 - **无头 Chrome 多开 Three.js 页面会偶发网络卡死**：同一浏览器里先开两三个牌桌页再测
   「未登录 → 登录取房」会 fetch 永远 pending；所以这条链路放在
   `tests/mahjong.join.browser.mjs`，单独起服务和浏览器跑。
+
+## AI 小镇（`/ai-town/`，Rust 世界内核 + 平台进程/房间层）
+
+页面：`/ai-town/`（选镇/建镇）、`/ai-town/game.html?map=<镇>&room=<房号>`。
+**不是**平台 `rooms.mjs` 的规则游戏：世界模拟、村民、存档都在上游的 **Rust host** 里，
+Node 只负责**按用户拉起 manager/host 子进程、房间表、账号注入、HTTP/WS 反代、手机布局**。
+设计决定见 **D48**。
+
+### 玩家看到的样子
+
+登录平台 → 首页「AI 小镇」→ 选一个镇（或新建）→ 进镇。房主可以：
+- 直接开**自己的存档**（每个平台账号一份，退出即保存）；
+- 在镇里邀请好友，好友从邀请卡/房间号进**同一张图**。
+
+账号就是平台账号：入口页/游戏页左侧贴着一个**平台头像悬浮球**（平时只露半边，不挡画面）；
+点一下才展开头像/昵称/邀请/返回卡片，再点球或点空白收起。球可以拖到任意位置，
+松手自动吸附最近的左右边并恢复半隐藏；拖动位置只记当前这次打开，刷新回左上角。
+手机上的球比电脑小一点。化身默认用平台昵称；
+**没有第二个登录框，也没有玩家聊天**（村民的对话是游戏 AI，不是玩家聊天）。
+
+房主和**每个客人都有自己的化身**，都能「进入化身」在小镇里走、和村民说话；
+每个人的头顶上方有一条 22px 的**平台头像圆点 + 昵称**，别人一眼能认出来。
+世界设置（开始/暂停、速度、天气、请村民）只归房主；客人点这些会被拒绝，
+手机桥也把「开始/暂停」「设定」「居民管理」和空镇「请村民」卡片对客人隐藏。
+**房主要先点顶栏「开始」**，世界时间才会走，
+客人也才能走动；客人可以先下来等。
+
+### 我们这一份怎么分工
+
+1. `games/ai-town/upstream/` —— 上游源码（**不是 fork**）。Rust 改动：
+   - `crates/host/src/builtin.rs`：llama.cpp 新版不认 `--no-mmap`，改 `--load-mode none`；
+   - `crates/host/src/world_settings.rs` + `main.rs`：新镇没写世界观时给一份默认说明，
+     否则玩家一进镇就被「请先设置世界观」拦住，化身的任何命令都下不去；
+   - **多人化身**：`kernel/src/avatar/*` 支持多个玩家 actor（访客 ID `guest:<平台ID>`）、
+     `host/src/network.rs` 从 WS 握手注入平台身份、`host/src/avatar/guest.rs` 给每个访客
+     独立租约/方向输入、`host/src/avatar/tick.rs` 各自移动；`protocol::RosterMember.avatar_url`
+     让头顶带平台头像。访客命令白名单与存档过滤也在这一层。
+2. `games/ai-town/bin/town-manager.exe` / `town-host.exe` —— `cargo build --locked -p host -p manager --bins`
+   的产物（`host.exe` 复制成 `town-host.exe`，`HOST_BIN` 按这个名字找）。**不进 git**。
+3. `games/ai-town/web/` —— 前端构建产物（Vite `base:'/ai-town/'`）。**要提交**，开箱即用。
+4. `games/ai-town/upstream/builtin-model/` —— llama.cpp 的 Vulkan Windows 包
+   （`llama-server.exe` + `ggml-vulkan.dll` 等，约 99MB）。**不进 git**，换机器按 `DEPLOY.md` 放回。
+5. `data/ai-town/models/model.gguf` —— 内置小模型（约 505MB，**不进 git**）。
+   `.sha256` 必须和上游清单一致。
+6. `server/ai-town/` —— `config` / `manager` / `rooms` / `presence` / `index`：
+   - 一个平台用户一个 manager 进程（`--root data/ai-town/users/<平台用户ID>`）；
+   - manager 的 `/api/towns/<id>/open` 返回 `endpoint`（上游随机端口 + `?session=`）和
+     `lease`；**平台只把 endpoint 换成同源 `/ai-town/ws?room=&sid=`，lease 只给房主**；
+   - 房间号是平台自己的 6 位码（不是上游 town id），一个房间最多 4 人；
+   - 同时最多 2 个世界、2 个 manager（`AI_TOWN_MAX_ROOMS` / `AI_TOWN_MAX_MANAGERS`）。
+7. `web/ai-town-bridge.js` —— 注入到两个页面：平台账号悬浮球（半隐藏/点开卡片/可拖吸附）、
+   房间号、邀请好友浮层、15 秒心跳（`/ai-town/api/platform/state`）。**它不碰世界协议**。
+8. `server/hub.mjs` / `web/assets/js/*` —— 好友「正在玩 AI 小镇」、邀请、首页卡片。
+9. `server/http.mjs` —— `/ai-town/` 静态托管 + 登录门 + 注入 `window.__FRP_ME__`/桥脚本/
+   全屏/音频防下载；`/games/ai-town/**` 一律 404（上游源码不暴露）。
+10. `server/ws.mjs` —— `/ai-town/ws` 前缀代理：握手期验平台会话 + 房间票据，
+    再按房间找 host 随机端口，裸字节转发；**不解析上游世界协议**。
+
+### 账号、存档、房间
+
+- **账号绑定**：页面没有昵称输入，`__FRP_ME__` 来自平台会话；化身默认名字是平台昵称。
+- **存档**：`data/ai-town/users/<平台用户ID>/towns/<镇ID>/`，退出/关镇时 host 写
+  `world.json`；每个账号独立，换账号看不到别人的存档。
+- **房主开新图/旧档**：入口页列的是当前账号自己的镇；房主开哪个，客人就进哪个。
+  **客人的存档不落盘**（客人是来房主的世界里玩，客人自己的化身/位置不会写进房主存档）。
+- **邀请**：好友列表「邀请」→ 平台邀请卡 → `/ai-town/?room=<房号>` → 自动加入并跳游戏页。
+  房间号也可直接发；没开「允许加入」时必须房主邀请。
+- **关镇**：房主退出 = 保存并关镇，所有客人一起断开；客人退出不影响房主。
+- **同一个人**同一时间只在一个房间里；换房会自动退出上一个。
+
+### 手机端
+
+- 窄屏（≤719px）/ 触屏自动切上游的手机布局；页面有平台统一的可选全屏按钮。
+- 手机没有键盘，但**地图本身支持点击**：点地面走路，点人或东西走过去并互动；
+  不再额外显示摇杆、互动、换目标键，只保留右下角「背包」和右上角「布局」
+  （上游 `town-shared/src/avatar/touch.ts` 已精简）。
+- **自定义布局**：「布局」→ 拖动背包、滑杆调大小 → 「完成」。
+  布局按**平台账号**存在服务端（`user_layouts`，`kind='ai-town/controls'`），换手机/刷新都还在；
+  旧账号存过的四键布局仍保留，只读取/调整其中的背包，其他三个忽略；
+  坐标归一化到 0–1，尺寸 44–160px，服务端会夹住越界值。前端落位时还会按当前视口
+  再夹一次，竖屏/转屏不会让背包有一半跑出屏幕。
+- 手机只渲染画面、不发模型请求；推理全在服务器。
+
+### 内置小模型（服务器端）
+
+- 模型：`data/ai-town/models/model.gguf`（约 505MB），推理程序：
+  `games/ai-town/upstream/builtin-model/llama-server.exe`（Vulkan）。
+- manager 建用户目录时把共享模型**硬链接**到
+  `data/ai-town/users/<id>/builtin-model/model.gguf`（跨盘才复制），
+  这样每个 host 的 `builtin_model_store` 都能找到模型，而磁盘上只存一份。
+- 村民第一次真正要用模型时，host 才在本机起 `llama-server`（随机端口），
+  世界进程退出/关镇时一起停；**手机端不下载、不加载模型**。
+- 实测：RTX 5060 Laptop 独显（Vulkan0）加载约 8 秒、显存约 0.6GB，
+  `/completion` 16 token 约 130ms；780M 核显是 Vulkan1，默认优先独显。
+  **完整链路也真跑过**：真 llama-server 加载模型 → 三位村民入住 → 世界开始 →
+  村民通过 `resident-agent-*.jsonl` 得到 `"provider":"builtin"` 的回复 → WS roster 把
+  `speech` 推到浏览器；单次约 20 秒内看到第一句（冷启动最长给 150 秒）。
+- 模型缺失/下载不完整时 host 会在 `logs/builtin-model.log` 写原因；游戏仍可进，
+  只是村民不行动。
+
+### 已知限制（当前版本，必须诚实说明）
+
+- **世界设置只归房主**：客人可以自由走、对话、使用自己的背包；但不能开始/暂停世界、
+  改速度/天气/请村民。这是有意的权限边界，不是没做完。
+- **客人不存档**：房主退出时只保存房主自己的化身和世界，访客 actor、访客互动和
+  访客日志被过滤；客人想保存自己的镇，就自己开一个房。
+- 同一张图最多 4 人；同一时间最多 2 个房间（两个 manager/host）。两个房间同时跑
+  真模型时的显存/内存峰值还没压测。
+
+### 测试
+
+`npm run test:ai-town` = `tests/ai-town.test.mjs`（4 条，真 manager/host/WS）：
+登录门 + 源码不泄露；房主开镇 → 客人加入 → 两人连同一个 host、**客人生成 guest 化身、
+头顶平台头像/名字、两人不重叠、客人改世界速度被拒** → 关镇保存 → 重开存档确认
+**客人化身/名字不在存档里**；不同账号的存档目录互不串；布局保存/夹值。
+默认用 `AI_TOWN_MOCK_LLM=1`，世界/日志放临时目录（`AI_TOWN_DATA_DIR`），不碰真实用户数据。
+
+真内置模型是另一条**可选真机测试**：
+
+```powershell
+$env:AI_TOWN_REAL_MODEL='1'
+npm run test:ai-town-model
+```
+
+它会真起 `llama-server`、开镇、请三位村民、开始世界，等到第一句 `speech`，
+并检查 `logs/builtin-model.log` 有 `model loaded`、`resident-agent-*.jsonl` 有
+`"provider":"builtin"`。没有模型/显卡的机器默认跳过，不影响 `npm test`。
+
+真浏览器手工验证过：入口/游戏页无控制台错误、双页面同时「进入化身」、客人方向键移动后
+房主画面同步移动；手机进入化身后只有「背包」+「布局」，旧的摇杆/互动/换目标 DOM 不存在；
+旧账号四键布局里的背包坐标/尺寸照常生效；布局面板只调背包，改成 120px 点「完成」后
+服务端读回 `bag.size=120`，其他旧键的值不动；竖屏默认背包不越界。
+悬浮球也实测：收起时球左边缘 -22px（44px 球只露一半）、点开卡片、点球收起；
+拖到右侧松手吸附到屏幕右边缘半隐藏，再点开面板在球的左边且不出屏；手机 390px 宽时
+球变 38px，仍只露半边。电脑端鼠标可从半隐藏球拖到右边并吸附（v10）。
+
+### 走过的坑
+
+- **`--no-mmap` 被 llama.cpp b11871 删了**：host 起推理直接退；改 `--load-mode none`。
+- **新镇没有世界观**：化身命令全部被拦；默认补一份世界观（见上）。
+- **`host.exe` 名字不对**：manager 的 `HOST_BIN` 找 `town-host.exe`，cargo 产出 `host.exe`；
+  构建后复制一份，别只改配置。
+- **方向输入曾经绕过访客路由**：`main.rs` 原来直接调 `runtime.avatar_input()`，访客推摇杆
+  只动了房主租约；改成 `avatar_input_from()` 按身份分派。
+- **化身不能再把自己当障碍**：加入“化身之间不重叠”后，`avatar_obstacles()` 必须排除
+  当前正在走的 actor，否则一步都走不动。
+- **上游 endpoint 不能直给浏览器**：里面有 `127.0.0.1:随机端口` 和 `?session=`；
+  平台换成同源 `/ai-town/ws?room=&sid=`，票据 10 分钟过期，WS 握手再验一次。
+- **lease 不能给客人**：`browserEntry` 对非房主会删 `lease`；客人 POST 改存档/重置/删镇
+  一律 403（GET 地图仍可）。
+- **刷新会重新 open**：host 重启端口会变，所以 WS 目标端口在 upgrade 时才查，浏览器 URL 不变。
+- **模型硬链接只对新用户目录生效**：旧测试目录没有 `builtin-model/model.gguf` 时，
+  重开一次镇/删用户目录让它重新准备。
 
 

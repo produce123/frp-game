@@ -79,6 +79,16 @@ CREATE TABLE IF NOT EXISTS game_record_players (
   PRIMARY KEY (record_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_game_record_players_user ON game_record_players(user_id);
+
+-- 每用户每类布局一行（目前只有 AI 小镇的手机触屏控件布局）。
+-- json 里存归一化坐标 + px 尺寸，服务端只做白名单校验，不解析具体控件语义。
+CREATE TABLE IF NOT EXISTS user_layouts (
+  user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  json       TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, kind)
+);
 `;
 
 /**
@@ -145,6 +155,22 @@ export function openStore(dbPath = resolve(ROOT, 'data', 'frp-game.db')) {
     setName(id, name) {
       db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, id);
       return this.findUser(id);
+    },
+
+    /* ------------------------------ 每用户布局 ------------------------------ */
+
+    /** 读一份布局 JSON 字符串；没有就返回 null。 */
+    getLayout(userId, kind) {
+      const row = db.prepare('SELECT json FROM user_layouts WHERE user_id = ? AND kind = ?').get(userId, kind);
+      return row ? row.json : null;
+    },
+
+    /** 写/覆盖一份布局。调用方负责校验并 JSON.stringify。 */
+    setLayout(userId, kind, json) {
+      db.prepare(`
+        INSERT INTO user_layouts (user_id, kind, json, updated_at) VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id, kind) DO UPDATE SET json = excluded.json, updated_at = excluded.updated_at
+      `).run(userId, kind, json, now());
     },
 
     /* ------------------------------ 会话 ------------------------------ */

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动时先铺和选图页同色的深底，页面加载后由页面通知换成对应的底色。 -->
+    <style name="Theme.Town" parent="@android:style/Theme.DeviceDefault.NoActionBar">
+        <item name="android:windowBackground">@color/town_night</item>
+        <item name="android:statusBarColor">@color/town_night</item>
+        <item name="android:navigationBarColor">@color/town_night</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

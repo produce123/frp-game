@@ -1,0 +1,22 @@
+{
+  "name": "town-2d",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "three": "^0.185.1",
+    "town-shared": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/three": "^0.185.4",
+    "typescript": "^5.9.0",
+    "vite": "8.0.16"
+  },
+  "license": "PolyForm-Noncommercial-1.0.0"
+}

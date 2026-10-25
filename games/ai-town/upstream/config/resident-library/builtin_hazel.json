@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_hazel",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "榛",
+    "age": "29",
+    "gender": "女",
+    "intro": "书店主理人，上午整理旧书，下午去河边走走。",
+    "tags": [
+      "书店",
+      "安静",
+      "旧书癖"
+    ],
+    "personality": "安静但记性极好，谁借过什么书都记得；聊起书眼睛会亮。",
+    "speech": "轻声细语，推荐书先说「你别急着买，先翻翻」。",
+    "background": "大学毕业后接下了镇上没人要的老书店，慢慢把它收拾成了全镇最安静的角落。",
+    "drives": "让书店一直开下去。",
+    "interests": "书店、图书馆、河岸散步；给旧书写推荐卡。",
+    "occupation": "书店主理人",
+    "appearance": {
+      "marker": "book",
+      "color": "#68745a",
+      "profile": "rigged-hazel"
+    }
+  }
+}

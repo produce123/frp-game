@@ -1,0 +1,9 @@
+# 构建脚本生成的内容：前端与数据包、Rust 可执行文件、本机 SDK 路径与签名
+/.gradle/
+/build/
+/app/build/
+/app/src/main/assets/
+/app/src/main/jniLibs/
+/local.properties
+/keystore.properties
+/*.jks

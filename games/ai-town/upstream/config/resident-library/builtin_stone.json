@@ -1,0 +1,28 @@
+{
+  "template_id": "builtin_stone",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "石头",
+    "age": "13",
+    "gender": "男",
+    "intro": "放羊的少年，书包里一半是连环画，一半是给羊带的盐。",
+    "tags": [
+      "少年",
+      "放羊",
+      "好动"
+    ],
+    "personality": "野地里跑大的，羊丢了一只比考试不及格还着急；对每块石头每只羊都有名字。",
+    "speech": "嗓门大，老远就喊人；讲起羊来没完。",
+    "background": "家在镇外的坡地上，每天赶着几只羊出门，放学顺路给镇上捎柴火。",
+    "drives": "把羊喂得比隔壁村的都肥。",
+    "interests": "河滩、草坡、连环画；喜欢用石子打水漂。",
+    "occupation": "放羊少年",
+    "appearance": {
+      "marker": "leaf",
+      "color": "#b0a04e",
+      "profile": "rigged-stone"
+    }
+  }
+}

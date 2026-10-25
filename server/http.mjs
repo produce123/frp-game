@@ -38,6 +38,13 @@ import {
 import { NONAME_DATA, handleNonameRequest } from './noname.mjs';
 import { MONOPOLY_API_PREFIX } from './monopoly/index.mjs';
 import { MAHJONG_API_PREFIX } from './mahjong/index.mjs';
+import {
+  API_PREFIX as AI_TOWN_API_PREFIX,
+  BRIDGE_URL as AI_TOWN_BRIDGE_URL,
+  BRIDGE_VERSION as AI_TOWN_BRIDGE_VERSION,
+  PROPS_PREFIX as AI_TOWN_PROPS_PREFIX,
+  TOWN_API_PREFIX as AI_TOWN_TOWN_API_PREFIX,
+} from './ai-town/config.mjs';
 
 /**
  * 大富翁音频的**无扩展名**出口。
@@ -99,6 +106,12 @@ const MEDIA_EXTS = ['.mp3', '.ogg', '.wav', '.m4a', '.aac', '.flac'];
 /** URL 前缀 → 仓库内目录。**只发这些**。 */
 const MOUNTS = [
   { prefix: '/shared/', dir: 'shared' },
+  /*
+   * AI 小镇：**只发前端构建产物**（`games/ai-town/web`）。
+   * 上游源码在 `games/ai-town/upstream/`，二进制在 `games/ai-town/bin/`，
+   * 两者都靠下面的 `/games/` 挡板拦掉（几 GB 的 Rust target 和源码绝不能发出去）。
+   */
+  { prefix: '/ai-town/', dir: 'games/ai-town/web' },
   /*
    * 大富翁：**只发构建产物**（`games/monopoly/web`），不发上游源码（`upstream/`）、
    * 地图源文件目录（`maps/` 另有挂载）、工具脚本。顺序必须在通用 `/games/` 之前，
@@ -185,6 +198,12 @@ const PAGES = new Map([
    * 电脑打开外壳会自动 replace 回 `/mahjong/`，和斗地主/大富翁同一套做法。
    */
   ['/play/mahjong', 'web/mahjong-frame.html'],
+  /*
+   * 地平线赛车的手机伪横屏外壳（3D 赛车是横屏画面，竖着拿按键会挡住视野）。
+   * 电脑打开外壳会自动 replace 回 `/games/horizon/`，和斗地主/大富翁同一套做法。
+   * ⚠️ 外壳只是"把画面转 90°"，房号 `?join=` 原样转给 iframe。
+   */
+  ['/play/horizon', 'web/horizon-frame.html'],
 ]);
 
 /**
@@ -288,7 +307,7 @@ function readRawBody(req, limit) {
  */
 export function createRequestHandler({ store, availableGames = () => [], avatars, hub = null, rooms = null,
   nonamePresence = null, monopolyPresence = null, werewolf = null, monopoly = null,
-  mahjong = null, mahjongPresence = null }) {
+  mahjong = null, mahjongPresence = null, aiTown = null }) {
   async function handleApi(req, res, pathname) {
     /* ------------------------------ 狼人杀 ------------------------------ */
 
@@ -691,6 +710,11 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
        * `/games/monopoly/upstream/**` 把上游源码拖走。上面有专属挂载点，这条是兜底。
        */
       if (mount.prefix === '/games/' && (rest === 'monopoly' || rest.startsWith('monopoly/'))) break;
+      /*
+       * AI 小镇也一样：只从 `/ai-town/` 出去。上游源码、Rust target、模型和二进制
+       * 全在 `games/ai-town/` 下，`/games/` 的通用挂载绝不能把它们发出去。
+       */
+      if (mount.prefix === '/games/' && (rest === 'ai-town' || rest.startsWith('ai-town/'))) break;
       // rest 为空 = 这个挂载点的根（例如 `/noname/`），交给目录 → index.html 的逻辑
       list.push(rest ? `${mount.dir}/${rest}` : `${mount.dir}/`);
       break;
@@ -964,6 +988,32 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
       return;
     }
     /*
+     * AI 小镇：入口页（选镇/建镇）和游戏页都要注入平台身份。
+     * 上游构建产物里 index.html / game.html 是两个真实文件，其余 assets/ 走静态挂载。
+     */
+    if (isAiTownDocument(pathname)) {
+      let rel = 'games/ai-town/web/index.html';
+      if (pathname === '/ai-town/game.html') rel = 'games/ai-town/web/game.html';
+      const filePath = resolve(ROOT, rel);
+      if (!existsSync(filePath)) {
+        res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' })
+          .end('AI 小镇前端还没构建（见 docs/GAMES.md《AI 小镇》）');
+        return;
+      }
+      sendAiTownIndex(req, res, filePath);
+      return;
+    }
+    // 桥脚本放在 web/，重新构建 games/ai-town/web 不会把它覆盖掉。
+    if (pathname === AI_TOWN_BRIDGE_URL) {
+      const filePath = resolve(ROOT, 'web/ai-town-bridge.js');
+      if (!existsSync(filePath)) {
+        res.writeHead(503, { 'content-type': 'text/plain; charset=utf-8' }).end('AI 小镇桥脚本缺失');
+        return;
+      }
+      sendFile(req, res, filePath, statSync(filePath), false);
+      return;
+    }
+    /*
      * 狼人杀是一套**客户端路由**的 SPA（`/werewolf/`、`/werewolf/createRoom`、
      * `/werewolf/join`…）。这些地址在磁盘上都不存在，所以：
      *   · 没有扩展名的 `/werewolf/*` 一律回入口页（登录门也拦在入口页上）；
@@ -1000,7 +1050,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
       return;
     }
     // 只有上游打包产物可以长缓存（10 分钟），平台自己的文件照旧 no-store
-    const longCache = pathname.startsWith('/noname/') || pathname.startsWith('/werewolf/_next/') || pathname.startsWith('/werewolf/roles/') || pathname.startsWith('/werewolf/avatars/') || pathname.startsWith('/werewolf/brand/');
+    const longCache = pathname.startsWith('/noname/') || pathname.startsWith('/werewolf/_next/') || pathname.startsWith('/werewolf/roles/') || pathname.startsWith('/werewolf/avatars/') || pathname.startsWith('/werewolf/brand/') || pathname.startsWith('/ai-town/assets/');
     for (const relPath of candidatesFor(pathname)) {
       const filePath = resolveFile(relPath);
       if (filePath) {
@@ -1170,8 +1220,57 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
   }
 
   /**
-   * 无名杀（含手机伪横屏外壳）**必须登录平台的账号**才能打开。
+   * AI 小镇的入口页/游戏页：注入平台账号 + 桥脚本 + 全屏/音频两条硬约束。
    *
+   * 上游页面自己不认平台账号（它本来是桌面应用），桥脚本负责：
+   *   · 在角落显示"你：昵称 + 头像"；
+   *   · 开镇后把房间号报给平台（好友列表的「正在玩 / 进入」）；
+   *   · `?room=` 深链进好友的小镇；
+   *   · 游戏内的「邀请好友」入口。
+   * 注入的是公开资料（id/名字/头像），没有密码、没有 token。
+   */
+  function sendAiTownIndex(req, res, filePath) {
+    const user = currentUser(store, req);
+    const me = publicUser(user);
+    const host = String(req.headers.host || '127.0.0.1');
+    const forwarded = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+    const local = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/i.test(host);
+    const origin = `${forwarded || (local ? 'http' : 'https')}://${host}`;
+    const payload = JSON.stringify({
+      ...me,
+      avatar: me?.avatar ? new URL(me.avatar, origin).href : `${origin}/avatar/${encodeURIComponent(me.id)}`,
+    }).replace(/</g, '\\u003c');
+    let body = readFileSync(filePath, 'utf8');
+    const script = `<script>window.__FRP_ME__=${payload};</script>\n`
+      + `<script src="${AI_TOWN_BRIDGE_URL}?v=${AI_TOWN_BRIDGE_VERSION}"></script>\n`
+      + `${NO_IDM_TAG}\n${FULLSCREEN_TAG}`;
+    body = body.includes('</head>') ? body.replace('</head>', `${script}</head>`) : script + body;
+
+    const raw = Buffer.from(body, 'utf8');
+    const wantsGzip = /\bgzip\b/i.test(String(req.headers['accept-encoding'] || ''));
+    const out = wantsGzip ? gzipSync(raw, { level: 6 }) : raw;
+    const headers = {
+      'content-type': 'text/html; charset=utf-8',
+      'content-length': out.length,
+      // 入口页不缓存：账号、桥版本、资源清单都在这份 HTML 上
+      'cache-control': 'no-store',
+    };
+    if (wantsGzip) {
+      headers['content-encoding'] = 'gzip';
+      headers.vary = 'accept-encoding';
+    }
+    res.writeHead(200, headers);
+    if (req.method === 'HEAD') { res.end(); return; }
+    res.end(out);
+  }
+
+  /** 只拦文档：素材/资源不拦，否则已登录页面会在加载中途 302 成白屏。 */
+  function isAiTownDocument(pathname) {
+    return pathname === '/ai-town/' || pathname === '/ai-town/index.html'
+      || pathname === '/ai-town/game.html';
+  }
+
+  /**
    * 只拦"文档"请求：`/noname/`、`/noname/index.html`、`/play/noname`。
    * 素材 / Service Worker / 9 个文件后端**不拦** —— 拦了反而会让已经登录的页面
    * 在加载中途 302 到登录页，表现成白屏。
@@ -1245,6 +1344,20 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
     return false;
   }
 
+  /**
+   * 地平线赛车的"文档"请求：游戏页本身 + 手机伪横屏外壳。
+   *
+   * 它是**平台游戏**（走 rooms.mjs，页面在 `/games/horizon/`），账号来自平台会话，
+   * 页面里没有昵称输入框，所以**必须登录**。资源（`/games/horizon/js/**`、
+   * `assets/**`、`lib/**`）**不拦** —— 拦了会在加载中途 302 成白屏
+   * （无名杀/斗地主/大富翁/麻将都踩过同一条）。
+   */
+  function isHorizonDocument(pathname) {
+    if (pathname === '/play/horizon') return true;
+    if (pathname === '/games/horizon' || pathname === '/games/horizon/' || pathname === '/games/horizon/index.html') return true;
+    return false;
+  }
+
   return async function handle(req, res) {
     const pathname = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]);
     const searchParams = new URL(req.url || '/', 'http://127.0.0.1').searchParams;
@@ -1289,6 +1402,43 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
         return;
       }
       /*
+       * AI 小镇：上游 manager 的接口（/api/towns、/data/props）和平台自己的
+       * （/api/platform/*）分成两个前缀，排障时一眼能分清 404 是谁的。
+       * 注意反代是**流式**的（req.pipe(upstream)），不走 readBody 的 16KB 上限。
+       */
+      if (pathname === AI_TOWN_TOWN_API_PREFIX || pathname.startsWith(AI_TOWN_TOWN_API_PREFIX + '/')
+        || pathname === AI_TOWN_PROPS_PREFIX || pathname.startsWith(AI_TOWN_PROPS_PREFIX + '/')) {
+        const user = currentUser(store, req);
+        if (!user) {
+          res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            .end(JSON.stringify({ ok: false, error: '还没登录' }));
+          return;
+        }
+        if (!aiTown) {
+          res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            .end(JSON.stringify({ ok: false, error: 'AI 小镇服务没接上' }));
+          return;
+        }
+        await aiTown.proxyHttp(req, res, user, pathname);
+        return;
+      }
+      if (pathname === AI_TOWN_API_PREFIX || pathname.startsWith(AI_TOWN_API_PREFIX + '/')) {
+        const user = currentUser(store, req);
+        if (!user) {
+          res.writeHead(401, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            .end(JSON.stringify({ ok: false, error: '还没登录' }));
+          return;
+        }
+        if (!aiTown) {
+          res.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' })
+            .end(JSON.stringify({ ok: false, error: 'AI 小镇服务没接上' }));
+          return;
+        }
+        const handled = await aiTown.handlePlatform(req, res, user, pathname);
+        if (!handled) sendJSON(res, 404, { ok: false, message: '没有这个接口' });
+        return;
+      }
+      /*
        * 无名杀的文件后端（`/checkFile` `/readFile` `/writeFile` … 9 个根路径）。
        * 客户端是**从站点根**发的（`fetch("/checkFile?fileName=…")`，不是 `/noname/checkFile`），
        * 所以这条判断必须放在静态文件之前、并且只认那 9 个确切路径 —— 见 server/noname.mjs。
@@ -1301,6 +1451,11 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
        */
       if (pathname === '/mahjong') {
         res.writeHead(301, { location: '/mahjong/' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '') }).end();
+        return;
+      }
+      // AI 小镇的 Vite base 是 `/ai-town/`，少了尾斜杠资源全 404；`?room=` 要原样带上。
+      if (pathname === '/ai-town') {
+        res.writeHead(301, { location: '/ai-town/' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '') }).end();
         return;
       }
       /*
@@ -1359,6 +1514,30 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
         }).end();
         return;
       }
+      /*
+       * AI 小镇必须登录：页面里没有昵称输入框，进镇的人就是平台账号。
+       * 只拦文档（`/ai-town/`、`/ai-town/game.html`）；
+       * assets 不拦，拦了会在加载中途 302 成白屏（五次踩过的同一条）。
+       */
+      if (isAiTownDocument(pathname) && !currentUser(store, req)) {
+        res.writeHead(302, {
+          location: `/?return=${encodeURIComponent(req.url || pathname)}`,
+          'cache-control': 'no-store',
+        }).end();
+        return;
+      }
+      /*
+       * 地平线赛车**必须登录**：账号就是平台首页那个账号（页面里没有起名框），
+       * 手机外壳 `/play/horizon` 和游戏页 `/games/horizon/` 都拦。
+       * 资源请求不拦（`isHorizonDocument` 只匹配文档路径，见上）。
+       */
+      if (isHorizonDocument(pathname) && !currentUser(store, req)) {
+        res.writeHead(302, {
+          location: `/?return=${encodeURIComponent(req.url || pathname)}`,
+          'cache-control': 'no-store',
+        }).end();
+        return;
+      }
       if (req.method !== 'GET' && req.method !== 'HEAD') {
         res.writeHead(405, { 'content-type': 'text/plain; charset=utf-8' }).end('405');
         return;
@@ -1386,6 +1565,11 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
        */
       if (pathname === '/games/monopoly') {
         res.writeHead(301, { location: '/games/monopoly/' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '') }).end();
+        return;
+      }
+      // 地平线赛车同理：`index.html` 里全是相对路径（`js/main.js`、`lib/…`）。
+      if (pathname === '/games/horizon') {
+        res.writeHead(301, { location: '/games/horizon/' + (req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '') }).end();
         return;
       }
       if (serveMonopolyAudio(req, res, pathname)) return;

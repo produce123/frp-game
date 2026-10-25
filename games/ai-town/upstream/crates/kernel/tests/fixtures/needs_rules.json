@@ -1,0 +1,11 @@
+{
+  "rate_min": 0,
+  "rate_max": 10,
+  "thresholds": [
+    { "lower": 0, "upper": "collapse", "inclusive": false, "field": "collapse", "message": "「严重低值」必须大于 0" },
+    { "lower": "collapse", "upper": "ring", "inclusive": false, "field": "ring", "message": "「重新考虑」必须大于「严重低值」" },
+    { "lower": "ring", "upper": "ring_reset", "inclusive": true, "field": "ring_reset", "message": "「恢复值」必须不小于「重新考虑」" },
+    { "lower": "ring_reset", "upper": "voiced", "inclusive": false, "field": "voiced", "message": "「出现不适」必须大于「恢复值」" },
+    { "lower": "voiced", "upper": 100, "inclusive": false, "field": "voiced", "message": "「出现不适」必须小于 100" }
+  ]
+}

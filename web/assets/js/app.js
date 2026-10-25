@@ -273,6 +273,8 @@
     if (slug === 'ddz') return '斗地主';
     if (slug === 'monopoly') return '大富翁';
     if (slug === 'mahjong') return '莲花广麻';
+    if (slug === 'horizon') return '地平线赛车';
+    if (slug === 'ai-town') return 'AI 小镇';
     var games = Array.isArray(window.GAMES) ? window.GAMES : [];
     for (var i = 0; i < games.length; i++) {
       if (games[i].slug === slug) return games[i].title;
@@ -336,6 +338,16 @@
       return;
     }
     /*
+     * AI 小镇：房号是平台为某个镇生成的 6 位码（不是上游小镇 id）。
+     * 带房号进 `/?room=`，选镇页会先向平台登记成员，再进房主的存档。
+     */
+    if (slug === 'ai-town') {
+      openGame(code
+        ? '/ai-town/?room=' + encodeURIComponent(code)
+        : '/ai-town/');
+      return;
+    }
+    /*
      * 大富翁：整份上游 Web 客户端（房间/邀请走平台，联机走 /monopoly-relay），
      * 页面在 /games/monopoly/；手机竖屏要横过来才好看 —— 手机走伪横屏外壳 `/play/monopoly`
      * （电脑打开外壳会自动跳回 /games/monopoly/）。
@@ -358,6 +370,18 @@
       var jurl = coarse3 ? '/play/mahjong' : '/mahjong/';
       if (code) jurl += '?join=' + encodeURIComponent(code);
       openGame(jurl);
+      return;
+    }
+    /*
+     * 地平线赛车：页面在 `/games/horizon/`（平台游戏，房间走 rooms.mjs）。
+     * 手机走伪横屏外壳 `/play/horizon`：3D 赛车是横屏画面，竖着拿触屏按键会挡住路。
+     * 判据仍然只用 `(pointer: coarse)`（触摸屏笔记本不该被当成手机）。
+     */
+    if (slug === 'horizon') {
+      var coarse4 = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      var hurl = coarse4 ? '/play/horizon' : '/games/horizon/';
+      if (code) hurl += '?join=' + encodeURIComponent(code);
+      openGame(hurl);
       return;
     }
     var url = '/games/' + encodeURIComponent(slug) + '/';
@@ -388,6 +412,10 @@
       // 莲花广麻：开局后真人进不去（上游只允许在大厅/已结束的房入座）
       if (friend.playing.game === 'mahjong' && friend.playing.started) {
         return '正在玩 ' + title + '（已开局）';
+      }
+      // AI 小镇没有"开局"，房主开着就能进；房主关了加入就只显示在玩
+      if (friend.playing.game === 'ai-town') {
+        return '正在玩 ' + title + (friend.playing.joinable ? '（可加入）' : '');
       }
       return '正在玩 ' + title;
     }

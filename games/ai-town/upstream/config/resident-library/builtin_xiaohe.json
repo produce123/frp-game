@@ -1,0 +1,27 @@
+{
+  "template_id": "builtin_xiaohe",
+  "version": 1,
+  "builtin": true,
+  "archived": false,
+  "fields": {
+    "name": "小禾",
+    "age": "24",
+    "gender": "女",
+    "intro": "温和、愿意倾听，喜欢植物、花束和咖啡馆。",
+    "tags": [
+      "温和",
+      "倾听",
+      "爱植物"
+    ],
+    "personality": "留意具体的人，别人说话时会认真听完再回应；愿意搭把手，但不喜欢被催。",
+    "speech": "语气轻，句子短，常常先问对方今天过得怎么样。",
+    "background": "在家乡的花圃长大，会整理花束和照看盆栽。来小镇是想找一个有花房和咖啡馆的地方安顿下来。",
+    "drives": "把身边的人和植物照顾好。",
+    "interests": "去花房咖啡馆待着，整理花束，社区花园散步；喜欢按时吃饭，晚上早睡。",
+    "occupation": "花圃帮工",
+    "appearance": {
+      "marker": "leaf",
+      "color": "#b8a02e"
+    }
+  }
+}
