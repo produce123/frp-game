@@ -662,6 +662,126 @@ describe('狼人杀引擎 · 新角色与无警长', () => {
     engine.reset();
   });
 
+  it('恶夜骑士：女巫单独下毒也会被反伤，毒药被吞（骑士不死）', async () => {
+    const { engine } = makeEngine();
+    const roles = {
+      Werewolf: 2,
+      EvilKnight: 1,
+      Seer: 1,
+      Witch: 1,
+      Hunter: 1,
+      Villager: 2,
+    };
+    const { users } = await makeRoom(engine, 8, { roles, sheriff: false });
+    const evil = seatOfRole(engine, users, 'EvilKnight');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const witch = seatOfRole(engine, users, 'Witch');
+    const villager = users.find((u) => roleOf(engine, u) === 'Villager');
+    assert.ok(evil && seer && witch && villager);
+
+    // 只有女巫碰了骑士：狼刀平民、预言家验平民
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, villager),
+      seerSeat: seatOf(engine, villager),
+      witch: { action: 'poison', seat: seatOf(engine, evil) },
+    });
+    const day = await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+    assert.equal(engine.viewFor(evil.id).self.alive, true, '毒不死恶夜骑士');
+    assert.equal(engine.viewFor(witch.id).self.alive, false, '下毒的女巫天亮被反噬');
+    assert.equal(engine.viewFor(seer.id).self.alive, true, '没碰骑士的人不该被反伤');
+    assert.match(day.messages.map((m) => m.content).join('\n'), /反噬/);
+    engine.reset();
+  });
+
+  it('恶夜骑士：反伤一辈子只触发一次（之后被验也不会再弹人）', async () => {
+    const { engine } = makeEngine();
+    const roles = {
+      Werewolf: 2,
+      EvilKnight: 1,
+      Seer: 1,
+      Witch: 1,
+      Hunter: 1,
+      Villager: 2,
+    };
+    const { users } = await makeRoom(engine, 8, { roles, sheriff: false });
+    const evil = seatOfRole(engine, users, 'EvilKnight');
+    const seer = seatOfRole(engine, users, 'Seer');
+    const witch = seatOfRole(engine, users, 'Witch');
+    const hunter = seatOfRole(engine, users, 'Hunter');
+    const villager = users.find((u) => roleOf(engine, u) === 'Villager');
+    assert.ok(evil && seer && witch && hunter && villager);
+
+    // 第 1 夜：女巫毒骑士 → 反伤名额用掉（女巫天亮死）
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, villager),
+      seerSeat: seatOf(engine, villager),
+      witch: { action: 'poison', seat: seatOf(engine, evil) },
+    });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    assert.equal(engine.viewFor(witch.id).self.alive, false, '第 1 夜女巫被反噬');
+    assert.equal(engine.viewFor(evil.id).private.evilReflectUsed, true, '反伤已经用掉');
+    const messagesBeforeNight2 = engine.viewFor(users[0].id).messages.length;
+
+    // 白天全员弃票（不杀人），只为走到第 2 夜
+    await playDay(engine, users);
+    assert.equal(engine.viewFor(seer.id).self.alive, true, '白天没人出局');
+
+    // 第 2 夜：预言家再验骑士 → 名额已经用光，这次不该再弹人
+    await playNightAuto(engine, users, {
+      wolfSeat: seatOf(engine, hunter),
+      seerSeat: seatOf(engine, evil),
+    });
+    const day2 = await waitFor(engine, users[0], (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+    assert.equal(engine.viewFor(seer.id).self.alive, true, '反伤只能用一次，第 2 夜验骑士的预言家没事');
+    assert.equal(engine.viewFor(evil.id).self.alive, true);
+    // 只看第 2 夜新增的消息（messages 是一整局的累计历史，第 1 夜的反噬还留在里面）
+    assert.doesNotMatch(
+      day2.messages.slice(messagesBeforeNight2).map((m) => m.content).join('\n'),
+      /反噬/,
+      '第 2 夜不该再有反噬死讯',
+    );
+    engine.reset();
+  });
+
+  it('恶夜骑士：不能自刀、不能自爆；骑士白天决斗能直接戳死', async () => {
+    const { engine } = makeEngine();
+    const roles = {
+      Werewolf: 1,
+      EvilKnight: 1,
+      Knight: 1,
+      Seer: 1,
+      Witch: 1,
+      Villager: 2,
+    };
+    // 屠城局：这一局狼不会被"屠边"提前判胜，专心测自刀/自爆/决斗
+    const { users } = await makeRoom(engine, 7, { roles, sheriff: false, winMode: 'wipe' });
+    const evil = seatOfRole(engine, users, 'EvilKnight');
+    const knight = seatOfRole(engine, users, 'Knight');
+    const villager = users.find((u) => roleOf(engine, u) === 'Villager');
+    assert.ok(evil && knight && villager);
+
+    await waitPhase(engine, users[0], PHASE.NIGHT_WOLF_ACTION, 6000);
+    const selfKnife = engine.act(evil.id, { type: 'wolf', seat: seatOf(engine, evil) });
+    assert.equal(selfKnife.ok, false, '恶夜骑士不能自刀');
+    assert.match(String(selfKnife.message), /不能自刀/);
+
+    // 这一夜正常过完（刀平民），到白天再试自爆（狼王的自爆只能在白天用）
+    await playNightAuto(engine, users, { wolfSeat: seatOf(engine, villager) });
+    await waitPhase(engine, users[0], PHASE.DAY_SPEECH, 8000);
+    assert.equal(engine.viewFor(evil.id).self.alive, true, '夜里刀不死它');
+    const boom = engine.act(evil.id, { type: 'wolfSelfDestruct' });
+    assert.equal(boom.ok, false, '恶夜骑士不能自爆');
+    assert.match(String(boom.message), /只有狼王能自爆/);
+
+    // 白天让骑士决斗它
+    const duel = engine.act(knight.id, { type: 'knight', seat: seatOf(engine, evil) });
+    assert.equal(duel.ok, true, JSON.stringify(duel));
+    assert.equal(engine.viewFor(evil.id).self.alive, false, '白天决斗能把它戳死');
+    assert.equal(engine.viewFor(knight.id).self.alive, true);
+    assert.equal(engine.viewFor(knight.id).phase.startsWith('NIGHT_'), true, '决斗到狼立刻天黑');
+    engine.reset();
+  });
+
   it('长老：第一刀不死，第二刀才死；被狼刀死不封印神职', async () => {
     const { engine } = makeEngine();
     const roles = { Werewolf: 2, Elder: 1, Seer: 1, Witch: 1, Hunter: 1, Villager: 1 };
