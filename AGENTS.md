@@ -1,7 +1,7 @@
 # frp-game 工作台规则
 
 本工作区（`E:\frp-game`）的长期约定。**新会话只读两份**：本文件 → `docs/NEXT.md`。
-其余细节按需查（见文末「文档地图」），不要通读所有 docs。
+其余细节按需查（见文末「文档地图」，或 `docs/README.md` 那一页总索引），不要通读所有 docs。
 
 ## 项目是什么
 
@@ -89,7 +89,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 
 | 改动 | 必跑 |
 | --- | --- |
-| 任何改动收尾 | `npm test`（182 条集成，约 25 秒；含 1 条默认跳过的真模型用例；`--test-concurrency=2` 是钉死的） |
+| 任何改动收尾 | `npm test`（185 条集成：184 通过 + 1 条默认跳过的真模型用例，约 25 秒；`--test-concurrency=2` 是钉死的） |
 | `server/ws.mjs` | `npm test` + `npm run test:browser`（只有真浏览器能证明帧格式对） |
 | `shared/net/net.js` | `npm test`（9 秒建连 / 2.5 秒竞速 / 心跳 / 自动重连，**这几个数不许动**） |
 | 登录 / 注册流程 | `npm run test:login` |
@@ -117,7 +117,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
   各游戏自己的坑先看该目录的 `README.md` / `AGENTS.md`，再看 `docs/GAMES.md`。
 - 原文件夹**只读**，不要改动。原项目的公共 broker / WebRTC / ntfy / 信令一律删除（D1）。
 - 缝上游优先**静态托管 + 注入桥接脚本**；能不动上游产物就不动。
-- 主流程细节与"当年为什么这么改"在 `docs/DECISIONS.md`（D1–D50）与 `docs/HISTORY.md`，
+- 主流程细节与"当年为什么这么改"在 `docs/DECISIONS.md`（D1–D52）与 `docs/HISTORY.md`，
   **只在查具体问题时按编号/标题跳**。
 
 ## 记录习惯
@@ -131,12 +131,14 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 
 | 想知道 | 看 |
 | --- | --- |
+| **文档总索引**（先看这一页） | `docs/README.md` |
 | 现在做到哪了 / 下一步 / 要用户拍板的事 | `docs/NEXT.md` |
 | 协议、房间层、网络层、路由、各游戏接入方式 | `docs/ARCHITECTURE.md` |
-| 某个设计为什么这样（D1–D50） | `docs/DECISIONS.md`（文首有一览表） |
+| 某个设计为什么这样（D1–D52） | `docs/DECISIONS.md`（文首有一览表） |
+| 已被取代的旧决定的正文 | `docs/archive/DECISIONS-superseded.md` |
 | 各游戏与无名杀的坑 | `docs/GAMES.md` |
 | 公网/隧道排障 | `docs/TUNNEL.md` |
-| 某件事当年是怎么修过来的 | `docs/HISTORY.md`（**别通读**，按标题跳） |
+| 某件事当年是怎么修过来的 | `docs/HISTORY.md`（**别通读**，文首有目录） |
 | 部署到另一台电脑（给 AI 的步骤） | `DEPLOY.md` |
 
 ## 和接手的 agent 说的话
