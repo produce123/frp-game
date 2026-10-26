@@ -1520,9 +1520,9 @@
   },
   "wolfPlanning": {
     "title": "狼人协作",
-    "subtitle": "选择今晚的击杀目标",
+    "subtitle": "商量好再下刀（只有狼看得到）",
     "teammateStatus": "队友投票状态:",
-    "thinking": "思考中...",
+    "thinking": "还没投",
     "targetSummary": "目标汇总:",
     "votes": "{count}票",
     "consensus": "狼队已达成一致！",

@@ -1522,7 +1522,7 @@
     "title": "Wolf coordination",
     "subtitle": "Pick tonight’s kill target",
     "teammateStatus": "Teammate voting status:",
-    "thinking": "Thinking...",
+    "thinking": "Not voted",
     "targetSummary": "Target summary:",
     "votes": "{count} votes",
     "consensus": "Wolves have reached consensus!",

@@ -18,10 +18,12 @@ import {
   fetchLobby,
   fetchMe,
   fetchStatus,
+  withSince,
   type IncomingInvite,
   type Lobby,
   type MeInfo,
   type RoomPresence,
+  type ServerMessage,
   type ServerView,
 } from "@/lib/net/platform";
 
@@ -40,6 +42,8 @@ export interface NetGame {
   createRoom: (seats: number, password?: string, roles?: Record<string, number>, sheriff?: boolean, winMode?: "side" | "wipe") => Promise<void>;
   joinRoom: (code: string, password?: string) => Promise<void>;
   leaveRoom: () => Promise<void>;
+  /** 房主在等待区把掉线的人踢出去 */
+  kickMember: (userId: string) => Promise<void>;
   startGame: () => Promise<void>;
   act: (action: Record<string, unknown>) => Promise<void>;
   invite: (ids: string[]) => boolean;
@@ -59,7 +63,11 @@ export function viewToGameState(view: ServerView, meId: string): GameState {
     displayName: p.displayName,
     avatarSeed: p.avatar || "",
     alive: p.alive,
-    role: (p.role || "Villager") as Role,
+    // 服务器没下发身份就是"我还不知道"，不是平民。以前这里兜成 Villager，
+    // 会让"按身份判断"的地方（比如白痴翻牌置灰）永远算错。
+    role: (p.role ?? "Villager") as Role,
+    roleKnown: Boolean(p.role),
+    idiotRevealed: Boolean(p.idiotRevealed),
     alignment: p.alignment || "village",
     // 上游语义：isHuman = "这张卡就是我自己"。
     // 联机局里每个座位都是真人，写死 true 会让 8 张卡都挂上「你」。
@@ -68,6 +76,8 @@ export function viewToGameState(view: ServerView, meId: string): GameState {
 
   const messages: ChatMessage[] = view.messages.map((m) => ({
     id: m.id,
+    seq: m.seq,
+    scope: m.scope,
     playerId: m.playerId,
     playerName: m.playerName,
     content: m.content,
@@ -123,6 +133,9 @@ export function viewToGameState(view: ServerView, meId: string): GameState {
       revoteCount: 0,
     },
     votes,
+    // 平票 PK 时台上的座位（服务器当公开信息给）。投票进度条要用它把台上的人从分母里去掉。
+    pkTargets: view.pkTargets ?? [],
+    pkSource: (view.pkTargets ?? []).length > 0 ? "vote" : undefined,
     voteHistory: {},
     nightHistory: {},
     dailySummaries: {},
@@ -165,6 +178,41 @@ export function useNetGame(): NetGame {
 
   const sendRef = useRef<((msg: Record<string, unknown>) => boolean) | null>(null);
 
+  /*
+   * 消息增量拉取。
+   *
+   * 以前每次刷新都把整局历史重新发一遍（L11）。现在：
+   *   · 本地按 id 累积，请求只带"我收到第几号了"（`since`），服务器只回新消息；
+   *   · 换房间 / 回到大厅 / 新的一局 → 本地清空，重新从最近 200 条开始。
+   */
+  const msgRef = useRef<{ code: string; list: ServerMessage[] }>({ code: "", list: [] });
+
+  const lastSeq = () => {
+    const list = msgRef.current.list;
+    return list.length ? Number(list[list.length - 1].seq ?? 0) : 0;
+  };
+
+  const applyView = useCallback((next: ServerView | null) => {
+    if (!next) {
+      msgRef.current = { code: "", list: [] };
+      setView(null);
+      return;
+    }
+    if (msgRef.current.code !== next.code || next.phase === "waiting") {
+      msgRef.current = { code: next.code, list: [] };
+    }
+    const list = msgRef.current.list;
+    const seen = new Set(list.map((m) => m.id));
+    let added = false;
+    for (const m of next.messages ?? []) {
+      if (seen.has(m.id)) continue;
+      list.push(m);
+      added = true;
+    }
+    if (added) list.sort((a, b) => Number(a.seq ?? 0) - Number(b.seq ?? 0));
+    setView({ ...next, messages: list.slice() });
+  }, []);
+
   const inFlight = useRef(false);
   const pending = useRef(false);
 
@@ -175,9 +223,9 @@ export function useNetGame(): NetGame {
     }
     inFlight.current = true;
     try {
-      const status = await fetchStatus();
+      const status = await fetchStatus(lastSeq());
       setRoom(status.room);
-      setView(status.view);
+      applyView(status.view);
       if (status.room && status.room.phase === "waiting") {
         try {
           const data = await fetchLobby();
@@ -202,7 +250,7 @@ export function useNetGame(): NetGame {
         void load();
       }
     }
-  }, []);
+  }, [applyView]);
 
   useEffect(() => {
     void (async () => {
@@ -305,10 +353,11 @@ export function useNetGame(): NetGame {
   const act = useCallback(
     (action: Record<string, unknown>) =>
       run(async () => {
-        const data = await api<{ view: ServerView | null }>("/game/act", action);
-        if (data && "view" in data) setView(data.view ?? null);
+        // 再发一次也会把新消息带回来；带着 since 就只回增量
+        const data = await api<{ view: ServerView | null }>(withSince("/game/act", lastSeq()), action);
+        if (data && "view" in data) applyView(data.view ?? null);
       }),
-    [run],
+    [run, applyView],
   );
 
   const backToLobby = useCallback(async () => {
@@ -319,10 +368,19 @@ export function useNetGame(): NetGame {
       /* 房间可能已经被回收了，照常回大厅 */
     }
     setView(null);
+    msgRef.current = { code: "", list: [] };
     setRoom(null);
     setLobby(null);
     await load();
   }, [load]);
+
+  const kickMember = useCallback(
+    (userId: string) =>
+      run(async () => {
+        await api("/room/kick", { userId });
+      }),
+    [run],
+  );
 
   const restartGame = useCallback(async () => {
     await run(async () => {
@@ -364,6 +422,7 @@ export function useNetGame(): NetGame {
     createRoom,
     joinRoom,
     leaveRoom,
+    kickMember,
     startGame,
     act,
     invite,

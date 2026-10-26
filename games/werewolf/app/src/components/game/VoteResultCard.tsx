@@ -11,6 +11,8 @@ interface VoteResultData {
   targetName: string;
   voterSeats: number[];
   voteCount: number;
+  /** 真正决定放逐的票权（警长 1.5 票）；服务器会一起发过来 */
+  weight?: number;
 }
 
 interface VoteResultCardProps {
@@ -46,6 +48,9 @@ export function VoteResultCard({
       <div className="space-y-2.5">
         {results.map((result, index) => {
           const target = players.find(p => p.seat === result.targetSeat);
+          // 判定用的是票权（警长 1.5 票），不是人头数。以前这里显示人头数，
+          // 就会出现"卡片写 1 票、系统消息说 1.5 票"的自相矛盾。
+          const shown = typeof result.weight === "number" ? result.weight : result.voteCount;
           
           return (
             <motion.div
@@ -113,7 +118,7 @@ export function VoteResultCard({
               <div className="wc-vote-result-count flex items-center justify-center min-w-[50px]">
                 <span className="text-base font-bold text-[var(--color-accent)]">
                   {t("voteResult.voteCount", {
-                    count: result.voteCount % 1 === 0 ? result.voteCount : result.voteCount.toFixed(1),
+                    count: shown % 1 === 0 ? shown : shown.toFixed(1),
                   })}
                 </span>
               </div>

@@ -93,7 +93,7 @@ async function main() {
       port: 0,
       dbPath: join(tmpDir, 'ww.db'),
       statePath: join(tmpDir, 'server.json'),
-      werewolfTimeoutScale: 0.02,
+      werewolfTimeoutScale: 0.04,
     });
     const base = String(app.url).replace(/\/+$/, '');
 
@@ -288,6 +288,23 @@ async function main() {
       '房主看到好友已经坐进来',
     );
 
+    /* ================= 4a. 等候区：没有 markdown 星号、房主能踢人 ================= */
+    const lobbyHost = await page.eval(`return (() => {
+      const kick = document.querySelector('[data-testid="kick-player"]');
+      return { text: document.body.innerText, hasKick: !!kick };
+    })()`);
+    assert.equal(
+      lobbyHost.text.includes('**'),
+      false,
+      '等待区文字不该出现 markdown 星号（以前写着 **不能中途加入**）',
+    );
+    assert.match(lobbyHost.text, /不能中途加入/, '这句提示本身要留着');
+    assert.equal(lobbyHost.hasKick, true, '房主应该能踢掉掉线的人');
+    const friendSeesKick = await friendPage.eval(
+      `return document.querySelectorAll('[data-testid="kick-player"]').length`,
+    );
+    assert.equal(friendSeesKick, 0, '只有房主看得到「踢出」按钮');
+
     /* ================= 4b. 平台好友列表的「进入」深链 ================= */
     linkPage = await Page.launch({ headless: true, width: 1024, height: 900 });
     const linkId = await registerViaUI(linkPage, base, '狼人丙');
@@ -301,6 +318,7 @@ async function main() {
 
     /* ================= 5. 补满 6 人，开局 ================= */
     const extras = [];
+    const extraCookies = [];
     for (let i = 0; i < 3; i++) {
       const res = await jsonCall(base, '/api/register', { body: { name: `补位${i}`, password: 'secret123' } });
       assert.equal(res.status, 200);
@@ -310,6 +328,7 @@ async function main() {
       });
       assert.equal(joined.data.ok, true, JSON.stringify(joined.data));
       extras.push(res.me?.id || joined.data);
+      extraCookies.push(res.cookie);
     }
     await page.waitFor(
       `return !document.querySelector('[data-testid="start-game"]').disabled`,
@@ -331,6 +350,191 @@ async function main() {
     );
     const phase = await page.eval(`return document.querySelector('[data-testid="phase"]').textContent.trim()`);
     assert.ok(phase.length > 0, '顶栏要有阶段');
+
+    /* ==================================================================
+     * 5. 牌桌真的能玩：夜间提示 / 一轮里连发两段话 / 弃票
+     *
+     * 人类（房主）只用鼠标，另外 5 个座位用接口代替 —— 和玩家实际走的路径一样。
+     * 页面更新是异步的（WS 推送 → load），所以每条断言都是"等 DOM"，不是"接口说啥就断言啥"。
+     * ================================================================== */
+    const loginViaApi = async (id) => {
+      const res = await jsonCall(base, '/api/login', { body: { id, password: 'secret123' } });
+      assert.equal(res.status, 200, `${id} 登录失败：${JSON.stringify(res.data)}`);
+      assert.ok(res.cookie, `${id} 没拿到会话`);
+      return res.cookie;
+    };
+    // 平台是按 ID + 密码登录的（注册时那个弹窗让人抄的就是它）
+    const hostCookie = await loginViaApi(hostId);
+    const others = [await loginViaApi(friendId), await loginViaApi(linkId), ...extraCookies];
+
+    const viewOf = async (cookie) => {
+      const res = await jsonCall(base, '/api/werewolf/game/status', { cookie });
+      return res.data?.data?.view || null;
+    };
+    const actOf = async (cookie, body) => {
+      const res = await jsonCall(base, '/api/werewolf/game/act', { cookie, body });
+      return res.data;
+    };
+
+    /** 替一个座位做掉当前能做的所有事（一律选"不做"的选项，最省事）。
+     *  `avoidSeat` = 人类（房主）的座位：别人不许刀他，否则人类活不到投票阶段。 */
+    const driveSeat = async (cookie, v, avoidSeat) => {
+      const can = v.can || {};
+      const alive = (v.players || []).filter((p) => p.alive);
+      const firstOther = alive.filter((p) => p.seat !== v.self.seat && p.seat !== avoidSeat)[0]
+        || alive.filter((p) => p.seat !== v.self.seat)[0];
+      if (can.guard) return actOf(cookie, { type: 'guard', seat: null });
+      if (can.wolf) return actOf(cookie, { type: 'wolf', seat: firstOther ? firstOther.seat : null });
+      if (can.wolfBeauty) return actOf(cookie, { type: 'charm', seat: null });
+      if (can.witch) return actOf(cookie, { type: 'witch', action: 'pass' });
+      if (can.seer) return actOf(cookie, { type: 'seer', seat: null });
+      if (can.hunter) return actOf(cookie, { type: 'hunter', seat: null });
+      if (can.transfer) return actOf(cookie, { type: 'transfer', seat: null });
+      if (can.signup) return actOf(cookie, { type: 'signup', wants: false });
+      if (can.badgeVote) return actOf(cookie, { type: 'badgeVote', seat: null });
+      if (can.vote) return actOf(cookie, { type: 'vote', seat: null });
+      if (can.wwkBoom) return actOf(cookie, { type: 'wwkBoom', seat: null });
+      if (can.endSpeech) return actOf(cookie, { type: 'endSpeech' });
+      return null;
+    };
+
+    /** 往可编辑区整段插入文字（一次调用，比逐字输入快一个数量级）。 */
+    const insertSpeech = async (text) => {
+      return page.eval(`(() => {
+        const el = document.querySelector('[data-testid="speech-input"] [contenteditable="true"]');
+        if (!el) return 'no-editor';
+        el.focus();
+        const ok = document.execCommand('insertText', false, ${JSON.stringify(text)});
+        return (ok ? 'ok:' : 'fail:') + el.innerText;
+      })()`);
+    };
+
+    let sawNightPanel = '';
+    let sawTwoParagraphs = false;
+    let abstained = false;
+    let skippedNight = '';
+    const trace = [];
+
+    for (let i = 0; i < 500; i++) {
+      const st = await viewOf(hostCookie);
+      if (!st) throw new Error('拿不到自己的对局视图');
+      const ph = st.phase;
+      if (ph === 'GAME_END') break;
+
+      // ① 夜间面板不能是空白（以前守卫那晚就是一块空白）
+      if (ph.startsWith('NIGHT_') && ph !== 'NIGHT_START' && !sawNightPanel) {
+        const text = await page.eval(
+          `return (document.querySelector('[data-testid="dialog-panel"]')||{}).innerText || ''`,
+        );
+        if (text.trim().length > 0) sawNightPanel = text.trim();
+      }
+
+      // ② 轮到我说话：等页面把输入框画出来，然后一轮里连发两段
+      if (st.currentSpeakerSeat === st.self.seat) {
+        const gotInput = await page
+          .waitFor(`return !!document.querySelector('[data-testid="speech-input"]')`, 5000, '轮到我时出现输入框')
+          .then(() => true)
+          .catch(() => false);
+        if (!gotInput) {
+          trace.push(`NO_INPUT ${ph} sp=${st.currentSpeakerSeat}`);
+          continue;
+        }
+        const insertEcho = await insertSpeech('第一段话');
+        const sendOk = await page
+          .waitFor(
+            `return (() => { const b = document.querySelector('[data-testid="speech-send"]'); return !!b && !b.disabled; })()`,
+            5000,
+            '打完字后发送键可点',
+          )
+          .then(() => true)
+          .catch(() => false);
+        if (!sendOk) {
+          const editorText = await page.eval(
+            `return ((document.querySelector('[data-testid="speech-input"] [contenteditable="true"]')||{}).innerText) || ''`,
+          );
+          trace.push(`SEND_FAIL inserted=${JSON.stringify(insertEcho)} editor=${JSON.stringify(editorText)}`);
+          continue;
+        }
+        await page.click('[data-testid="speech-send"]');
+        await page.waitFor(
+          `return document.body.innerText.includes('第一段话')`,
+          10_000,
+          '第一段话进了记录',
+        );
+        // 关键：一轮发言里还能再发第二段（不会因为说了第一段就换人）
+        await insertSpeech('第二段话');
+        await page.waitFor(
+          `return (() => { const b = document.querySelector('[data-testid="speech-send"]'); return !!b && !b.disabled; })()`,
+          10_000,
+          '第二段打字后发送键可点',
+        );
+        await page.click('[data-testid="speech-send"]');
+        await page.waitFor(
+          `return document.body.innerText.includes('第二段话')`,
+          10_000,
+          '第二段话也进了记录（同一轮里连发）',
+        );
+        sawTwoParagraphs = true;
+        const stillMe = await page.eval(`return !!document.querySelector('[data-testid="speech-end"]')`);
+        assert.equal(stillMe, true, '连发两段之后还应该是我的麦，不该自动换人');
+        await page.click('[data-testid="speech-end"]');
+        continue;
+      }
+
+      // ③ 放逐投票：弃票按钮必须存在，点得动
+      if (ph === 'DAY_VOTE' && st.can.vote && !abstained) {
+        const appeared = await page
+          .waitFor(`return !!document.querySelector('[data-testid="vote-abstain"]')`, 5000, '弃票按钮出现')
+          .then(() => true)
+          .catch(() => false);
+        if (!appeared) {
+          const pagePhase = await page.eval(
+            `return (document.querySelector('[data-testid="phase"]')||{}).innerText || ''`,
+          );
+          trace.push(`NO_ABSTAIN pagePhase=${JSON.stringify(pagePhase)}`);
+          continue;
+        }
+        await page.click('[data-testid="vote-abstain"]');
+        abstained = true;
+        continue;
+      }
+
+      // ④ 轮到我行动的那一夜：面板要有明确提示 + 一个"不选"的按钮
+      if (!skippedNight && (st.can.guard || st.can.wolf || st.can.seer || st.can.wolfBeauty)) {
+        const gotPrompt = await page
+          .waitFor(`return !!document.querySelector('[data-testid="night-prompt"]')`, 5000, '夜间行动提示出现')
+          .then(() => true)
+          .catch(() => false);
+        if (gotPrompt) {
+          const text = await page.eval(
+            `return (document.querySelector('[data-testid="night-prompt"]')||{}).innerText || ''`,
+          );
+          assert.match(text, /轮到你/, '轮到我行动时必须有明确提示');
+          const clicked = await page.eval(`return (() => {
+            const btn = document.querySelector('[data-testid="night-prompt"] button');
+            if (!btn) return false;
+            btn.click();
+            return true;
+          })()`);
+          assert.equal(clicked, true, '夜间行动必须留一个"不选"的按钮');
+          skippedNight = ph;
+          continue;
+        }
+      }
+
+      // ⑤ 其它座位用接口做掉，人类页面等着
+      for (const cookie of others) {
+        const v = await viewOf(cookie);
+        if (!v) continue;
+        await driveSeat(cookie, v, st.self.seat);
+      }
+      await new Promise((r) => setTimeout(r, 120));
+    }
+
+    if (!sawTwoParagraphs) console.error('[TRACE]\n' + trace.slice(-25).join('\n'));
+    assert.ok(sawNightPanel, '夜里对话框不能是空白（要写着谁在行动 / 轮到你）');
+    assert.equal(sawTwoParagraphs, true, '一轮发言里要能连发两段话');
+    assert.equal(abstained, true, '放逐投票要能弃票');
 
     /* ================= 6. 375px 手机宽度 ================= */
     await page.setViewport(375, 812, true);
@@ -362,7 +566,8 @@ async function main() {
     assert.deepEqual(errors, [], `页面不该有 console error：\n${errors.join('\n')}`);
 
     console.log(
-      '✔ 狼人杀：登录门禁、平台昵称头像、建房、好友邀请（接受后进同一房）、6 人开局、375px、首页卡片',
+      '✔ 狼人杀：登录门禁、平台昵称头像、建房、好友邀请（接受后进同一房）、6 人开局、' +
+        '房主踢人、夜间提示、一轮连发两段发言、弃票、375px、首页卡片',
     );
   } finally {
     if (linkPage) await linkPage.close();

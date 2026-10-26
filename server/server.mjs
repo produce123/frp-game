@@ -294,6 +294,16 @@ export async function startServer({
   }, 15_000);
   if (typeof aiTownSweeper.unref === 'function') aiTownSweeper.unref();
 
+  /*
+   * 狼人杀房间回收（一局最长 12 小时、结算后留 1 小时）。
+   * 这条以前**根本没挂**：房间只增不减，好友列表里"正在玩狼人杀"永远不消失，
+   * 等待区里关掉页面的人也会永久占座。引擎的 TTL 常量一直在，只是没人调。
+   */
+  const werewolfSweeper = setInterval(() => {
+    try { werewolf.sweep(); } catch { /* 同上 */ }
+  }, 60_000);
+  if (typeof werewolfSweeper.unref === 'function') werewolfSweeper.unref();
+
   await new Promise((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(port, host, () => {

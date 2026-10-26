@@ -64,7 +64,8 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
   **绝不能进任何报文** —— 这是唯一的防作弊手段。
 - **`rooms.mjs` 不认识任何具体游戏**（只认 `meta` / `createMatch`）；加新游戏不要改它。
 - 依赖单向：`games/* → shared/*`，`web/* → shared/*`；游戏之间绝不互相 import。
-- **不做聊天**（用户明确要求，任何形式）。
+- **不做聊天**（用户明确要求，任何形式）。唯一例外：狼人杀的**狼队夜间频道**
+  （消息 `scope:'wolf'`，只在夜里、只发给存活狼）—— 那是游戏规则，不是聊天入口（D50）。
 
 **入口交互（2026-11 用户拍板）**
 
@@ -88,7 +89,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 
 | 改动 | 必跑 |
 | --- | --- |
-| 任何改动收尾 | `npm test`（156 条集成，约 19 秒；含 1 条默认跳过的真模型用例；`--test-concurrency=2` 是钉死的） |
+| 任何改动收尾 | `npm test`（182 条集成，约 25 秒；含 1 条默认跳过的真模型用例；`--test-concurrency=2` 是钉死的） |
 | `server/ws.mjs` | `npm test` + `npm run test:browser`（只有真浏览器能证明帧格式对） |
 | `shared/net/net.js` | `npm test`（9 秒建连 / 2.5 秒竞速 / 心跳 / 自动重连，**这几个数不许动**） |
 | 登录 / 注册流程 | `npm run test:login` |
@@ -116,7 +117,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
   各游戏自己的坑先看该目录的 `README.md` / `AGENTS.md`，再看 `docs/GAMES.md`。
 - 原文件夹**只读**，不要改动。原项目的公共 broker / WebRTC / ntfy / 信令一律删除（D1）。
 - 缝上游优先**静态托管 + 注入桥接脚本**；能不动上游产物就不动。
-- 主流程细节与"当年为什么这么改"在 `docs/DECISIONS.md`（D1–D48）与 `docs/HISTORY.md`，
+- 主流程细节与"当年为什么这么改"在 `docs/DECISIONS.md`（D1–D50）与 `docs/HISTORY.md`，
   **只在查具体问题时按编号/标题跳**。
 
 ## 记录习惯
@@ -132,7 +133,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 | --- | --- |
 | 现在做到哪了 / 下一步 / 要用户拍板的事 | `docs/NEXT.md` |
 | 协议、房间层、网络层、路由、各游戏接入方式 | `docs/ARCHITECTURE.md` |
-| 某个设计为什么这样（D1–D48） | `docs/DECISIONS.md`（文首有一览表） |
+| 某个设计为什么这样（D1–D50） | `docs/DECISIONS.md`（文首有一览表） |
 | 各游戏与无名杀的坑 | `docs/GAMES.md` |
 | 公网/隧道排障 | `docs/TUNNEL.md` |
 | 某件事当年是怎么修过来的 | `docs/HISTORY.md`（**别通读**，按标题跳） |

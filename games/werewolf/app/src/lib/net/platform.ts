@@ -21,10 +21,15 @@ export interface ServerPlayer {
   isHuman: boolean;
   role?: string;
   alignment?: "wolf" | "village";
+  /** 白痴已经当众翻牌（公开信息） */
+  idiotRevealed?: boolean;
 }
 
 export interface ServerMessage {
   id: string;
+  seq?: number;
+  /** 'wolf' = 只有狼人看得到的夜间频道消息 */
+  scope?: string;
   playerId: string;
   playerName: string;
   content: string;
@@ -45,6 +50,8 @@ export interface ServerView {
   duration: number;
   players: ServerPlayer[];
   messages: ServerMessage[];
+  /** 服务器已经产生的最大消息序号（增量拉消息的基准） */
+  messagesSeq?: number;
   currentSpeakerSeat: number | null;
   speechOrder: number[];
   badge: { holderSeat: number | null; candidates: number[] };
@@ -179,8 +186,17 @@ export async function fetchMe(): Promise<{ me: MeInfo; room: RoomPresence | null
   return api<{ me: MeInfo; room: RoomPresence | null }>("/me");
 }
 
-export async function fetchStatus(): Promise<{ room: RoomPresence | null; view: ServerView | null }> {
-  return api<{ room: RoomPresence | null; view: ServerView | null }>("/game/status");
+/**
+ * 拉状态。`since` = "我已经收到第几号消息了"，只回传这之后的新消息
+ * （不传就是刚进页面/刷新，服务器只给最近 200 条）。
+ */
+export async function fetchStatus(since = 0): Promise<{ room: RoomPresence | null; view: ServerView | null }> {
+  return api<{ room: RoomPresence | null; view: ServerView | null }>(withSince("/game/status", since));
+}
+
+/** 给 `/api/werewolf/*` 的路径拼上增量参数。 */
+export function withSince(path: string, since: number): string {
+  return since > 0 ? `${path}?since=${since}` : path;
 }
 
 export async function fetchLobby(): Promise<{ lobby: Lobby; me: MeInfo }> {

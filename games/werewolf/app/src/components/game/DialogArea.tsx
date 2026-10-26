@@ -9,7 +9,7 @@ import { WerewolfIcon, VillagerIcon, VoteIcon } from "@/components/icons/FlatIco
 import { VoteResultCard } from "./VoteResultCard";
 import { VotingProgress } from "./VotingProgress";
 import { WolfPlanningPanel } from "./WolfPlanningPanel";
-import { MentionInput } from "./MentionInput";
+import { MentionInput, MAX_LEN } from "./MentionInput";
 import { EventLog } from "./EventLog";
 import { buildSimpleAvatarUrl, getModelLogoUrl } from "@/lib/avatar-config";
 import { RoleRevealHistoryCard, type RoleRevealEntry } from "@/components/game/RoleRevealHistoryCard";
@@ -278,6 +278,8 @@ interface DialogAreaProps {
   onWhiteWolfKingBoom?: () => void;
   onKnightDuel?: () => void;
   onWolfKingSelfDestruct?: () => void;
+  /** 狼人夜间频道：只有狼看得见（服务器只把 scope:'wolf' 的消息发给狼） */
+  onWolfChat?: (text: string) => void;
   isEventLogOpen?: boolean;
   onEventLogOpenChange?: (open: boolean) => void;
   /** 服务器按人裁剪过的"现在能做什么"；双女巫/双预言家时只有轮到的那个是真的。 */
@@ -290,17 +292,15 @@ interface DialogAreaProps {
 // Note: Guard phase does not use this component - it uses the regular dialogue block instead
 function NightActionStatus({ phase, humanRole, can = {} }: { phase: string; humanRole?: string; can?: Record<string, boolean> }) {
   const t = useTranslations();
-  
-  // Guard phase: don't show any status animation, let dialogue block handle it
-  if (phase === "NIGHT_GUARD_ACTION") {
-    return null;
-  }
 
   const getStatusInfo = () => {
-    // 如果是人类玩家的回合，显示“请睁眼”；否则显示“正在行动”
+    // 如果是人类玩家的回合，显示"请睁眼"；否则显示"正在行动"
     const isMyPhase = Boolean(can.wolf || can.wolfBeauty || can.witch || can.seer || can.hunter || can.guard);
-    
+
     switch (phase) {
+      case "NIGHT_GUARD_ACTION":
+        // 以前这里直接 return null，守卫自己那一晚看到的是**一块空白面板**
+        return { icon: null, text: isMyPhase ? "守卫请睁眼，选择要守护的人" : "守卫正在选择守护对象", color: "text-emerald-500" };
       case "NIGHT_WOLF_ACTION":
         return { icon: WerewolfIcon, text: isMyPhase ? t("dialog.nightAction.wolfAwake") : t("dialog.nightAction.wolfActing"), color: "text-red-500" };
       case "NIGHT_WOLF_BEAUTY_ACTION":
@@ -312,7 +312,7 @@ function NightActionStatus({ phase, humanRole, can = {} }: { phase: string; huma
       case "HUNTER_SHOOT":
         return { icon: Crosshair, text: isMyPhase ? t("dialog.nightAction.hunterAwake") : t("dialog.nightAction.hunterActing"), color: "text-orange-500" };
       default:
-        return { icon: null, text: "", color: "" };
+        return { icon: null, text: "夜晚进行中…", color: "text-[var(--text-secondary)]" };
     }
   };
 
@@ -391,6 +391,7 @@ export function DialogArea({
   onWhiteWolfKingBoom,
   onKnightDuel,
   onWolfKingSelfDestruct,
+  onWolfChat,
   isEventLogOpen = false,
   onEventLogOpenChange,
   can = {},
@@ -421,28 +422,6 @@ export function DialogArea({
     preloadRolePortraits();
   }, []);
   
-  // 判断是否需要用户手动点击/按键继续（而非自动过场）
-  const needsManualContinue = useMemo(() => {
-    // 正在组织语言时不需要手动继续
-    const dialogueText = currentDialogue?.text || "";
-    if (dialogueText.includes(t("dayPhase.organizing")) || dialogueText.includes(t("ui.generatingVoice"))) {
-      return false;
-    }
-    // 发言阶段需要手动继续
-    if (["DAY_SPEECH", "DAY_LAST_WORDS", "DAY_BADGE_SPEECH", "DAY_PK_SPEECH"].includes(phase)) {
-      return true;
-    }
-    // 等待下一轮时需要手动继续
-    if (waitingForNextRound) {
-      return true;
-    }
-    // 预言家查验完成后需要手动确认（人类是预言家）
-    if (phase === "NIGHT_SEER_ACTION" && humanPlayer?.role === "Seer" && gameState.nightActions.seerTarget !== undefined) {
-      return true;
-    }
-    return false;
-  }, [phase, waitingForNextRound, humanPlayer?.role, gameState.nightActions.seerTarget, currentDialogue?.text]);
-
   const visibleMessages = useMemo(() => {
     return gameState.messages.filter(
       (m) => !(m.isSystem && isTurnPromptSystemMessage(m.content, t))
@@ -466,7 +445,10 @@ export function DialogArea({
         isStreaming: true,
       };
     }
-    // 找最后一条非系统消息
+    // 找最后一条非系统消息 —— 只在天亮/白天这些"有人说话"的阶段才把它当发言人。
+    // 夜里各角色行动时，最后一条白天的发言不该继续挂在对话框上（以前就是它把
+    // "守卫请睁眼"顶掉、显示成上一个白天的气泡）。
+    if (!phase.startsWith("DAY_")) return null;
     const lastMsg = [...visibleMessages].reverse().find(m => !m.isSystem);
     if (lastMsg) {
       const player = gameState.players.find(p => p.playerId === lastMsg.playerId);
@@ -977,6 +959,26 @@ export function DialogArea({
     && selectedSeat === null
     && !showWitchPanel;
 
+  // 夜里轮到"我"行动：一句明确的提示 + 一个"不选"的退路。
+  // 以前这里只有一块空白（守卫那晚尤其明显），玩家不知道该点谁。
+  const myNightAction = (() => {
+    if (selectedSeat !== null) return null;
+    if (phase === "NIGHT_GUARD_ACTION" && can.guard) {
+      return { who: "守卫", hint: "点一个头像选择今晚守护的人（不能连续两晚守同一个人）。", skip: "今晚不守" };
+    }
+    if (phase === "NIGHT_WOLF_ACTION" && can.wolf) {
+      return { who: "狼人", hint: "先在下面的狼队面板里和队友商量，再点一个头像下刀；所有狼都投完就结算。", skip: "空刀（撤掉我的票）" };
+    }
+    if (phase === "NIGHT_WOLF_BEAUTY_ACTION" && can.wolfBeauty) {
+      return { who: "狼美人", hint: "点一个头像选择今晚要魅惑的人。", skip: "今晚不魅惑" };
+    }
+    if (phase === "NIGHT_SEER_ACTION" && can.seer) {
+      return { who: "预言家", hint: "点一个头像查验他的阵营（会记在你的查验记录里）。", skip: "今晚不验" };
+    }
+    return null;
+  })();
+  const showMyNightTurn = Boolean(myNightAction);
+
   const shouldShowDialogPanel = showGameEnd
     || showBadgeSignup
     || showBadgeSignupWaiting
@@ -988,6 +990,7 @@ export function DialogArea({
     || showDaySkill
     || showHumanInput
     || showDialogueBlock
+    || showMyNightTurn
     || showNightWaiting;
 
   return (
@@ -1131,13 +1134,31 @@ export function DialogArea({
               {gameState.phase === "DAY_BADGE_ELECTION" ? t("dialog.badgeElectionInProgress") : t("dialog.voteInProgress")}
             </div>
             <VotingProgress gameState={gameState} humanPlayer={humanPlayer} />
+            {selectedSeat === null && ((gameState.phase === "DAY_VOTE" && can.vote) || (gameState.phase === "DAY_BADGE_ELECTION" && can.badgeVote)) && (
+              <div className="mt-2 flex justify-end">
+                <button
+                  type="button"
+                  data-testid="vote-abstain"
+                  onClick={() => onConfirmAction?.()}
+                  className="wc-action-btn text-xs h-8 px-3"
+                >
+                  <Prohibit size={14} weight="bold" />
+                  {gameState.phase === "DAY_VOTE" ? "弃票（不投任何人）" : "弃票（不选警长）"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* 狼人协作面板 */}
+        {/* 狼人协作面板 + 夜间频道 */}
         {can.wolf && (
           <div className="mb-3">
-            <WolfPlanningPanel gameState={gameState} humanPlayer={humanPlayer} />
+            <WolfPlanningPanel
+              gameState={gameState}
+              humanPlayer={humanPlayer}
+              messages={gameState.messages.filter((m) => m.scope === "wolf")}
+              onChat={onWolfChat}
+            />
           </div>
         )}
 
@@ -1149,6 +1170,7 @@ export function DialogArea({
               ? "opacity-100"
               : "opacity-0 pointer-events-none bg-transparent border-transparent shadow-none"
           )}
+          data-testid="dialog-panel"
         >
           {showTutorialHelp && tutorialHelpLabel && (
             <div className="flex justify-end mb-2">
@@ -1172,6 +1194,35 @@ export function DialogArea({
           {/* 操作控件直接随状态挂载，不等待上一块对话的退出动画。 */}
           {shouldShowDialogPanel && (
           <div key={phase}>
+              {/* 夜里轮到我：说清楚该干什么，并且永远留一条"不选"的退路 */}
+              {showMyNightTurn && myNightAction && (
+                <motion.div
+                  key={`my-night-${phase}`}
+                  data-testid="night-prompt"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="space-y-3"
+                >
+                  <div className="text-lg font-bold text-[var(--color-gold)]">
+                    轮到你（{myNightAction.who}）行动
+                  </div>
+                  <div className="text-sm leading-relaxed text-[var(--text-secondary)]">
+                    {myNightAction.hint}
+                  </div>
+                  <div className="flex items-center justify-end gap-3 border-t pt-3 border-white/10">
+                    <button
+                      type="button"
+                      onClick={() => onConfirmAction?.()}
+                      className="wc-action-btn text-sm h-9 px-4"
+                    >
+                      {myNightAction.skip}
+                      <CaretRight size={14} weight="bold" />
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+
               {/* 守墓人夜间信息（被动） */}
               {showGraveInfo && graveInfo && (
                 <motion.div
@@ -1621,7 +1672,7 @@ export function DialogArea({
                   className="space-y-3"
                 >
                   {/* 白狼王自爆按钮已移到白天技能区，发言时也能看到 */}
-                  <div className="wc-input-box relative" style={{ minHeight: "112px", alignItems: "flex-start", padding: "14px 16px 56px" }}>
+                  <div className="wc-input-box relative" data-testid="speech-input" style={{ minHeight: "112px", alignItems: "flex-start", padding: "14px 16px 56px" }}>
                     <MentionInput
                       key={`mention-input-${gameState.phase}-${gameState.currentSpeakerSeat}`}
                       value={inputText}
@@ -1637,6 +1688,7 @@ export function DialogArea({
                     {/* 底部按钮栏 - 在输入框内部右下角 */}
                     <div className="absolute bottom-3 right-3 flex items-center gap-2">
                       <button
+                        data-testid="speech-send"
                         onClick={onSendMessage}
                         disabled={!inputText?.trim()}
                         className="h-8 px-3 rounded text-xs font-medium bg-[var(--color-gold)] text-[#1a1614] hover:bg-[#d4b06a] disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center gap-1.5 cursor-pointer"
@@ -1647,6 +1699,7 @@ export function DialogArea({
                       </button>
 
                       <button
+                        data-testid="speech-end"
                         onClick={handleFinishSpeaking}
                         className="h-8 px-3 rounded text-xs font-medium border border-[var(--color-gold)]/50 text-[var(--color-gold)] bg-transparent hover:bg-[var(--color-gold)]/10 transition-all flex items-center gap-1.5 cursor-pointer"
                         title={t("dialog.input.finishSpeech")}
@@ -1655,6 +1708,16 @@ export function DialogArea({
                         {t("dialog.input.finishSpeech")}
                       </button>
                     </div>
+                  </div>
+
+                  {/* 一轮发言里可以连发多段：说清楚，别让人以为发一条就等于过麦 */}
+                  <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-muted)]">
+                    <span>可以连着发好几段，说完再点「结束发言」</span>
+                    <span className={cn(
+                      (inputText?.length ?? 0) > MAX_LEN - 50 && "text-[var(--color-warning)]"
+                    )}>
+                      {inputText?.length ?? 0}/{MAX_LEN}
+                    </span>
                   </div>
                 </motion.div>
               )}
@@ -1720,36 +1783,9 @@ export function DialogArea({
                       ) : null}
                     </div>
                     <div className="flex items-center justify-end gap-3">
-                      <div className="h-7 flex items-center justify-end">
-                      <AnimatePresence initial={false}>
-                        {!isTyping && needsManualContinue ? (
-                          <motion.div
-                            key="enter-hint"
-                            initial={{ opacity: 0, x: 10 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 10 }}
-                            transition={{ duration: 0.25, ease: "easeOut" }}
-                            className={`flex items-center gap-1.5 text-xs ${isNight ? "text-white/70" : "text-[var(--text-secondary)]"}`}
-                          >
-                            <span>{t("dialog.advanceHintPrefix")}</span>
-                            <kbd className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded border font-mono text-[11px] ${
-                              isNight
-                                ? "bg-white/10 border-white/20 text-white/80"
-                                : "bg-[var(--bg-secondary)] border-[var(--border-color)] text-[var(--text-primary)]"
-                            }`}>
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="9 10 4 15 9 20" />
-                                <path d="M20 4v7a4 4 0 0 1-4 4H4" />
-                              </svg>
-                              Enter
-                            </kbd>
-                            <span>{t("dialog.advanceHintSuffix")}</span>
-                          </motion.div>
-                        ) : (
-                          <div key="placeholder" className="h-7" />
-                        )}
-                      </AnimatePresence>
-                      </div>
+                      {/* 以前这里挂过「按 Enter 继续」的提示，但整页没有绑定任何按键，
+                          点了也没反应 —— 服务端本来就会自己往下走，索性去掉，不骗人。 */}
+                      <div className="h-7" />
                     </div>
                   </div>
                 </motion.div>

@@ -143,11 +143,15 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
    *   · 200 + `{ok:false, message}`    游戏层的拒绝（"密码错误"这种人话）
    *   · 401 + `{ok:false, message}`    没登录（页面据此回登录页）
    */
-  async function handleApi(user, pathname, body = {}) {
+  async function handleApi(user, pathname, body = {}, query = null) {
     if (!user) return { status: 401, body: { ok: false, message: '还没登录' } };
 
     const suffix = pathname.slice(API_PREFIX.length) || '/';
     const self = { id: user.id, name: user.name, avatar: avatarOf(user) };
+    // 增量拉消息：页面把"我已经收到第几号消息"带上来，只回传这之后的新消息
+    // （不带上就是刚打开页面/刷新，服务端只给最近 200 条）。
+    const sinceRaw = query && typeof query.get === 'function' ? Number(query.get('since')) : NaN;
+    const viewOpts = Number.isFinite(sinceRaw) && sinceRaw > 0 ? { since: sinceRaw } : {};
 
     // 页面自己用：我是谁 + 我现在在哪个房间（刷新页面后恢复现场）
     if (suffix === '/me') {
@@ -242,6 +246,12 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
       return envelope(res, res.ok ? { room: null } : null);
     }
 
+    // 房主在等待区踢人（掉线的人不会自己退房，没这个接口房间就只能解散）
+    if (suffix === '/room/kick') {
+      const res = engine.kickPlayer(user.id, body.userId);
+      return envelope(res, res.ok ? { room: presenceOf(user.id) } : null);
+    }
+
     // 一局打完，房主点「再来一局」：房间退回等候区，座位和人都不动
     if (suffix === '/room/restart') {
       const res = engine.restartRoom(user.id);
@@ -260,13 +270,13 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
     }
 
     if (suffix === '/game/status') {
-      const view = engine.viewFor(user.id);
+      const view = engine.viewFor(user.id, viewOpts);
       return { status: 200, body: { ok: true, data: { room: presenceOf(user.id), view } } };
     }
 
     if (suffix === '/game/act') {
       const res = engine.act(user.id, body || {});
-      return envelope(res, { view: engine.viewFor(user.id) });
+      return envelope(res, { view: engine.viewFor(user.id, viewOpts) });
     }
 
     return { status: 404, body: { ok: false, message: '没有这个接口' } };
@@ -291,6 +301,11 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
     engine.reset();
   }
 
+  /** 定时清扫：闲置 12 小时的大厅、结算后 1 小时的房间（由 `server.mjs` 每 60 秒调一次）。 */
+  function sweep() {
+    engine.sweep();
+  }
+
   return {
     handleApi,
     presenceOf,
@@ -300,6 +315,7 @@ export function createWerewolfGame({ store, timeoutScale } = {}) {
     attachHub,
     stats,
     reset,
+    sweep,
     /** 只给测试用：直接看引擎。 */
     _engine: engine,
   };

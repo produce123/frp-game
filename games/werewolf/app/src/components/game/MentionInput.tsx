@@ -42,6 +42,9 @@ interface MentionInputProps {
   players: Player[];
 }
 
+/** 一条发言最多多少字（和服务端 `SPEECH_MAX` 对齐；超出会被砍掉，不如直接拦住） */
+export const MAX_LEN = 500;
+
 const formatPlayerLabel = (seat: number, name: string) => {
   const { t } = getI18n();
   return t("mentions.playerLabel", { seat, name });
@@ -280,7 +283,16 @@ export function MentionInput({
       },
     },
     onUpdate: ({ editor }) => {
-      onChange(editor.getText({ blockSeparator: "\n" }));
+      const text = editor.getText({ blockSeparator: "\n" });
+      // 服务端也是 500 字上限（多出来的会被静默砍掉）。这里直接拦住，
+      // 至少输入框里的字数和真正发出去的完全一致。
+      if (text.length > MAX_LEN) {
+        const cut = text.slice(0, MAX_LEN);
+        editor.commands.setContent(cut, { emitUpdate: false });
+        onChange(cut);
+        return;
+      }
+      onChange(text);
     },
   });
 
@@ -408,8 +420,10 @@ export function MentionInput({
             onSend();
           }
           if (e.key === "Escape") {
+            // 只把 Esc 交给候选弹窗（它自己会关）。不再"顺手结束发言"：
+            // 以前想关 @ 弹窗按一下 Esc，麦就交出去了，剩下的发言时间全废。
+            if (isSuggestionOpen) return;
             e.preventDefault();
-            onFinishSpeaking?.();
           }
         }}
       />

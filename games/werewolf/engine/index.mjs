@@ -337,6 +337,7 @@ export function createWerewolfEngine(options = {}) {
     const g = room.game;
     g.messages.push({
       id: nextMessageId(),
+      seq: messageSeq,
       playerId: 'system',
       playerName: '主持人',
       content,
@@ -351,6 +352,7 @@ export function createWerewolfEngine(options = {}) {
     const g = room.game;
     g.messages.push({
       id: nextMessageId(),
+      seq: messageSeq,
       playerId: player.id,
       playerName: player.name,
       content,
@@ -511,7 +513,12 @@ export function createWerewolfEngine(options = {}) {
     }
 
     const existing = seatOf.get(user.id);
-    if (existing && existing !== room.code) leaveRoom(user.id);
+    if (existing && existing !== room.code) {
+      const left = leaveRoom(user.id);
+      // 开局之后 leaveRoom 会拒绝：这时绝不能换房。否则旧局会留下一个没人认领的座位，
+      // 而 seatOf 被新房间覆盖之后，旧局连"这个座位是谁"都查不回来了。
+      if (!left || !left.ok) return left || { ok: false, message: '你还在另一局里，打完再来' };
+    }
 
     room.members.set(user.id, {
       id: user.id,
@@ -545,6 +552,28 @@ export function createWerewolfEngine(options = {}) {
     if (room.hostId === userId) {
       room.hostId = room.order[0];
     }
+    changed(room);
+    return { ok: true };
+  }
+
+  /**
+   * 房主在等待区踢人。
+   *
+   * 没有这个接口的话，等待区里关掉页面的人会永久占着座位（引擎不会因为掉线自动清座），
+   * 房子就只能解散重开。
+   */
+  function kickPlayer(userId, targetId) {
+    const code = seatOf.get(userId);
+    const room = code ? rooms.get(code) : null;
+    if (!room) return { ok: false, message: '你不在任何房间里' };
+    if (room.hostId !== userId) return { ok: false, message: '只有房主能踢人' };
+    if (room.phase !== 'waiting') return { ok: false, message: '开局之后不能踢人' };
+    const id = String(targetId || '');
+    if (!room.members.has(id)) return { ok: false, message: '这个人已经不在房间里了' };
+    if (id === userId) return { ok: false, message: '不能踢自己' };
+    seatOf.delete(id);
+    room.members.delete(id);
+    room.order = room.order.filter((x) => x !== id);
     changed(room);
     return { ok: true };
   }
@@ -697,6 +726,9 @@ export function createWerewolfEngine(options = {}) {
     g.day = day;
     g.speaker = null;
     g.speechOrder = [];
+    // 狼美人的魅惑只在当晚有效。以前这里不清：某晚没魅惑（超时或者空过），
+    // 之后被放逐时仍会把更早一晚的人带走。
+    for (const p of g.players) p.charmedSeat = null;
     g.night = {
       guardTargets: [],
       guardQueue: [],
@@ -716,14 +748,17 @@ export function createWerewolfEngine(options = {}) {
       // 恶夜骑士：同一晚的查验/毒杀候选，结算时只反伤一个（预言家优先）
       evilSeers: [],
       evilPoisoners: [],
-      graveInfo: g.exileThisDay
-        ? {
-            day: g.exileThisDay.day,
-            seat: g.exileThisDay.seat,
-            name: g.exileThisDay.name,
-            alignment: g.exileThisDay.alignment,
-          }
-        : null,
+      // 长老封印之后守墓人就该看不见了。这里必须在**服务端**拦住，
+      // 不能只靠前端自己不显示 —— viewFor 是唯一的防作弊手段。
+      graveInfo:
+        goodSkillsOn(room) && g.exileThisDay
+          ? {
+              day: g.exileThisDay.day,
+              seat: g.exileThisDay.seat,
+              name: g.exileThisDay.name,
+              alignment: g.exileThisDay.alignment,
+            }
+          : null,
     };
     g.exileThisDay = null;
     g.pkTargets = [];
@@ -944,7 +979,8 @@ export function createWerewolfEngine(options = {}) {
       const victim = bySeat(room, poison.seat);
       if (!victim || victim.role === 'EvilKnight') continue; // 恶夜骑士免疫毒伤
       victim.abilities.poisoned = true;
-      if (victim.role === 'Elder') g.goodSkillsDisabled = true;
+      // 长老封印的标记**不在这里**置位：要等天亮公布死讯时由 kill() 统一设置，
+      // 否则 NIGHT_RESOLVE 那 3 秒里 goodSkillsDisabled 已经翻真，等于提前泄密。
       if (!g.night.deaths.some((d) => d.seat === poison.seat)) {
         g.night.deaths.push({ seat: poison.seat, reason: 'poison' });
       }
@@ -1034,9 +1070,11 @@ export function createWerewolfEngine(options = {}) {
       return;
     }
 
-    // 留一点时间给客户端播死亡提示，再进开枪/警徽/讨论
+    // 死讯公布完，先让夜里死的人各留一段遗言（用户 2026-10-26 拍板），
+    // 再移交警徽 / 猎人开枪。
+    const deadPlayers = deaths.map((d) => bySeat(room, d.seat)).filter((p) => p && !p.alive);
     setPhase(room, PHASE.DAY_START, DURATION.DAY_DEATH_GAP, () =>
-      afterNightDeaths(room, { shooters })
+      nightLastWords(room, deadPlayers, () => afterNightDeaths(room, { shooters }))
     );
   }
 
@@ -1165,6 +1203,14 @@ export function createWerewolfEngine(options = {}) {
     const voters = alive(room).filter((p) => !candidates.includes(p.seat));
     g.badgeVoterSeats = voters.map((p) => p.seat);
     system(room, pk ? 'PK 结束，请未竞选的玩家重新投票。' : '竞选发言结束，请未竞选的玩家投票选举警长。');
+    // 全员上警：一个能投票的人都没有，别让全场白等 45 秒
+    if (voters.length === 0) {
+      g.badge.holderSeat = null;
+      g.badge.torn = true;
+      system(room, '所有存活玩家都上了警，没有人能投票，警徽流失。');
+      daySpeech(room);
+      return;
+    }
     setPhase(room, PHASE.DAY_BADGE_ELECTION, DURATION.BADGE_ELECTION, () => finishBadgeElection(room));
   }
 
@@ -1389,7 +1435,14 @@ export function createWerewolfEngine(options = {}) {
     const victim = bySeat(room, seat);
     if (!victim) return afterDayVote(room, null);
 
-    if (victim.role === 'Idiot' && !victim.abilities.idiotRevealed && !g.goodSkillsDisabled) {
+    // 已经翻过牌的白痴：再被投出也不再死亡（用户 2026-10-26 拍板，B 选项）。
+    // 免疫是"牌面已公开"的状态，不受长老封印影响。
+    if (victim.role === 'Idiot' && victim.abilities.idiotRevealed) {
+      system(room, `${seatLabel(seat)} ${victim.name} 已经翻过白痴牌，本轮放逐无效。`);
+      return afterDayVote(room, null);
+    }
+
+    if (victim.role === 'Idiot' && !g.goodSkillsDisabled) {
       victim.abilities.idiotRevealed = true;
       system(room, `${seatLabel(seat)} ${victim.name} 被投出，但他翻开白痴牌，免于死亡（此后失去投票权）。`);
       return afterDayVote(room, null);
@@ -1411,6 +1464,8 @@ export function createWerewolfEngine(options = {}) {
         lover.abilities.skillsBlocked = true;
         kill(room, lover.seat, 'love');
         system(room, `${seatLabel(lover.seat)} ${lover.name} 是狼美人魅惑的人，跟着殉情出局。`);
+        // 殉情的如果正好是警长，先移交警徽再让狼美人留遗言
+        if (badgeIfDead(room, lover, () => lastWords(room, victim))) return;
       }
     }
     lastWords(room, victim);
@@ -1442,17 +1497,52 @@ export function createWerewolfEngine(options = {}) {
 
   /* ------------------------------ 遗言 / 开枪 / 移交警徽 ------------------------------ */
 
-  function lastWords(room, player) {
+  /**
+   * 遗言。给了 `after` 就按它继续（夜里死的人走这条）；
+   * 没给就是传统路径：警徽移交 → 猎人开枪 → 天黑。
+   */
+  function lastWords(room, player, after) {
     const g = room.game;
     g.speaker = player.seat;
     g.speechOrder = [player.seat];
     g.speechIndex = 0;
+    g.lastWordsAfter = typeof after === 'function' ? after : null;
     system(room, `${seatLabel(player.seat)} ${player.name} 发表遗言。`);
-    setPhase(room, PHASE.DAY_LAST_WORDS, DURATION.SPEECH, () => afterLastWords(room, player));
+    setPhase(room, PHASE.DAY_LAST_WORDS, DURATION.SPEECH, () => finishLastWords(room, player));
+  }
+
+  /** 遗言结束（点「结束发言」和超时都走这里）。 */
+  function finishLastWords(room, player) {
+    const g = room.game;
+    if (room.phase !== 'playing') return;
+    const after = g.lastWordsAfter;
+    g.lastWordsAfter = null;
+    g.speaker = null;
+    if (typeof after === 'function') {
+      after();
+      return;
+    }
+    afterLastWords(room, player || null);
+  }
+
+  /** 夜里死的人按顺序留遗言，说完再继续（移交警徽 / 猎人开枪）。 */
+  function nightLastWords(room, queue, then) {
+    if (room.phase !== 'playing') return;
+    const player = queue.shift();
+    if (!player) {
+      then();
+      return;
+    }
+    lastWords(room, player, () => nightLastWords(room, queue, then));
   }
 
   function afterLastWords(room, player) {
     const g = room.game;
+    if (!player) {
+      // 兜底：找不到人就直接往下走，别把整局卡死在遗言阶段
+      continueAfterDeaths(room);
+      return;
+    }
     const sheriffSeat = g.badge.holderSeat;
     const then = () => afterExecuted(room, player);
 
@@ -1524,6 +1614,19 @@ export function createWerewolfEngine(options = {}) {
     });
   }
 
+  /**
+   * 这个人已经死了、而且是警长 → 当场移交警徽，再继续 `then`。
+   * 返回 true 表示后续流程已经被接管（调用方不要再自己往下走）。
+   */
+  function badgeIfDead(room, player, then) {
+    const g = room.game;
+    if (player && !player.alive && g.badge.holderSeat === player.seat) {
+      badgeTransfer(room, player, then);
+      return true;
+    }
+    return false;
+  }
+
   function badgeTransfer(room, sheriff, after) {
     const g = room.game;
     g.pending = { type: 'badgeTransfer', seat: sheriff.seat };
@@ -1578,11 +1681,15 @@ export function createWerewolfEngine(options = {}) {
         if (w) return endGame(room, w);
         enterNight(room, g.day + 1);
       };
-      if (canShootNow(target)) {
-        shootPlayers(room, [target], toNight);
-      } else {
-        toNight();
-      }
+      const cont = () => {
+        if (canShootNow(target)) {
+          shootPlayers(room, [target], toNight);
+        } else {
+          toNight();
+        }
+      };
+      // 被决斗死的狼如果戴着警徽，要当场移交
+      if (!badgeIfDead(room, target, cont)) cont();
       return;
     }
 
@@ -1681,6 +1788,8 @@ export function createWerewolfEngine(options = {}) {
     if (target && target.alive && target.seat !== player.seat) {
       kill(room, target.seat, 'wwk');
       system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 带走了 ${seatLabel(target.seat)} ${target.name}。`);
+      // 被带走的是警长就当场移交，别拖到第二天天亮
+      if (badgeIfDead(room, target, () => whiteWolfKingBoomDone(room, player, target))) return;
       return whiteWolfKingBoomDone(room, player, target);
     }
     system(room, `白狼王 ${seatLabel(player.seat)} ${player.name} 没有带走任何人。`);
@@ -1747,6 +1856,23 @@ export function createWerewolfEngine(options = {}) {
       return { ok: true };
     }
 
+    /*
+     * 狼人夜间频道。
+     *
+     * 白天是全员听得见的 `speech`，这里是**只有狼队**看得到的文字 —— 引擎喊了
+     * "商量今晚要刀谁"，总得有地方商量。消息带 `scope:'wolf'`，由 viewFor 按人裁剪，
+     * 好人拿到的报文里根本不存在这些条目。
+     */
+    if (type === 'wolfChat') {
+      if (g.phase !== PHASE.NIGHT_WOLF_ACTION) return { ok: false, message: '现在不是狼人交流的时间' };
+      if (!me.alive || !isWolfRole(me.role)) return { ok: false, message: '只有狼人能用这个频道' };
+      const text = String(action.text || '').trim().slice(0, SPEECH_MAX);
+      if (!text) return { ok: false, message: '说点什么再发' };
+      speak(room, me, text, { scope: 'wolf' });
+      changed(room);
+      return { ok: true };
+    }
+
     // 夜晚动作
     if (g.phase === PHASE.NIGHT_GUARD_ACTION) {
       if (!me.alive || me.role !== 'Guard' || g.night.actor !== me.id) {
@@ -1760,6 +1886,10 @@ export function createWerewolfEngine(options = {}) {
         if (me.lastGuardTarget === target.seat) return { ok: false, message: '不能连续两晚守护同一个人' };
         if (!g.night.guardTargets.includes(target.seat)) g.night.guardTargets.push(target.seat);
         me.lastGuardTarget = target.seat;
+      } else {
+        // 空守：今晚不守任何人。连守记录也要清掉，否则"不能连续两晚守同一人"
+        // 会变成"隔一晚也不能守"。
+        me.lastGuardTarget = null;
       }
       g.night.actor = null;
       g.night.guardIndex += 1;
@@ -1790,7 +1920,15 @@ export function createWerewolfEngine(options = {}) {
       if (!me.alive || me.role !== 'WolfBeauty' || g.night.actor !== me.id) {
         return { ok: false, message: '现在不是你的行动' };
       }
-      if (type !== 'charm') return { ok: false, message: '狼美人请选择魅惑目标' };
+      if (type !== 'charm') return { ok: false, message: '狼美人请选择魅惑目标（也可以空过）' };
+      if (action.seat === null || action.seat === undefined) {
+        // 空过：今晚谁也不魅惑。（以前这里会被 Number(null) = 0 当成 0 号座位）
+        me.charmedSeat = null;
+        g.night.actor = null;
+        g.night.wolfBeautyIndex += 1;
+        nextWolfBeauty(room);
+        return { ok: true };
+      }
       const target = bySeat(room, Number(action.seat));
       if (!target || !target.alive) return { ok: false, message: '这个座位不能魅惑' };
       if (target.seat === me.seat) return { ok: false, message: '不能魅惑自己' };
@@ -1842,7 +1980,14 @@ export function createWerewolfEngine(options = {}) {
       if (!me.alive || me.role !== 'Seer' || g.night.actor !== me.id) {
         return { ok: false, message: '现在不是你的行动' };
       }
-      if (type !== 'seer') return { ok: false, message: '预言家请选择查验目标' };
+      if (type !== 'seer') return { ok: false, message: '预言家请选择查验目标（也可以今晚不验）' };
+      if (action.seat === null || action.seat === undefined) {
+        // 空验：今晚不查。（以前这里会被 Number(null) = 0 当成 0 号座位）
+        g.night.actor = null;
+        g.night.seerIndex += 1;
+        nextSeer(room);
+        return { ok: true };
+      }
       const target = bySeat(room, Number(action.seat));
       if (!target || !target.alive) return { ok: false, message: '这个座位不能查验' };
       if (target.seat === me.seat) return { ok: false, message: '不能查验自己' };
@@ -1883,7 +2028,7 @@ export function createWerewolfEngine(options = {}) {
       const voterIds = alive(room)
         .filter((p) => !g.badge.candidates.includes(p.seat))
         .map((p) => p.id);
-      if (voterIds.every((id) => typeof g.badgeVotes[id] === 'number')) finishBadgeElection(room);
+      if (voterIds.length > 0 && voterIds.every((id) => typeof g.badgeVotes[id] === 'number')) finishBadgeElection(room);
       return { ok: true };
     }
 
@@ -1949,13 +2094,17 @@ export function createWerewolfEngine(options = {}) {
         system(room, `${shooterName} ${seatLabel(me.seat)} ${me.name} 没有开枪。`);
       }
       // 被带走的如果也是猎人/狼王，继续连锁开枪
-      if (canShootNow(target)) {
-        shootPlayer(room, target, after);
-      } else if (typeof after === 'function') {
-        after();
-      } else {
-        continueAfterDeaths(room);
-      }
+      const cont = () => {
+        if (canShootNow(target)) {
+          shootPlayer(room, target, after);
+        } else if (typeof after === 'function') {
+          after();
+        } else {
+          continueAfterDeaths(room);
+        }
+      };
+      // 被枪杀的如果是警长，警徽当场移交（以前要拖到第二天天亮）
+      if (!badgeIfDead(room, target, cont)) cont();
       return { ok: true };
     }
 
@@ -2053,8 +2202,7 @@ export function createWerewolfEngine(options = {}) {
       return;
     }
     if (g.phase === PHASE.DAY_LAST_WORDS) {
-      const player = bySeat(room, g.speaker);
-      afterLastWords(room, player);
+      finishLastWords(room, bySeat(room, g.speaker));
     }
   }
 
@@ -2089,7 +2237,7 @@ export function createWerewolfEngine(options = {}) {
     };
   }
 
-  function viewFor(userId) {
+  function viewFor(userId, opts = {}) {
     const code = seatOf.get(userId);
     const room = code ? rooms.get(code) : null;
     if (!room) return null;
@@ -2124,6 +2272,8 @@ export function createWerewolfEngine(options = {}) {
         ...(ended || p.id === userId || (meIsWolf && isWolfRole(p.role))
           ? { role: p.role, alignment: p.alignment }
           : {}),
+        // 白痴翻牌是当众宣布过的公开信息（前端据此把他置灰、投票进度条才算得对）
+        idiotRevealed: Boolean(p.abilities.idiotRevealed),
       }));
 
     const base = {
@@ -2135,7 +2285,9 @@ export function createWerewolfEngine(options = {}) {
       phaseStartedAt: g.phaseStartedAt,
       duration: room.deadline ? Math.max(0, room.deadline - g.phaseStartedAt) : 0,
       players,
-      messages: g.messages.slice(),
+      messages: messagesFor(room, me, opts.since),
+      // 已经产生的最大消息序号，客户端拿它当"我收到哪儿了"
+      messagesSeq: messageSeq,
       currentSpeakerSeat: g.speaker,
       speechOrder: g.speechOrder.slice(),
       badge: {
@@ -2188,6 +2340,24 @@ export function createWerewolfEngine(options = {}) {
     return base;
   }
 
+  /** 一次最多回传多少条历史消息（整局重传会把报文越拖越大）。 */
+  const MESSAGES_PAGE = 200;
+
+  /**
+   * 该玩家看得到的消息。三件事：
+   *   1. 狼人夜间频道（`scope === 'wolf'`）只发给狼人；
+   *   2. 给了 `since` 就只发这之后的新消息（增量，不再整份重传）；
+   *   3. 没给 `since`（刚打开页面/刷新）就发最近 MESSAGES_PAGE 条。
+   */
+  function messagesFor(room, me, since) {
+    const g = room.game;
+    const wolfViewer = isWolfRole(me.role);
+    const visible = g.messages.filter((m) => !m.scope || (m.scope === 'wolf' && wolfViewer));
+    const after = Number(since);
+    if (Number.isFinite(after) && after > 0) return visible.filter((m) => Number(m.seq || 0) > after);
+    return visible.slice(-MESSAGES_PAGE);
+  }
+
   function legalActions(room, me, userId) {
     const g = room.game;
     const can = {
@@ -2233,11 +2403,14 @@ export function createWerewolfEngine(options = {}) {
     ) {
       can.wwkBoom = true;
     }
-    if (!me.alive) return can;
-    if (isSpeechPhase(g.phase) && g.speaker === me.seat) {
+    // 遗言阶段是"已经出局的人"在说话，所以这条要排在 alive 判断之前：
+    // 否则夜里死的人拿不到 can.speech，界面不给输入框，只能干等 180 秒。
+    if (isSpeechPhase(g.phase) && g.speaker === me.seat && (me.alive || g.phase === PHASE.DAY_LAST_WORDS)) {
       can.speech = true;
       can.endSpeech = true;
+      if (g.phase === PHASE.DAY_LAST_WORDS) can.lastWords = true;
     }
+    if (!me.alive) return can;
     if (g.phase === PHASE.NIGHT_GUARD_ACTION && g.night.actor === me.id) can.guard = true;
     if (g.phase === PHASE.NIGHT_WOLF_ACTION && isWolfRole(me.role)) can.wolf = true;
     if (g.phase === PHASE.NIGHT_WOLF_BEAUTY_ACTION && g.night.actor === me.id) can.wolfBeauty = true;
@@ -2424,6 +2597,7 @@ export function createWerewolfEngine(options = {}) {
     createRoom,
     joinRoom,
     leaveRoom,
+    kickPlayer,
     startGame,
     restartRoom,
     destroyRoom,

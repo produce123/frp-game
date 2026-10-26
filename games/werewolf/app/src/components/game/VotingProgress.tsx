@@ -18,16 +18,20 @@ export function VotingProgress({ gameState, humanPlayer }: VotingProgressProps) 
   const isBadgeElection = gameState.phase === "DAY_BADGE_ELECTION";
   const votes = isBadgeElection ? gameState.badge.votes : gameState.votes;
   
-  // 已翻牌白痴不参与投票
-  const revealedIdiotId = gameState.roleAbilities.idiotRevealed
-    ? gameState.players.find(p => p.role === "Idiot" && p.alive)?.playerId
-    : undefined;
+  // 已翻牌的白痴不参与投票：服务器把"谁翻牌了"当公开信息下发（idiotRevealed），
+  // 以前这里用 roleAbilities.idiotRevealed（只有自己是白痴时才为真）+ role === "Idiot"，
+  // 而别人的 role 根本不下发（被兜成平民），所以永远算不到。
+  const revealedIdiotIds = new Set(
+    gameState.players.filter(p => p.idiotRevealed).map(p => p.playerId),
+  );
 
   // 警长投票阶段，候选人不参与投票
   const candidates = gameState.badge.candidates || [];
+  // PK 复投时台上的人也不能投票（服务器 dayVote({revote}) 就是这么排的）
+  const pkSeats = new Set(gameState.pkTargets || []);
   const eligibleVoters = isBadgeElection 
     ? alivePlayers.filter(p => !candidates.includes(p.seat))
-    : alivePlayers.filter(p => p.playerId !== revealedIdiotId);
+    : alivePlayers.filter(p => !revealedIdiotIds.has(p.playerId) && !pkSeats.has(p.seat));
   const totalVoters = eligibleVoters.length;
   const votedCount = eligibleVoters.reduce((count, voter) => {
     return votes[voter.playerId] !== undefined ? count + 1 : count;

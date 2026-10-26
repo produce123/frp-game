@@ -308,7 +308,7 @@ function readRawBody(req, limit) {
 export function createRequestHandler({ store, availableGames = () => [], avatars, hub = null, rooms = null,
   nonamePresence = null, monopolyPresence = null, werewolf = null, monopoly = null,
   mahjong = null, mahjongPresence = null, aiTown = null }) {
-  async function handleApi(req, res, pathname) {
+  async function handleApi(req, res, pathname, searchParams = null) {
     /* ------------------------------ 狼人杀 ------------------------------ */
 
     /*
@@ -328,7 +328,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
         }
       }
       const result = werewolf
-        ? await werewolf.handleApi(user, pathname, body)
+        ? await werewolf.handleApi(user, pathname, body, searchParams)
         : { status: 503, body: { ok: false, message: '狼人杀没接上（服务端配置问题）' } };
       return sendJSON(res, result.status, result.body);
     }
@@ -1398,7 +1398,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
         return;
       }
       if (pathname.startsWith('/api/') || pathname.startsWith('/avatar/') || pathname === MONOPOLY_API_PREFIX || pathname.startsWith(MONOPOLY_API_PREFIX + '/')) {
-        await handleApi(req, res, pathname);
+        await handleApi(req, res, pathname, searchParams);
         return;
       }
       /*

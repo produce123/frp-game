@@ -215,10 +215,18 @@ export default function WerewolfPage() {
     if (!view) return;
     const phase = view.phase;
 
-    // 空选：撕警徽 / 猎人不开枪
+    // 空选：「这一轮/这一晚不选人」的所有动作都在这里。
+    // 服务端本来就支持（弃票、空守、空刀、空验、不魅惑、不带走），以前界面没给入口。
     if (selectedSeat === null) {
       if (phase === "BADGE_TRANSFER" && view.can.transfer) await submit({ type: "transfer", seat: null });
       else if (phase === "HUNTER_SHOOT" && view.can.hunter) await submit({ type: "hunter", seat: null });
+      else if (phase === "DAY_VOTE" && view.can.vote) await submit({ type: "vote", seat: null });
+      else if (phase === "DAY_BADGE_ELECTION" && view.can.badgeVote) await submit({ type: "badgeVote", seat: null });
+      else if (phase === "NIGHT_GUARD_ACTION" && view.can.guard) await submit({ type: "guard", seat: null });
+      else if (phase === "NIGHT_WOLF_ACTION" && view.can.wolf) await submit({ type: "wolf", seat: null });
+      else if (phase === "NIGHT_WOLF_BEAUTY_ACTION" && view.can.wolfBeauty) await submit({ type: "charm", seat: null });
+      else if (phase === "NIGHT_SEER_ACTION" && view.can.seer) await submit({ type: "seer", seat: null });
+      else if (phase === "WHITE_WOLF_KING_BOOM" && view.can.wwkBoom) await submit({ type: "wwkBoom", seat: null });
       return;
     }
 
@@ -256,12 +264,32 @@ export default function WerewolfPage() {
     [view, submit],
   );
 
+  /*
+   * 发言可以连发多段：一轮发言里发多少条都行，只有点「结束发言」或倒计时到点才换人。
+   * `sendingRef` 只防"同一个动作被连点两次"（双击 / 手机双击缩放）。
+   */
+  const sendingRef = useRef(false);
   const handleSpeak = useCallback(async () => {
     const text = inputText.trim();
-    if (!text) return;
-    await net.act({ type: "speech", text });
-    setInputText("");
+    if (!text || sendingRef.current) return;
+    sendingRef.current = true;
+    try {
+      await net.act({ type: "speech", text });
+      setInputText("");
+    } finally {
+      sendingRef.current = false;
+    }
   }, [inputText, net]);
+
+  /** 狼人夜间频道：只有狼看得见，不影响白天发言。 */
+  const handleWolfChat = useCallback(
+    async (text: string) => {
+      const said = text.trim();
+      if (!said) return;
+      await net.act({ type: "wolfChat", text: said });
+    },
+    [net],
+  );
 
   const handleFinishSpeaking = useCallback(async () => {
     await net.act({ type: "endSpeech" });
@@ -330,6 +358,13 @@ export default function WerewolfPage() {
       isBadgeHolder={view.badge.holderSeat === player.seat}
       isBadgeCandidate={view.badge.candidates.includes(player.seat)}
       showRoleBadge={player.playerId === humanPlayer?.playerId || view.phase === "GAME_END"}
+      // 点不开的座位不再"点了没反应"：弹一句公开信息（身份只有服务器给了才显示）
+      onDetailClick={() => {
+        const role = player.roleKnown && player.role ? ` · ${roleLabel(player.role)}` : "";
+        toast.info(`${player.seat + 1} 号 ${player.displayName}`, {
+          description: `${player.alive ? "存活" : "已出局"}${view.badge.holderSeat === player.seat ? " · 警长" : ""}${role}`,
+        });
+      }}
       variant={variant}
     />
   );
@@ -421,6 +456,7 @@ export default function WerewolfPage() {
               onWhiteWolfKingBoom={handleWhiteWolfKingBoom}
               onKnightDuel={handleKnightDuel}
               onWolfKingSelfDestruct={handleWolfKingSelfDestruct}
+              onWolfChat={handleWolfChat}
               onRestart={() => void net.restartGame()}
               isEventLogOpen={isEventLogOpen}
               onEventLogOpenChange={setIsEventLogOpen}

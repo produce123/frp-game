@@ -146,6 +146,16 @@ export interface Player {
   alignment: Alignment;
   isHuman: boolean;
   agentProfile?: AgentProfile;
+  /**
+   * 服务器有没有把这张身份牌发给我。
+   *
+   * 别人（以及终局之前的好人视角）的身份服务器**根本不会下发**，
+   * 以前这里被 `p.role || "Villager"` 兜成了平民 —— 那是假的：
+   * 谁都不知道这个人是平民还是"我还不知道"。需要按身份做判断的地方先看这个标记。
+   */
+  roleKnown?: boolean;
+  /** 白痴已经当众翻牌（公开信息，投票进度条要用它把这个人从分母里去掉） */
+  idiotRevealed?: boolean;
 }
 
 export type GameEventType =
@@ -181,6 +191,10 @@ export interface ChatMessage {
   speechRound?: number;
   pkSource?: "badge" | "vote";
   isLastWords?: boolean;  // Flag for last words (遗言) messages
+  /** 服务器消息序号（增量拉消息用） */
+  seq?: number;
+  /** 'wolf' = 只有狼人看得到的夜间频道消息 */
+  scope?: string;
 }
 
 /** 已结算且公开的投票快照；旧存档中的每日票型仍保留作兼容回退。 */

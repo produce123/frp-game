@@ -109,6 +109,17 @@ async function playNightAuto(engine, users, opts = {}) {
       await sleep(5);
       continue;
     }
+    // 夜里死的人现在也有遗言（天亮公布死讯之后），驱动器替他"说完"
+    if (view.phase === PHASE.DAY_LAST_WORDS) {
+      // 想断言遗言内容的用例传 stopAtLastWords，让驱动器停在这里别替他说完
+      if (opts.stopAtLastWords) return view;
+      for (const u of users) {
+        const v = engine.viewFor(u.id);
+        if (v?.can.endSpeech) engine.act(u.id, { type: 'endSpeech' });
+      }
+      await sleep(5);
+      continue;
+    }
     if (!view.phase.startsWith('NIGHT_') || view.phase === PHASE.NIGHT_RESOLVE) {
       return view;
     }
@@ -116,7 +127,8 @@ async function playNightAuto(engine, users, opts = {}) {
     if (view.phase === PHASE.NIGHT_GUARD_ACTION) {
       for (const u of users) {
         const v = engine.viewFor(u.id);
-        if (v?.can.guard) engine.act(u.id, { type: 'guard', seat: null });
+        // opts.guardSeat 不传就是空守（服务端把 `seat:null` 当"今晚不守"）
+        if (v?.can.guard) engine.act(u.id, { type: 'guard', seat: opts.guardSeat ?? null });
       }
       await sleep(5);
       continue;
@@ -189,7 +201,17 @@ async function playNightAuto(engine, users, opts = {}) {
       for (const u of users) {
         const v = engine.viewFor(u.id);
         if (!v?.can.seer) continue;
-        const seat = opts.seerSeat ?? opts.wolfSeat ?? engine.viewFor(users[1].id).self.seat;
+        // 显式传 seerSeat:null = 空验（"今晚不验"也是合法操作）
+        let seat;
+        if (Object.prototype.hasOwnProperty.call(opts, 'seerSeat')) {
+          seat = opts.seerSeat;
+        } else {
+          const other = users.find((x) => {
+            const xv = engine.viewFor(x.id);
+            return xv?.self.alive && xv.self.seat !== v.self.seat;
+          });
+          seat = other ? engine.viewFor(other.id).self.seat : null;
+        }
         const res = engine.act(u.id, { type: 'seer', seat });
         assert.equal(res.ok, true, `查验失败：${JSON.stringify(res)}`);
       }
@@ -889,28 +911,53 @@ describe('狼人杀引擎 · 白天与投票', () => {
     engine.reset();
   });
 
-  it('放逐投票把狼投出去，第二天狼人少一只', async () => {
-    const { engine, ended } = makeEngine();
+  it('放逐投票把狼投出去，那只狼当场出局', async () => {
+    const { engine } = makeEngine();
     const { users } = await makeRoom(engine, 6);
-    const wolf = seatOfRole(engine, users, 'Werewolf');
+    const wolfUser = seatOfRole(engine, users, 'Werewolf');
+    const wolfSeat = seatOf(engine, wolfUser);
     const me = users[0];
 
-    // 第一晚：空刀（狼人不投目标 → 空刀）
-    await playNight(engine, users, { wolfSeat: undefined, seerSeat: seatOf(engine, wolf) });
-    // 第一天：全部跳过警长，直接发言 + 投票
-    const afterDay = await playDay(engine, users, { signup: [], votes: {} });
-    const v = engine.viewFor(me.id);
-    // 走到夜晚后检查狼的数量
-    assert.ok(v);
+    // 第一晚：空刀（狼人都不投目标），没人死，第二天才有的打
+    await playNight(engine, users, { wolfSeat: undefined, seerSeat: wolfSeat });
+    assert.equal(engine.viewFor(wolfUser.id).self.alive, true, '空刀之后狼应该还活着');
+
+    // 第一天：不走警长流程，全员把票投给那只狼
+    await playDay(engine, users, { signup: [], votes: votesFor(engine, users, wolfSeat) });
+
+    const after = engine.viewFor(wolfUser.id);
+    assert.equal(after.self.alive, false, '票数最多的人必须出局');
+    assert.equal(after.phase.startsWith('NIGHT_') || after.phase === PHASE.GAME_END, true,
+      `放逐结算完应该进夜晚（或结束），现在是 ${after.phase}`);
     engine.reset();
-    assert.ok(ended.length >= 0);
   });
 
-  it('倒计时到点会自动推进（没人操作也能往下走）', async () => {
+  it('全员弃票：没人出局，直接进夜晚', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 6, { sheriff: false });
+    const me = users[0];
+
+    await playNightAuto(engine, users, { wolfSeat: null });
+    await waitPhase(engine, me, PHASE.DAY_SPEECH, 8000);
+    // votes 里没有任何人有目标 → 全部弃票
+    const after = await playDay(engine, users, { votes: {} });
+
+    for (const u of users) {
+      assert.equal(engine.viewFor(u.id).self.alive, true, `${u.name} 不该因为弃票而出局`);
+    }
+    assert.equal(after.phase.startsWith('NIGHT_'), true, `全员弃票应该直接进夜晚，现在是 ${after.phase}`);
+    engine.reset();
+  });
+
+  it('倒计时到点会自动推进（没人报名警长也不会卡住）', async () => {
     const { engine } = makeEngine();
     const { users } = await makeRoom(engine, 6);
     const me = users[0];
     await waitPhase(engine, me, PHASE.DAY_BADGE_SIGNUP, 8000);
+    // 谁都不报名 → 报名倒计时到点后没有候选人，警徽不存在，直接进白天发言
+    const next = await waitFor(engine, me,
+      (v) => v.phase === PHASE.DAY_SPEECH || v.phase === PHASE.DAY_VOTE, 8000);
+    assert.equal(next.badge.holderSeat, null, '没人上警就不该有警长');
     engine.reset();
   });
 });
@@ -1281,6 +1328,259 @@ describe('狼人杀引擎 · 打完再来一局', () => {
     assert.equal(after.lobby.players.length, 4, '4 个座位都还在');
     assert.equal(after.winner ?? null, null);
     assert.equal(engine.leaveRoom(users[1].id).ok, true, '打完能正常退房回大厅');
+    engine.reset();
+  });
+});
+
+/* ================================================================== *
+ * 2026-10 这一轮修的规则（用户逐条拍板过）
+ *   · 所有行动都能"空选"：弃票 / 空守 / 空刀 / 空验 / 不魅惑
+ *   · 夜里死的人也有遗言（天亮公布死讯之后）
+ *   · 白痴翻牌后再被投出也不死
+ *   · 狼队夜间文字频道（只有狼看得见）
+ *   · 增量拉消息（viewFor 的 since）
+ *   · 一个人同时只能在一个房间
+ * ================================================================== */
+
+describe('狼人杀引擎 · 空选（弃票 / 空守 / 空刀 / 空验 / 不魅惑）', () => {
+  it('守卫空守之后，下一晚可以再守同一个人', async () => {
+    const { engine } = makeEngine();
+    const roles = { Guard: 1, Werewolf: 1, Seer: 1, Villager: 3 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const guard = seatOfRole(engine, users, 'Guard');
+    const target = users.find((u) => roleOf(engine, u) === 'Villager');
+    const targetSeat = seatOf(engine, target);
+    const me = users[0];
+
+    // 第 1 夜：守 A（之后狼空刀、预言家查验，保证没人死）
+    await waitPhase(engine, guard, PHASE.NIGHT_GUARD_ACTION, 8000);
+    assert.equal(engine.act(guard.id, { type: 'guard', seat: targetSeat }).ok, true);
+    await playNightAuto(engine, users, { wolfSeat: null, seerSeat: targetSeat });
+    await playDay(engine, users, { votes: {} });
+
+    // 第 2 夜：空守
+    await waitPhase(engine, guard, PHASE.NIGHT_GUARD_ACTION, 8000);
+    assert.equal(engine.act(guard.id, { type: 'guard', seat: null }).ok, true, '空守必须是合法操作');
+    await playNightAuto(engine, users, { wolfSeat: null, seerSeat: targetSeat });
+
+    // 第 3 夜：再守 A —— 空守这一晚不算"连续"，不该被拦
+    await waitPhase(engine, guard, PHASE.NIGHT_GUARD_ACTION, 8000);
+    const res = engine.act(guard.id, { type: 'guard', seat: targetSeat });
+    assert.equal(res.ok, true, `空守之后应该能再守同一个人：${JSON.stringify(res)}`);
+    engine.reset();
+  });
+
+  it('预言家空验：不落查验记录，也不会误查 0 号', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 1, Seer: 1, Villager: 4 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const seer = seatOfRole(engine, users, 'Seer');
+    const me = users[0];
+
+    await waitPhase(engine, seer, PHASE.NIGHT_SEER_ACTION, 8000);
+    assert.equal(engine.act(seer.id, { type: 'seer', seat: null }).ok, true, '空验必须是合法操作');
+    const view = engine.viewFor(seer.id);
+    assert.equal((view.private.seerHistory || []).length, 0, '空验不该产生一条"查了 0 号"的记录');
+    await playNightAuto(engine, users, { wolfSeat: null });
+    engine.reset();
+  });
+
+  it('狼人空刀：不投票就没人死，夜晚照常走完', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 1, Seer: 1, Villager: 4 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    const me = users[0];
+
+    await waitPhase(engine, wolf, PHASE.NIGHT_WOLF_ACTION, 8000);
+    assert.equal(engine.act(wolf.id, { type: 'wolf', seat: null }).ok, true, '空刀必须是合法操作');
+    await playNightAuto(engine, users, { wolfSeat: null });
+    for (const u of users) {
+      assert.equal(engine.viewFor(u.id).self.alive, true, '空刀这一晚不该有人死');
+    }
+    assert.equal(engine.viewFor(me.id).phase.startsWith('DAY_'), true, '空刀也必须照常天亮');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 夜间死者遗言', () => {
+  it('天亮先公布死讯，再让死者说遗言；死者有发言权', async () => {
+    const { engine } = makeEngine();
+    const roles = { Werewolf: 1, Seer: 1, Villager: 4 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const victim = users.find((u) => roleOf(engine, u) === 'Villager');
+    const victimSeat = seatOf(engine, victim);
+    const me = users[0];
+
+    await playNightAuto(engine, users, { wolfSeat: victimSeat, seerSeat: null, stopAtLastWords: true });
+
+    const lw = await waitFor(engine, me, (v) => v.phase === PHASE.DAY_LAST_WORDS, 8000);
+    assert.equal(lw.currentSpeakerSeat, victimSeat, '该由夜里的死者说遗言');
+    const mine = engine.viewFor(victim.id);
+    assert.equal(mine.can.speech, true, '遗言阶段死者必须能说话（以前只能干等 180 秒）');
+    assert.equal(mine.can.endSpeech, true);
+
+    assert.equal(engine.act(victim.id, { type: 'speech', text: '我是民，狼在 3 号' }).ok, true);
+    assert.equal(engine.act(victim.id, { type: 'endSpeech' }).ok, true);
+    await waitFor(engine, me, (v) => v.phase !== PHASE.DAY_LAST_WORDS, 8000);
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 白痴（翻牌后再被投出也不死）', () => {
+  it('第一次翻牌免死，第二次再被投出依然免死', async () => {
+    const { engine } = makeEngine();
+    const roles = { Idiot: 1, Werewolf: 1, Seer: 1, Villager: 3 };
+    const { users } = await makeRoom(engine, 6, { roles, sheriff: false });
+    const idiot = seatOfRole(engine, users, 'Idiot');
+    const idiotSeat = seatOf(engine, idiot);
+    const me = users[0];
+
+    // 第 1 夜空刀 → 第 1 天全员投白痴
+    await playNightAuto(engine, users, { wolfSeat: null });
+    await waitPhase(engine, me, PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: votesFor(engine, users, idiotSeat) });
+
+    assert.equal(engine.viewFor(idiot.id).self.alive, true, '翻牌当轮不该死');
+    const publicView = engine.viewFor(me.id).players.find((p) => p.seat === idiotSeat);
+    assert.equal(publicView.idiotRevealed, true, '翻牌是公开信息（投票进度条要按它算分母）');
+
+    // 第 2 夜空刀 → 第 2 天再投同一个白痴
+    await playNightAuto(engine, users, { wolfSeat: null });
+    await waitPhase(engine, me, PHASE.DAY_SPEECH, 8000);
+    await playDay(engine, users, { votes: votesFor(engine, users, idiotSeat) });
+    assert.equal(engine.viewFor(idiot.id).self.alive, true, '翻过牌的白痴再被投出也不该死');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 狼队夜间频道', () => {
+  it('狼聊只有狼看得见；好人发不出去', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 8);
+    const wolf = seatOfRole(engine, users, 'Werewolf');
+    const good = users.find((u) => {
+      const r = roleOf(engine, u);
+      return r && !isWolfRole(r);
+    });
+    assert.ok(good, '8 人局里应该有好人');
+
+    await waitPhase(engine, wolf, PHASE.NIGHT_WOLF_ACTION, 8000);
+    const sent = engine.act(wolf.id, { type: 'wolfChat', text: '今晚刀 3 号' });
+    assert.equal(sent.ok, true, JSON.stringify(sent));
+
+    const wolfView = engine.viewFor(wolf.id);
+    const hit = wolfView.messages.find((m) => m.content === '今晚刀 3 号');
+    assert.ok(hit, '狼自己要能看见');
+    assert.equal(hit.scope, 'wolf');
+
+    const goodView = engine.viewFor(good.id);
+    assert.equal(
+      goodView.messages.some((m) => m.content === '今晚刀 3 号'),
+      false,
+      '好人报文里绝不能出现狼聊',
+    );
+
+    const denied = engine.act(good.id, { type: 'wolfChat', text: '我是好人' });
+    assert.equal(denied.ok, false, '好人不能往狼队频道发消息');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 增量拉消息', () => {
+  it('带 since 只回新消息，不带就是最近一段', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 6);
+    const me = users[0];
+
+    const first = engine.viewFor(me.id);
+    assert.ok(first.messages.length > 0, '开局至少要有系统消息');
+    const top = first.messages[first.messages.length - 1].seq;
+    assert.equal(typeof top, 'number', '每条消息都要有 seq');
+
+    const again = engine.viewFor(me.id, { since: top });
+    assert.equal(again.messages.length, 0, '没有新消息时不该重复下发历史');
+
+    // 走完一夜：这期间会产生新消息
+    await playNightAuto(engine, users, { wolfSeat: null });
+    const delta = engine.viewFor(me.id, { since: top });
+    assert.ok(delta.messages.length > 0, '有新消息时必须回传');
+    assert.ok(delta.messages.every((m) => m.seq > top), '增量里不许混进旧消息');
+    // 整段（不带 since）一定比增量多
+    const full = engine.viewFor(me.id);
+    assert.ok(full.messages.length > delta.messages.length);
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 不会被"点错房间"带走', () => {
+  it('正在打的一局，点别的房间不会把人拽走', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 6);
+    const other = engine.createRoom({ host: { id: 'ux', name: '丙' }, seats: 6 });
+    assert.equal(other.ok, true, JSON.stringify(other));
+
+    const res = engine.joinRoom({ user: users[1], code: other.code });
+    assert.equal(res.ok, false, '正在进行的对局不能被别的房间带走');
+    assert.ok(res.message, '要告诉玩家为什么进不去');
+    // 他还在原来那局里，座位没丢
+    const view = engine.viewFor(users[1].id);
+    assert.ok(view, '人还在原房间');
+    assert.notEqual(view.phase, 'WAITING', '不该被踢回大厅');
+    engine.reset();
+  });
+
+  it('大厅里换房间（两边都还没开局）是允许的', async () => {
+    const { engine } = makeEngine();
+    const a = engine.createRoom({ host: { id: 'ua', name: '甲' }, seats: 6 });
+    const b = engine.createRoom({ host: { id: 'ub', name: '乙' }, seats: 6 });
+    assert.equal(engine.joinRoom({ user: { id: 'uc', name: '丙' }, code: a.code }).ok, true);
+    assert.equal(engine.joinRoom({ user: { id: 'uc', name: '丙' }, code: b.code }).ok, true, '没开局就随便换');
+    engine.reset();
+  });
+});
+
+describe('狼人杀引擎 · 警徽：警长夜里被刀', () => {
+  it('先让死者说遗言，再移交警徽', async () => {
+    const { engine } = makeEngine();
+    const { users } = await makeRoom(engine, 8);
+    const sheriff = users[0];
+    const sheriffSeat = seatOf(engine, sheriff);
+    const me = users[0];
+
+    // 第 1 天：只有 0 号上警 → 当选
+    await waitPhase(engine, me, PHASE.DAY_BADGE_SIGNUP, 8000);
+    assert.equal(engine.act(sheriff.id, { type: 'signup', wants: true }).ok, true);
+    for (let i = 1; i < users.length; i++) engine.act(users[i].id, { type: 'signup', wants: false });
+
+    for (let i = 0; i < 40; i++) {
+      const v = engine.viewFor(me.id);
+      if (v.phase !== PHASE.DAY_BADGE_SPEECH) break;
+      const speaker = users.find((u) => engine.viewFor(u.id)?.self.seat === v.currentSpeakerSeat);
+      if (speaker) engine.act(speaker.id, { type: 'endSpeech' });
+      await sleep(10);
+    }
+    // 只有一个人上警 → 不用投票，直接当选
+    const speech = await waitFor(engine, me, (v) => v.phase === PHASE.DAY_SPEECH, 8000);
+    assert.equal(speech.badge.holderSeat, sheriffSeat, '0 号应该当选警长');
+
+    // 第 1 天全员弃票 → 进夜晚
+    await playDay(engine, users, { votes: {} });
+
+    // 第 2 夜：狼刀警长
+    await playNightAuto(engine, users, { wolfSeat: sheriffSeat, stopAtLastWords: true });
+
+    const lw = await waitFor(engine, me, (v) => v.phase === PHASE.DAY_LAST_WORDS, 8000);
+    assert.equal(lw.currentSpeakerSeat, sheriffSeat, '被刀的警长先留遗言');
+    assert.equal(engine.viewFor(sheriff.id).can.speech, true);
+    assert.equal(engine.act(sheriff.id, { type: 'endSpeech' }).ok, true);
+
+    const transfer = await waitFor(engine, me, (v) => v.phase === PHASE.BADGE_TRANSFER, 8000);
+    assert.equal(transfer.can.transfer, true, '死掉的警长也要能移交');
+    assert.equal(engine.act(sheriff.id, { type: 'transfer', seat: 1 }).ok, true);
+
+    const after = await waitFor(engine, me, (v) => v.badge.holderSeat === 1, 8000);
+    assert.equal(after.badge.holderSeat, 1, '警徽应该交到 1 号手上');
     engine.reset();
   });
 });

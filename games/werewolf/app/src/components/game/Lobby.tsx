@@ -390,6 +390,21 @@ function WaitingRoom({ net, lobby }: { net: NetGame; lobby: LobbyData }) {
                       </p>
                       <p className="text-xs text-[var(--text-secondary)]">{index + 1}号座位</p>
                     </div>
+                    {/* 掉线的人不会自己退房，房主可以把他踢掉腾出座位 */}
+                    {isHost && player.id !== net.me?.id && (
+                      <button
+                        type="button"
+                        data-testid="kick-player"
+                        title="把这个人移出房间"
+                        onClick={() => {
+                          if (!window.confirm(`把「${player.name}」移出房间？`)) return;
+                          void net.kickMember(player.id);
+                        }}
+                        className="ml-auto rounded-lg border border-[var(--glass-border)] px-2 py-1 text-xs text-[var(--text-secondary)] hover:border-[var(--color-danger)] hover:text-[var(--color-danger)]"
+                      >
+                        踢出
+                      </button>
+                    )}
                   </>
                 ) : (
                   <p className="text-sm text-[var(--text-secondary)]">{index + 1}号 · 等待加入</p>
@@ -412,7 +427,7 @@ function WaitingRoom({ net, lobby }: { net: NetGame; lobby: LobbyData }) {
       </button>
 
       <p className="text-center text-xs text-[var(--text-secondary)]">
-        4–18 个真人，没有电脑。开局后刷新/断线都能坐回原位，但**不能中途加入**。
+        4–18 个真人，没有电脑。开局后刷新/断线都能坐回原位，但<b>不能中途加入</b>。
       </p>
 
       <InviteDialog open={inviteOpen} onClose={() => setInviteOpen(false)} net={net} />

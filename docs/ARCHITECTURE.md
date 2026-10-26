@@ -411,9 +411,10 @@ export function createMatch(players, options) { … }
 | --- | --- | --- |
 | `GET /werewolf/`、`/werewolf/<深链>` | `http.mjs` 的 `MOUNTS` + `isWerewolfDocument` | 先查登录（没登录 302 `/?return=…`），再发 `games/werewolf/dist/index.html` |
 | `GET /werewolf/_next/*`、`/werewolf/{roles,avatars,brand}/*` | 同上 | 静态导出产物（带 hash 的长缓存；入口页 no-store） |
-| `POST /api/werewolf/room/*`、`/game/*` | `server/werewolf/index.mjs` → 引擎 `act()` | 建房/进房/离开/**再来一局**/开局/操作/状态；**身份来自会话 cookie** |
+| `POST /api/werewolf/room/*`、`/game/*` | `server/werewolf/index.mjs` → 引擎 `act()` | 建房/进房/离开/**再来一局**/开局/**踢人**（`/room/kick`，只有房主）/操作/状态；**身份来自会话 cookie** |
 | `GET /api/werewolf/me` `/friends` `/records` `/records/<id>` | 平台这一层 | 我是谁 + 我在哪间房；邀请弹窗好友；对局记录与复盘 |
 | `werewolf.event`（平台 WS） | `hub.deliver` | 房间广播。**只是"叮咚"**，客户端收到后自己再拉 `/game/status` |
+| `?since=<seq>`（`/game/status`、`/game/act`） | 引擎 `messagesFor()` | 只要 seq 之后的新消息（每 5 秒轮询不再重下整局历史）；返回体带 `messagesSeq` |
 
 **两层分工**（改之前先读）：
 
