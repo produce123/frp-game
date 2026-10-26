@@ -400,10 +400,84 @@
     net.connecting = false;
   }
 
+  /* ---------------- 断网 / 切网 / 回前台：别干等退避，立刻再试 ---------------- */
+
+  /**
+   * 立刻重连（跳过退避等待）。
+   *
+   * 手机上是常态：切到 4G、从后台回前台、Wi-Fi 换热点。浏览器给 `onclose` 的时机
+   * 并不固定（有的几百毫秒，有的几秒），退避还要再等 0.5~5 秒 —— 这几秒在用户眼里
+   * 就是"点了没反应"。
+   *
+   * ⚠️ 这里**不动**任何被用例钉住的数字（9 秒建连超时 / 2.5 秒竞速 / 25 秒心跳 /
+   *    15 秒宽限），退避策略本身也没变：只是把"已经该重连"的时刻提前。
+   */
+  function nudge() {
+    if (stopped || net.connected || net.connecting) return;
+    if (reconnectTimer) {
+      root.clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    attempts = 0;
+    connect();
+  }
+
+  if (root.addEventListener) {
+    // 网络恢复：立刻连
+    root.addEventListener('online', nudge);
+
+    /*
+     * 回到前台：连着的时候先**探一下活**。
+     *
+     * 手机锁屏久了，socket 常常还是 open 状态、对面其实早断了 —— 这种情况下
+     * 不主动问一句，用户会对着一个"看起来连着"的界面干等。发一条 ping，
+     * 宽限期（pongGraceMs）到了没回应就走现成的"心跳判死 → 重连"。
+     */
+    if (root.document && root.document.addEventListener) {
+      root.document.addEventListener('visibilitychange', function () {
+        if (root.document.visibilityState !== 'visible') return;
+        if (net.connected) {
+          var PT = (root.FrpProtocol && root.FrpProtocol.T) || {};
+          send(PT.PING || 'ping', { ts: Date.now() });
+          return;
+        }
+        nudge();
+      });
+    }
+  }
+
   /* ------------------------------ 发送 ------------------------------ */
 
+  /** 上次提示"还没连上"的时间，见 noteUnsent()。 */
+  var lastUnsentAt = 0;
+
+  /**
+   * 还没连上就发消息：以前**完全静默**返回 false，界面上看起来就是"点了没反应"
+   * （`docs/NEXT.md` 里挂了很久的那条）。现在最多每 4 秒提示一次。
+   *
+   * 用平台现成的 `FrpUI.toast`；没有 UI 的页面（测试沙箱 / 纯游戏页）退回 console.warn，
+   * 这样网络层本身仍然不依赖 UI。
+   *
+   * ⚠️ 心跳不提示：那是网络层自己的事，不该弹给用户。
+   */
+  function noteUnsent(type) {
+    var PT = (root.FrpProtocol && root.FrpProtocol.T) || {};
+    if (type === (PT.PING || 'ping')) return;
+    var now = Date.now();
+    if (now - lastUnsentAt < 4000) return;
+    lastUnsentAt = now;
+    if (root.FrpUI && typeof root.FrpUI.toast === 'function') {
+      root.FrpUI.toast('还没连上服务器，稍等一下…', 'info', 3000);
+    } else if (root.console) {
+      console.warn('[GameNet] 还没连上，这条消息没发出去：' + type);
+    }
+  }
+
   function send(type, payload) {
-    if (!socket || socket.readyState !== 1) return false;
+    if (!socket || socket.readyState !== 1) {
+      noteUnsent(type);
+      return false;
+    }
     var msg = { t: type };
     if (payload) {
       for (var key in payload) {

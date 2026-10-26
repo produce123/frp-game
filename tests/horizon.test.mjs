@@ -67,6 +67,8 @@ before(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'frp-horizon-test-'));
   app = await startServer({
     port: 0,
+    // 测试要在一个进程里造几十个账号：关掉登录/注册限流（限流本身由 security.test.mjs 专门测）
+    authLimitPerMinute: 0,
     dbPath: join(tmpDir, 'test.db'),
   });
 });

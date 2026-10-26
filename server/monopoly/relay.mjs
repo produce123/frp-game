@@ -34,6 +34,16 @@ import { randomUUID } from 'node:crypto';
 
 const MAX_ID_BYTES = 255;
 
+/**
+ * 断线之后 peerId 还能被**原主人**认领多久（房主重连回来还是同一个 id）。
+ *
+ * 为什么要有上限：`owners` 表以前**只增不减** —— 每开一次连接就多一条 `p-<uuid>`，
+ * 一直挂到进程重启。开一天就是几千条，虽然每条很小，但这是纯粹的泄漏。
+ */
+const RESUME_TTL_MS = 30 * 60_000;
+/** 表的上限。超过就先把过期的删掉，还超就按登记顺序删最老的。 */
+const OWNERS_MAX = 256;
+
 export function createMonopolyRelay() {
   /** peerId -> { conn, userId, at } */
   const peers = new Map();
@@ -45,6 +55,21 @@ export function createMonopolyRelay() {
       conn.send(message);
     } catch {
       /* 对端已经断了 */
+    }
+  }
+
+  /**
+   * 收拾 `owners`：先删过期的，再按登记顺序删到上限以内。
+   * 只删**当前没连着**的（`peers` 里还有的说明人家正在用）。
+   */
+  function pruneOwners(now = Date.now()) {
+    for (const [id, owner] of owners) {
+      if (now - owner.at > RESUME_TTL_MS) owners.delete(id);
+    }
+    if (owners.size <= OWNERS_MAX) return;
+    for (const id of [...owners.keys()]) {
+      if (owners.size <= OWNERS_MAX) break;
+      if (!peers.has(id)) owners.delete(id);
     }
   }
 
@@ -81,6 +106,7 @@ export function createMonopolyRelay() {
     switch (msg.type) {
       case 'hello': {
         if (peerId) return; // 已经注册过
+        const now = Date.now();
         const userId = conn.data?.user?.id || '';
         let id = String(msg.resume || '');
         const owner = id ? owners.get(id) : null;
@@ -93,8 +119,10 @@ export function createMonopolyRelay() {
           try { old.conn.close(4000, '连接已恢复'); } catch { /* 已断 */ }
         }
 
-        peers.set(id, { conn, userId, at: Date.now() });
-        owners.set(id, { userId, at: Date.now() });
+        peers.set(id, { conn, userId, at: now });
+        owners.set(id, { userId, at: now });
+        // 插完再收拾：这样 `owners` 的稳态上限就是 OWNERS_MAX（不是 +1）
+        pruneOwners(now);
         conn.data.monopolyPeerId = id;
         send(conn, { type: 'welcome', id });
         return;

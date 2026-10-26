@@ -27,7 +27,7 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { request } from 'node:http';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -95,6 +95,26 @@ async function probe() {
   }
 }
 
+/*
+ * 日志轮转（**只保留上一份**）。
+ *
+ * 为什么要有：每个请求都会写一行 `[来访]`，实测一个多月就到 12 MB，而且没有上限 ——
+ * 迟早把盘写满。轮转放在 start 里（服务本来就要重启），不额外加定时器：
+ * 超过 20 MB 就改名成 server.log.1，更老的 `.1` 直接删掉（想看更早的日志本来就没意义）。
+ */
+const LOG_MAX_BYTES = 20 * 1024 * 1024;
+
+function rotateLog() {
+  try {
+    if (!existsSync(LOG_PATH)) return;
+    if (statSync(LOG_PATH).size < LOG_MAX_BYTES) return;
+    const old = LOG_PATH + '.1';
+    try { rmSync(old, { force: true }); } catch { /* 删不掉就算了，下面 rename 会失败但不影响启动 */ }
+    renameSync(LOG_PATH, old);
+    console.log(`日志超过 ${Math.round(LOG_MAX_BYTES / 1024 / 1024)} MB，已改名为 ${old}`);
+  } catch { /* 轮转失败不该拦住启动 */ }
+}
+
 function pidAlive(pid) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   try {
@@ -158,6 +178,7 @@ async function cmdStart() {
   }
 
   mkdirSync(join(ROOT, 'data'), { recursive: true });
+  rotateLog();   // 日志太大先改名，见 LOG_MAX_BYTES
 
   // detached + unref + stdio ignore：这个进程要活过当前窗口，
   // 双击 start.cmd 之后窗口关掉服务不能跟着死。

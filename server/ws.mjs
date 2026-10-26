@@ -12,6 +12,8 @@
  *   · 客户端帧强制校验掩码、RSV 位强制为 0
  *   · 心跳：定期 ping，两个周期没收到任何数据就断开
  *   · 报文大小上限，防止一条连接把内存吃光
+ *   · **每条连接的收发限速**（消息条数 + 字节数）：坏客户端/坏网络不该拖垮整台服务
+ *   · **发送积压保护**：对面长时间跟不上（隧道差、手机断网）就断开，不把内存堆爆
  *
  * 不支持（本项目用不到，刻意不做）：
  *   · 扩展协商（permessage-deflate 等）—— 所以 RSV 必须为 0
@@ -21,11 +23,34 @@
 import { createHash, randomUUID } from 'node:crypto';
 import net from 'node:net';
 
+import { createTokenBucket } from './ratelimit.mjs';
+
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 const MAX_PAYLOAD = 1 << 20;      // 1 MiB，单帧上限
 const HEARTBEAT_MS = 30_000;      // 心跳间隔
 const HEARTBEAT_GRACE_MS = 65_000; // 超过这个时间没收到任何数据就判死
+
+/*
+ * 每条连接的**接收**限速。
+ *
+ * 正常玩的时候远远碰不到：平台主 WS 一秒几条到十几条；地平线车位置 10~15Hz
+ * 走 `/horizon-relay`（它自己也有一层 40 条/秒的上限）；大富翁搬地图分块是
+ * 64 KB 一块、几块连发。这里取的值是"明显是坏客户端或攻击"的量级。
+ *
+ * 超了就 **1008 断开**（不是静默丢消息）：丢消息会让游戏状态悄悄不一致，
+ * 断开反而能让客户端走现成的重连 + 重发（`shared/net/net.js` 那套）。
+ */
+const MSG_PER_SEC = 100;
+const MSG_BURST = 200;
+const BYTES_PER_SEC = 8 * 1024 * 1024;
+const BYTES_BURST = 16 * 1024 * 1024;
+
+/*
+ * 服务端**发出去**的字节在这条 socket 里堆多少就认为"对面已经跟不上了"。
+ * 隧道抖一下、手机切后台都会短暂堆积，4 MB 足够宽松；再往上堆就是拿内存换时间。
+ */
+const MAX_WRITE_BUFFER = 4 * 1024 * 1024;
 
 const OP_CONT = 0x0;
 const OP_TEXT = 0x1;
@@ -51,6 +76,9 @@ export class WsConnection {
     this._onMessage = null;
     this._onClose = null;
     this._timer = null;
+    /** 接收限速（消息条数 / 字节数），见文件头的 MSG_PER_SEC / BYTES_PER_SEC */
+    this._msgTokens = createTokenBucket({ perSec: MSG_PER_SEC, burst: MSG_BURST });
+    this._byteTokens = createTokenBucket({ perSec: BYTES_PER_SEC, burst: BYTES_BURST });
 
     socket.on('data', (chunk) => this._feed(chunk));
     socket.on('error', () => this._finish());
@@ -195,6 +223,16 @@ export class WsConnection {
 
   _deliver(opcode, payload) {
     /*
+     * 先过接收限速：一条连接刷得太密就断开（见 MSG_PER_SEC 的说明）。
+     * 放在这里而不是业务侧，是因为**所有**端点（平台 / 大富翁中转 / 地平线）
+     * 都走 _deliver，一处兜住就够了。
+     */
+    if (!this._msgTokens.take(1) || !this._byteTokens.take(payload.length)) {
+      this.close(1008, '发得太频繁');
+      return;
+    }
+
+    /*
      * 文本帧按字符串交给业务侧；二进制帧原样交给业务侧（第二个参数 isBinary=true）。
      *
      * 平台主 WS 只收发 JSON，二进制帧仍然按原来的方式当 UTF-8 解读，行为不变；
@@ -229,11 +267,36 @@ export class WsConnection {
     header[0] = 0x80 | opcode;   // FIN=1，服务端帧不加掩码
     try {
       this.socket.write(Buffer.concat([header, payload]));
+      /*
+       * 背压保护：socket 的待发缓冲区堆太多，说明对端已经跟不上了
+       * （隧道抖动、手机切后台、对方进程卡住）。继续 write 只会把内存堆爆，
+       * 最后整台服务端被一条连接拖死 —— 直接断开，让客户端走现成的退避重连。
+       *
+       * 只在**数据帧**上判断：close/ping 这类控制帧本来就是收尾用的，
+       * 而且 close() 里会再调一次 _write，不能在这里递归。
+       */
+      if (opcode !== OP_CLOSE && opcode !== OP_PING && this.socket.writableLength > MAX_WRITE_BUFFER) {
+        this._dropSlow();
+        return false;
+      }
       return true;
     } catch {
       this._finish();
       return false;
     }
+  }
+
+  /**
+   * 对端已经跟不上：**不做关闭握手**，直接销毁 socket 并发一次 onClose。
+   * 业务侧照常清理（座位有宽限期，重连回来还是原座位），但内存不再继续涨。
+   */
+  _dropSlow() {
+    if (this._finished) return;
+    this._finished = true;
+    this.closed = true;
+    if (this._timer) { clearInterval(this._timer); this._timer = null; }
+    try { this.socket.destroy(); } catch { /* 已经断了 */ }
+    try { this._onClose?.(this); } catch { /* 业务侧清理失败不该冒泡 */ }
   }
 
   _finish() {

@@ -32,6 +32,8 @@ before(async () => {
   tmpDir = mkdtempSync(join(tmpdir(), 'frp-werewolf-test-'));
   app = await startServer({
     port: 0,
+    // 测试要在一个进程里造几十个账号：关掉登录/注册限流（限流本身由 security.test.mjs 专门测）
+    authLimitPerMinute: 0,
     dbPath: join(tmpDir, 'ww.db'),
     statePath: join(tmpDir, 'server.json'),
     // 把 180 秒的发言缩成 1.8 秒：测试只驱动"该谁动"，不真的等三分钟

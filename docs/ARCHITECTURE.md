@@ -53,6 +53,10 @@ TLS 由 **frpc** 负责 —— 隧道开「自动 HTTPS」之后，frpc 用 TLS 
 - JS 拿不到这个 cookie（`HttpOnly`），所以**不存在"从 JS 里偷 token"这条路**。
 - WebSocket 握手**自动带同源 cookie**，所以 `/ws` 在 `upgrade` 阶段就能确定"你是谁"，
   不需要任何 `hello`/`auth` 首帧，也不需要把 token 拼进 URL（拼接会进日志，是常见泄露点）。
+- **会话有 30 天空闲有效期**（`store.findSession`）：超过 30 天没动静就删行并当没登录；
+  `server.mjs` 每 6 小时再清扫一次。滑动窗口 —— 天天玩的人永远不用重新登录
+  （本平台**没有密码找回**，不能拿"登录起算的硬过期"去踢人）。
+  `seen_at` 最多每分钟写一次库，不是每个请求写一次（否则 WAL 一直长，D52）。
 
 ### 身份"先记住、再对齐"（`GameNet.cachedMe`）
 
@@ -157,6 +161,34 @@ WebSocket 的 `ready`，公网那次握手实测要 **2~3 秒**（决定见 `doc
 心跳解决的是另一种更隐蔽的故障：TCP 还开着、对面已经不理（手机切网、隧道掉节点），
 界面会一直停在"看起来连着、实际什么都没发生"。三个数都可以在测试里改小
 （`tests/net-timeout.test.mjs` 就是这么把 2.5 秒 / 15 秒压成 0.3 秒 / 0.4 秒的）。
+
+**切网 / 回前台立刻再试**（2026-10-26 补的，不改上面任何一个数）：
+
+- `window.online` → 立刻重连，不等退避那 0.5~5 秒（手机切 4G 的常态）。
+- `visibilitychange` 回到前台 → 连着的时候先发一条 `ping` 探活（锁屏久了 socket 常常
+  还是 open、对面早断了）；没连着就直接重连。
+- 还没连上就调 `GameNet.send()` → 每 4 秒最多提示一次「还没连上服务器，稍等」
+  （以前是完全静默返回 `false`，用户只看到"点了没反应"）。
+
+## 公网兜底：限速、超时与内存边界（D52）
+
+服务端只监听 127.0.0.1、对外全靠隧道，所以"抗刷"和"不被打挂"必须自己兜。
+下面是全部硬上限，**改数值前先读 `docs/DECISIONS.md` D52**：
+
+| 兜底 | 在哪 | 数值 / 行为 |
+| --- | --- | --- |
+| 畸形 URL | `server/http.mjs` 的 `handle` | `decodeURIComponent` 包在 try 里，回 **400**。⛔ 不许再挪到 try 外面 —— 以前一条 `GET /%` 就能让进程退出 |
+| 登录 / 注册 | `http.mjs` + `server/ratelimit.mjs` | 每来源 IP **20 次/分钟**，超了 429 + `retry-after`。`authLimitPerMinute: 0` **只给集成测试用** |
+| 会话 | `store.findSession` | 30 天没动静失效；每 6 小时清扫；`seen_at` 每分钟最多写一次 |
+| WS 收得太密 | `server/ws.mjs` 的 `_deliver` | 100 条/秒、8 MB/秒（桶上限 200 条 / 16 MB），超了 **1008** 断开（不静默丢消息） |
+| 同账号连接数 | `server/hub.mjs` | 最多 **8** 条，第 9 条踢掉最早那条（多标签页 + 重连竞速正常 3~4 条） |
+| 发送积压 | `ws.mjs` 的 `_write` | socket 待发 > **4 MB** 就断（隧道抖/手机断网时不拿内存换时间） |
+| HTTP 请求超时 | `server.mjs` | `requestTimeout = 120s`（以前是 0，慢速连接能一直挂着）；header/keep-alive 65s |
+| 日志体积 | `tools/service.mjs` | 启动时 > 20 MB 改名 `server.log.1`（只留一份） |
+| 大富翁中转 | `server/monopoly/relay.mjs` | `owners` 30 分钟 TTL + 上限 256（以前只增不减） |
+| 互动防洪 | `server/rooms.mjs` | 2 秒内 40 条（技术性防洪，不是玩法限制，D11）；表随清扫清理 |
+
+这些都有回归用例：`tests/security.test.mjs`（14 条）**已包含在 `npm test` 里**。
 
 ### 演出队列 + 演出期间锁输入（**不做本地预演**）
 

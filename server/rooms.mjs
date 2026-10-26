@@ -642,6 +642,11 @@ export function createRooms({ games, deliver = () => {}, onSeatChange = () => {}
 
     /** 定期清理：掉线超过宽限期的座位真正踢出，并按需移交房主身份。 */
     sweep(now = Date.now()) {
+      // 互动防洪表顺手清理：只留还在窗口内的记录。
+      // 不清理的话它随"点过互动的人数"一直长，且那些人早就不在房里了。
+      for (const [id, hit] of reactHits) {
+        if (now - hit.at > REACT_BURST.windowMs) reactHits.delete(id);
+      }
       for (const room of [...rooms.values()]) {
         let changed = false;
         for (const member of [...room.members.values()]) {

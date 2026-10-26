@@ -52,6 +52,16 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 - 加协议消息要**同时**改三处：`shared/protocol.mjs` 的 `T`、`docs/ARCHITECTURE.md` 的表格、
   `server/hub.mjs` 的 `dispatch`。
 
+**公网兜底（D52，2026-10-26）**
+
+- 服务端在公网后面，**抗刷和"不被打挂"自己兜**：见 `docs/ARCHITECTURE.md` 的「公网兜底」一节。
+  数字（20 次/分钟、100 条/秒、8 条连接、4 MB 积压、30 天会话、120 秒请求超时、20 MB 日志）
+  **都不是随便写的**，改之前先读 D52。
+- ⛔ 畸形 URL 的解析**必须**在 `try` 里：以前一条 `GET /%` 能让整个进程退出（有实测、
+  有回归用例 `tests/security.test.mjs`）。
+- `startServer({ authLimitPerMinute: 0 })` 是**测试专用**（几十秒造几十个账号）；
+  正常启动不要传。限流本身由 `tests/security.test.mjs` 用独立来源 IP 测。
+
 **架构铁律**
 
 - **规则引擎在服务器进程里**：`games/*/js/engine/**`、`games/*/js/ai/**` 里
@@ -89,7 +99,7 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 
 | 改动 | 必跑 |
 | --- | --- |
-| 任何改动收尾 | `npm test`（185 条集成：184 通过 + 1 条默认跳过的真模型用例，约 25 秒；`--test-concurrency=2` 是钉死的） |
+| 任何改动收尾 | `npm test`（199 条集成：198 通过 + 1 条默认跳过的真模型用例，约 27 秒；`--test-concurrency=2` 是钉死的） |
 | `server/ws.mjs` | `npm test` + `npm run test:browser`（只有真浏览器能证明帧格式对） |
 | `shared/net/net.js` | `npm test`（9 秒建连 / 2.5 秒竞速 / 心跳 / 自动重连，**这几个数不许动**） |
 | 登录 / 注册流程 | `npm run test:login` |
@@ -102,6 +112,8 @@ Windows 本机跑**唯一一个 Node 进程**（`server/`，**零第三方运行
 | 莲花广麻 | `npm run test:mahjong`（改前端必须 `npm run build` 覆盖 `games/mahjong/web/`；改后端重装 `.venv`） |
 | AI 小镇 | `npm run test:ai-town`（真 manager/host/WS；改 Rust 要重编 bin；改前端要 pnpm build 覆盖 `games/ai-town/web/`） |
 | `server/http.mjs` / 无名杀托管 | `node tools/check-noname.mjs` |
+| 登录 / 注册 / 会话有效期 / 限速（`server/ratelimit.mjs`、`server/store.mjs` 的会话部分） | `npm test`（含 `tests/security.test.mjs`）+ `npm run test:login` |
+| `shared/net/net.js` 的重连时机（`online` / 回前台探活） | `npm test` + `npm run test:login` + `npm run test:browser` |
 | 公网通道 | `node tools/check-tunnel.mjs <公网地址> --ws 30`（唯一硬证据是 `data/server.log` 的 `[来访]`） |
 
 - 开关服务：`node tools/service.mjs start|stop|status|restart`（= 同名 `.cmd`）。

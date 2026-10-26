@@ -16,6 +16,15 @@
 import { T, normalizeCode } from '../shared/protocol.mjs';
 import { publicUser } from './avatar.mjs';
 
+/**
+ * 同一账号最多同时挂几条连接。
+ *
+ * 为什么要上限：多标签页 + 手机重连竞速（`shared/net/net.js` 会并开两条）
+ * 正常也就 3~4 条；浏览器抽风或有人写脚本时可以开到几百条，每条都要收广播。
+ * 超过就**踢掉最早那条** —— 不会影响刚连上的那条（它才是用户眼前这个页面）。
+ */
+const MAX_CONNS_PER_USER = 8;
+
 export function createHub({ store, rooms, nonamePresence = null, werewolf = null, monopolyPresence = null,
   mahjongPresence = null, aiTown = null }) {
   /** userId -> Set<WsConnection> */
@@ -154,6 +163,13 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
       set = new Set();
       conns.set(user.id, set);
     }
+    // 连接数上限：踢掉最早建立的那条（Set 的遍历顺序就是插入顺序）
+    while (set.size >= MAX_CONNS_PER_USER) {
+      const oldest = set.values().next().value;
+      set.delete(oldest);
+      connOwner.delete(oldest.id);
+      try { oldest.close(1008, '同一账号的连接太多了'); } catch { /* 已经断了 */ }
+    }
     set.add(conn);
 
     conn.send({ t: T.READY, me: publicUser(user) });
@@ -286,7 +302,13 @@ export function createHub({ store, rooms, nonamePresence = null, werewolf = null
        * 这条消息不碰任何状态，也不广播。
        */
       case T.PING: {
-        deliver(user.id, { t: T.PONG, ts: msg.ts });
+        /*
+         * 只回**发起这一条连接**，不 deliver 给这个账号的所有标签页。
+         * 以前是 deliver：另一个标签页的 pong 会把这条连接的心跳标记清掉，
+         * 于是一条已经"半死"的连接可能被别的标签页误判成还活着（`latencyMs` 也会串台）。
+         * 浏览器发不出协议层 ping，这条消息是唯一的保活手段，必须一问一答。
+         */
+        conn.send({ t: T.PONG, ts: msg.ts });
         return;
       }
 

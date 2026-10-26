@@ -13,7 +13,25 @@ import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { SESSION_MAX_AGE_S } from '../shared/protocol.mjs';
+
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
+
+/**
+ * 会话的**空闲**有效期：这么久没动静就失效（浏览器那边 cookie 的 Max-Age 也是 30 天）。
+ *
+ * 滑动窗口而不是"登录起算 30 天"：天天玩的人永远不用重新登录，
+ * 忘了密码就再也进不去的风险不能加（本平台**没有密码找回**，D5）。
+ */
+const SESSION_IDLE_MS = SESSION_MAX_AGE_S * 1000;
+
+/**
+ * `sessions.seen_at` 最多多久写一次库。
+ *
+ * 以前每个 HTTP 请求、每次 WS 握手都 `UPDATE` 一次 —— 实测 `frp-game.db-wal`
+ * 涨到 4 MB 还在持续写盘。会话是"分钟级"精度就够，没必要按请求写。
+ */
+const SESSION_TOUCH_MS = 60_000;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
@@ -181,12 +199,35 @@ export function openStore(dbPath = resolve(ROOT, 'data', 'frp-game.db')) {
         .run(sid, userId, t, t);
     },
 
+    /**
+     * 查会话，顺带"续命"。
+     *
+     * · **过期就删掉并当没登录**：超过 `SESSION_IDLE_MS`（30 天）没动静的会话不再认。
+     *   以前这里只看行在不在，cookie 被谁抄走就能一直用。
+     * · `seen_at` **最多一分钟写一次**：每个请求都写会让 WAL 一直长（见 SESSION_TOUCH_MS）。
+     */
     findSession(sid) {
       const row = db.prepare('SELECT * FROM sessions WHERE sid = ?').get(sid);
       if (!row) return null;
-      // 顺手刷新"最后活动时间"，不动 created_at
-      db.prepare('UPDATE sessions SET seen_at = ? WHERE sid = ?').run(now(), sid);
+      const t = now();
+      if (t - row.seen_at > SESSION_IDLE_MS) {
+        db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
+        return null;
+      }
+      if (t - row.seen_at > SESSION_TOUCH_MS) {
+        db.prepare('UPDATE sessions SET seen_at = ? WHERE sid = ?').run(t, sid);
+        row.seen_at = t;
+      }
       return row;
+    },
+
+    /**
+     * 清掉长期不用的会话（`server.mjs` 定时调，返回删了几条）。
+     * 不清理的话这张表只增不减 —— 每次登录都会多一行。
+     */
+    pruneSessions(maxAgeMs = SESSION_IDLE_MS) {
+      const info = db.prepare('DELETE FROM sessions WHERE seen_at < ?').run(now() - maxAgeMs);
+      return Number(info.changes) || 0;
     },
 
     deleteSession(sid) {

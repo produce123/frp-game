@@ -58,6 +58,10 @@ export const DEFAULT_STATE_PATH = join(ROOT, 'data', 'server.json');
  * @param {number} [options.werewolfTimeoutScale]
  *        狼人杀状态倒计时的时间缩放，**只有测试用**（1 = 正常速度）。
  *        一局排到天亮要好几分钟，集成测试按 0.002 缩到毫秒级。
+ * @param {number} [options.authLimitPerMinute=20]
+ *        登录 / 注册每个来源 IP 每分钟几次（0 = 关掉）。**0 只有测试用**：
+ *        集成测试几十秒里要造几十个账号，限流会误伤；限流本身由
+ *        `tests/security.test.mjs` 单独测。正常启动不要传。
  */
 export async function startServer({
   port = DEFAULT_PORT,
@@ -71,6 +75,7 @@ export async function startServer({
   mahjongBackend = false,
   mahjongBackendPort = MAHJONG_BACKEND_PORT,
   mahjongDbPath = '',
+  authLimitPerMinute = 20,
 } = {}) {
   const store = openStore(dbPath);
   // 头像跟着数据库走：临时库 → 临时头像目录，跑完一起删。
@@ -177,6 +182,7 @@ export async function startServer({
     mahjong,
     mahjongPresence,
     aiTown,
+    authLimitPerMinute,
   });
 
   const server = createServer((req, res) => { handler(req, res); });
@@ -188,8 +194,13 @@ export async function startServer({
    */
   const relay = nonameRelay ? await startNonameRelay({ port: nonameRelayPort }) : null;
 
-  // WebSocket 是长连接，别让 HTTP 的请求超时把升级后的 socket 收走。
-  server.requestTimeout = 0;
+  /*
+   * HTTP 的请求超时。以前是 0（永不超时）—— 那会让"连上之后一个字节一个字节地发"
+   * 的慢速连接（slowloris）一直挂着，几十条就能占满连接数。
+   * WebSocket 升级完成后就不再走 HTTP 请求计时，所以 2 分钟对长连接没有影响
+   * （`headersTimeout` / `keepAliveTimeout` 仍然是 65 秒）。
+   */
+  server.requestTimeout = 120_000;
   server.headersTimeout = 65_000;
   server.keepAliveTimeout = 65_000;
 
@@ -304,6 +315,16 @@ export async function startServer({
   }, 60_000);
   if (typeof werewolfSweeper.unref === 'function') werewolfSweeper.unref();
 
+  /*
+   * 会话清扫：30 天没动静的会话删掉（浏览器那边 cookie 也是 30 天）。
+   * 以前这条**完全没跑**，`sessions` 表只增不减，而且老 cookie 永远有效。
+   * 6 小时一次足够 —— 过期判断在 `store.findSession()` 里也做了一遍（双保险）。
+   */
+  const sessionSweeper = setInterval(() => {
+    try { store.pruneSessions(); } catch { /* 清扫失败不该让进程崩掉 */ }
+  }, 6 * 60 * 60_000);
+  if (typeof sessionSweeper.unref === 'function') sessionSweeper.unref();
+
   await new Promise((resolvePromise, reject) => {
     server.once('error', reject);
     server.listen(port, host, () => {
@@ -343,6 +364,8 @@ export async function startServer({
     clearInterval(monopolySweeper);
     clearInterval(mahjongSweeper);
     clearInterval(aiTownSweeper);
+    clearInterval(werewolfSweeper);
+    clearInterval(sessionSweeper);
     // 先让 AI 小镇把房间保存并关掉（房主退出 = 保存），再收 WS / HTTP。
     try { await aiTown.close(); } catch { /* 子进程停不掉不该拦住进程退出 */ }
     try { await mahjong.stop(); } catch { /* 后端停不掉不该拦住进程退出 */ }

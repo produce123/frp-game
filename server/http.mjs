@@ -15,7 +15,7 @@
  */
 
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
-import { extname, join, resolve } from 'node:path';
+import { extname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gzipSync } from 'node:zlib';
 
@@ -57,6 +57,7 @@ import {
  */
 const MONOPOLY_AUDIO_PREFIX = '/monopoly-audio';
 import { T, validateName } from '../shared/protocol.mjs';
+import { createFixedWindow } from './ratelimit.mjs';
 
 const ROOT = resolve(fileURLToPath(new URL('..', import.meta.url)));
 
@@ -307,7 +308,41 @@ function readRawBody(req, limit) {
  */
 export function createRequestHandler({ store, availableGames = () => [], avatars, hub = null, rooms = null,
   nonamePresence = null, monopolyPresence = null, werewolf = null, monopoly = null,
-  mahjong = null, mahjongPresence = null, aiTown = null }) {
+  mahjong = null, mahjongPresence = null, aiTown = null, authLimitPerMinute = 20 }) {
+  /*
+   * 登录 / 注册的频率上限：同一个来源 IP 每分钟 `authLimitPerMinute` 次（默认 20）。
+   *
+   * 为什么按 IP 而不是按账号：撞库脚本是"很多账号 × 同一条出口"，按账号拦不住；
+   * 而正常人一分钟内不会登录 20 次。
+   * 为什么取 20（不是 5）：几个同学可能共用一个出口 IP（学校/公司 NAT），
+   * 一起登录不能被误伤 —— 20 次/分钟够 10 个人各试两次。
+   * 只拦这两条接口，已登录的人和其它接口完全不受影响。
+   *
+   * `0` = 关掉。**只有本机集成测试会这么传**：它们几十秒里要造几十个账号，
+   * 拿它当限流的回归用例反而会误伤；限流本身由 `tests/security.test.mjs` 专门测。
+   */
+  const authLimiter = authLimitPerMinute > 0
+    ? createFixedWindow({ windowMs: 60_000, max: authLimitPerMinute })
+    : null;
+
+  /** 请求的来源 IP。隧道那端会带 X-Forwarded-For，只取第一段。 */
+  function clientIp(req) {
+    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    return forwarded || (req.socket && req.socket.remoteAddress) || 'unknown';
+  }
+
+  /** 太频繁就自己回 429 并返回 true（调用方直接 return）；没超返回 false。 */
+  function tooManyAuth(req, res, what) {
+    if (!authLimiter) return false;
+    const gate = authLimiter.take(clientIp(req));
+    if (gate.ok) return false;
+    const seconds = Math.max(1, Math.ceil(gate.retryAfterMs / 1000));
+    sendJSON(res, 429, { ok: false, message: `${what}太频繁了，请 ${seconds} 秒后再试` }, {
+      'retry-after': String(seconds),
+    });
+    return true;
+  }
+
   async function handleApi(req, res, pathname, searchParams = null) {
     /* ------------------------------ 狼人杀 ------------------------------ */
 
@@ -642,6 +677,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
     /* ------------------------------ 注册 ------------------------------ */
 
     if (pathname === '/api/register' && req.method === 'POST') {
+      if (tooManyAuth(req, res, '注册')) return;
       const body = await readBody(req);
       const result = await register(store, { name: body.name, password: body.password });
       if (!result.ok) return sendJSON(res, 400, { ok: false, message: result.message });
@@ -657,6 +693,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
     /* ------------------------------ 登录 / 登出 ------------------------------ */
 
     if (pathname === '/api/login' && req.method === 'POST') {
+      if (tooManyAuth(req, res, '登录')) return;
       const body = await readBody(req);
       const result = await login(store, { id: body.id, password: body.password });
       if (!result.ok) return sendJSON(res, 401, { ok: false, message: result.message });
@@ -751,8 +788,12 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
   /** 把一条相对路径解析成绝对文件路径；不是文件就返回 null。 */
   function resolveFile(relPath) {
     let filePath = resolve(ROOT, relPath);
-    // 双保险：解析后的绝对路径必须还在仓库内
-    if (!filePath.startsWith(ROOT)) return null;
+    /*
+     * 双保险：解析后的绝对路径必须还在仓库内。
+     * ⚠️ 必须带上目录分隔符：只写 `startsWith(ROOT)` 的话，
+     * `E:\frp-game-evil\...` 也会通过（前缀相同但不是仓库内）。
+     */
+    if (filePath !== ROOT && !filePath.startsWith(ROOT + sep)) return null;
 
     try {
       const stat = statSync(filePath);
@@ -1359,8 +1400,31 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
   }
 
   return async function handle(req, res) {
-    const pathname = decodeURIComponent((req.url || '/').split('?')[0].split('#')[0]);
-    const searchParams = new URL(req.url || '/', 'http://127.0.0.1').searchParams;
+    const rawUrl = req.url || '/';
+    /** 日志用：解析成功就换成 pathname，失败保留原始 URL —— 畸形请求也要留下证据。 */
+    let pathname = rawUrl;
+    let searchParams = new URLSearchParams();
+
+    /*
+     * ⚠️ 这两行**必须**在 try 里。`decodeURIComponent` 遇到畸形百分号编码
+     * （`GET /%`、`/..%`、`http://[` …）会抛 URIError，而这里原来是 async handler
+     * 的第一句、在 try **外面**：抛出去变成 unhandled rejection，Node 24 默认把它
+     * 当进程级异常 → **一条 `GET /%` 就能让整个平台退出**（2026-10-26 在临时实例上
+     * 实测复现：进程直接退出）。公网上的扫描器每天都在发这种路径。
+     * 现在只回 400。
+     */
+    try {
+      pathname = decodeURIComponent(rawUrl.split('?')[0].split('#')[0]);
+      searchParams = new URL(rawUrl, 'http://127.0.0.1').searchParams;
+    } catch {
+      res.on('finish', () => {
+        const host = req.headers.host || '-';
+        console.log(`[来访] ${req.method} ${rawUrl} -> ${res.statusCode} host=${host} from=${clientIp(req)}（地址格式不对）`);
+      });
+      res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' })
+        .end('400 地址格式不对');
+      return;
+    }
 
     /*
      * 来访日志。隧道排查（docs/TUNNEL.md）全靠它：节点返回 503 时，
@@ -1371,9 +1435,7 @@ export function createRequestHandler({ store, availableGames = () => [], avatars
      */
     res.on('finish', () => {
       const host = req.headers.host || '-';
-      const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-      const from = forwarded || req.socket.remoteAddress || '-';
-      console.log(`[来访] ${req.method} ${pathname} -> ${res.statusCode} host=${host} from=${from}`);
+      console.log(`[来访] ${req.method} ${pathname} -> ${res.statusCode} host=${host} from=${clientIp(req)}`);
     });
 
     try {
